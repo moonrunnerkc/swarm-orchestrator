@@ -1,0 +1,61 @@
+state        complete
+reason       check test: 3 test(s) fail at the base commit and still fail, which does not block: tests.test_build_plan_core::test_explicit_tokenizer_provenance_and_special_markers, tests.test_pre_commit::test_pre_commit_fail, tests.test_pre_commit::test_pre_commit_pass
+requirement  R1 satisfied (Move core/history_io.py and history_store.py into a new tracemantle/history/ package, leaving re-export shims at the old paths, and move tests/test_history_{io,model,regression}.py into tests/history/; update the mypy files list and hatch packages.)
+regression   none; 3 inherited
+base         47203d2903394cbb8904637cad71b7b525b9ada7
+change       16 file(s) from the patch
+check        test: inherited-failures (python3 -m pytest -q, pre-existing)
+baseline     0 of 1 check(s) pass at the base commit
+held-out     unmeasured: no held-out checks are sealed for this workspace
+test files   1 added, 2 moved, 1 moved and edited
+coverage     unmeasured: the change spans languages, and coverage is measured for one at a time
+mutation     survived:  and to or at src/tracemantle/core/history_io.py:4
+execution    isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:e5e889ff8cca134b318f92454e1d7676b361e3cf18611fc6589d90db81636bac
+
+$ python3 -m pytest -q
+/dependencies.py                       82      6    93%   46-47, 62, 67-69
+src/tracemantle/display.py                             7      0   100%
+src/tracemantle/evidence.py                           90      2    98%   35, 77
+src/tracemantle/formatters.py                        145      5    97%   95-96, 204-206
+src/tracemantle/history/__init__.py                    0      0   100%
+src/tracemantle/history/io.py                        113     18    84%   46, 51-53, 55, 58, 95, 123, 160, 170, 210-215, 252-255
+src/tracemantle/history/store.py                      62      5    92%   40, 43, 45, 54, 72
+src/tracemantle/history_store.py                       3      0   100%
+src/tracemantle/io_limits.py                          61      3    95%   90-91, 186
+src/tracemantle/markdown.py                          197     10    95%   120, 163, 171-173, 213-214, 217-219
+src/tracemantle/modes.py                              46      0   100%
+src/tracemantle/parser.py                            119      5    96%   95-98, 151
+src/tracemantle/policy.py                            106     23    78%   15-16, 53, 57, 59, 61-62, 64, 72-73, 75, 77, 82, 89, 91, 94, 97, 102, 105, 108, 110, 114, 117
+src/tracemantle/product_commands.py                  121     33    73%   57-68, 71, 76, 95, 97, 100, 102, 109, 120-130, 133-138
+src/tracemantle/promptfoo.py                          74      8    89%   31, 36, 39, 41, 48, 58, 78, 90
+src/tracemantle/result.py                             49      1    98%   24
+src/tracemantle/rules/__init__.py                     56      5    91%   122, 159-162, 164
+src/tracemantle/rules/compat.py                       93      4    96%   70, 86, 199, 213
+src/tracemantle/rules/description.py                 178      8    96%   250-252, 267, 283, 334, 371, 404
+src/tracemantle/rules/disclosure.py                   57      0   100%
+src/tracemantle/rules/frontmatter.py                   6      0   100%
+src/tracemantle/rules/frontmatter_common.py           33      4    88%   19, 22, 25, 41
+src/tracemantle/rules/frontmatter_description.py      60      4    93%   59, 75, 93, 112
+src/tracemantle/rules/frontmatter_fields.py           46      6    87%   55-60
+src/tracemantle/rules/frontmatter_name.py             88      6    93%   52, 71, 74, 101, 149, 168
+src/tracemantle/rules/references.py                   16      0   100%
+src/tracemantle/rules/sizing.py                       21      0   100%
+src/tracemantle/rules/template.py                      8      0   100%
+src/tracemantle/storage.py                            70      4    94%   26, 44, 68, 91
+src/tracemantle/template_detection.py                 15      1    93%   40
+src/tracemantle/tokenizer.py                          28      5    82%   29-32, 39
+--------------------------------------------------------------------------------
+TOTAL                                               3967    425    89%
+=========================== short test summary info ============================
+FAILED tests/test_build_plan_core.py::test_explicit_tokenizer_provenance_and_special_markers - tracemantle.tokenizer.TokenizerError: Cannot load tiktoken cl100k_base. Install tracemantle[tiktoken] and warm its cache, or select --tokenizer heuristic for offline use.
+FAILED tests/test_pre_commit.py::test_pre_commit_pass - AssertionError: assert 3 == 0
+ +  where 3 = CompletedProcess(args=['pre-commit', 'run', 'tracemantle', '--all-files'], returncode=3, stdout='[INFO] Installing env...cies\nCheck the log at /Users/brad/.swarm/work/swarm-verify-H1lXwn/home/.cache/pre-commit/pre-commit.log\n', stderr='').returncode
+FAILED tests/test_pre_commit.py::test_pre_commit_fail - AssertionError: assert 3 == 1
+ +  where 3 = CompletedProcess(args=['pre-commit', 'run', 'tracemantle', '--all-files'], returncode=3, stdout='[INFO] Installing env...cies\nCheck the log at /Users/brad/.swarm/work/swarm-verify-H1lXwn/home/.cache/pre-commit/pre-commit.log\n', stderr='').returncode
+3 failed, 1399 passed, 5 skipped in 310.90s (0:05:10)
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/patch-run/t6-judge-4e53b13/tracemantle/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/patch-run/t6-judge-4e53b13/tracemantle/verdict/attestation.pub.pem
+exit 0

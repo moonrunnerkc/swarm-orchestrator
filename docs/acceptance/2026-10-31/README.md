@@ -33,18 +33,25 @@ A category counts only with a complete run of its own task whose replay agrees; 
 | Fix a real defect | t3 ruleprobe (`--host`) | 20261101T042617-8a01e0 | complete | swarm-redesign-qwen36-32k, Ollama auto | 560,835 / 4,765 | agrees on the host (`final/replay-host.out`); the first replay ran in a container and diverged | |
 | Fix beside an unrelated inherited failure | c1 ruleprobe (`--host`) | 20261101T205458-33e203 | complete | gemma4:31b, Ollama auto | 499,019 / 9,095 | agrees, on the host | |
 | Refactor: move without behavior change | t5b ironroot | 20261101T054940-b71a2a | complete | swarm-redesign-qwen36-32k, Ollama auto | 735,845 / 7,243 | agrees | |
-| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open, a recorded limitation: local models broke history_io.py on the cross-module move in the best attempt and changed nothing in the narrower attempt; the verifier found the regression both times it occurred (see `t6-comparison/` to judge another agent on the same base) |
+| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open: the best attempt moved its tests without the fixture path they read, 7 new failures; the narrower attempt changed nothing. Corrected 2026-11-02: under 2.0.0 the move with that path fixed was refused as well, a verifier defect fixed in 2.0.1 (see Comparison) |
 | Upgrade a dependency | t7a claimcheck | 20261101T235811-1133bb | complete | gemma4:31b, Ollama auto | 133,999 / 1,099 | agrees | |
 | Upgrade the runtime | t8 quantproof | 20261101T073344-9bf3e4 | complete | qwen3.6:35b-a3b, Ollama auto | 222,006 / 1,990 | agrees | |
 
 Seven of the eight categories have a complete run of their own task whose replay agrees. The
-cross-module refactor (t6 tracemantle) does not, and is recorded as a limitation rather than
-retried: `t6-comparison/` holds the task, its base, a fixed requirement record and both attempts,
+cross-module refactor (t6 tracemantle) does not. It was recorded as a limit of the models; the
+Comparison below found that swarm-verify 2.0.0 refused the correct move too, so that reading is
+withdrawn: no local model has run t6 against 2.0.1. `t6-comparison/` holds the task, its base, a fixed requirement record and both attempts,
 so another agent's patch can be judged by the same verifier on the same base. t7b dependency detector (20261101T102609-e587a2,
 complete, replay agrees), the upgrade substitute of the first round, completed as well. Of the two
 held-back tasks, h1 completed on its first run with a replay that agrees, and h2 did not complete
 in either round. No known false completion remains: claimcheck's "latest 9.x" is now held by the
 verifier, and its complete run resolves Stryker 9.6.1, the registry's latest 9.x.
+
+The fix category is host-verified only. Its complete runs (t3 and c1, ruleprobe) ran on the host,
+and the two isolated attempts the 16.0.1 patch release made from real bug-fix commits did not
+complete: depose 09b01c1 (session 20261103T012746-36fbbf), a correct fix left incomplete by the
+base's own typecheck and build failing in the container, and claimcheck d2f136c (session
+20261103T015145-ff5ff2), a wrong fix the held-out test caught. Both are in `f-fix-isolated/`.
 
 ## Final runs
 
@@ -138,13 +145,17 @@ and the reports say so rather than print zero.
   fixed. In the closing round, attempt 1 was stopped by me seconds in (it was on a build that gave
   the agent no Python environment for a project without `uv.lock`). Attempt 2, gemma4-31b-greedy-128k
   at 65,536 tokens with the environment built in its clone, made the package and moved the tests
-  (21 files) but broke `history_io.py`: the verifier found 7 new failures in `tests.test_history_io`
-  and attributed them, the model's own commands said the file was "still corrupted", and it
-  repeated that until the run stopped. The narrower variant (history_io alone, its test and the mypy
-  list; t6n, qwen3.6:35b-a3b chosen automatically) read for 25 turns and changed nothing. Both
-  replays agree. On this evidence the task is within what the verifier judges correctly and beyond
-  what these local models finish: every failed attempt either changed nothing or broke what the
-  verifier then named.
+  (21 files): the verifier found 7 new failures in `tests.test_history_io`, the model's own commands
+  said `history_io.py` was "still corrupted", and it repeated that until the run stopped. The
+  narrower variant (history_io alone, its test and the mypy list; t6n, qwen3.6:35b-a3b chosen
+  automatically) read for 25 turns and changed nothing. Both replays agree.
+  Corrected 2026-11-02: the 7 failures are exactly the 7 tests that read `tests/fixtures/history`.
+  The attempt moved `test_history_io.py` with only its imports changed, so it looked for its
+  fixtures beside itself; `history_io.py` was a working re-export. The edit that fixes that, one
+  more `.parent`, made swarm-verify 2.0.0 read the file as deleted (its tests "gone") and run the
+  old and moved copies together, which also broke the README's test count. So 2.0.0 refused every
+  form of this move short of moving the fixtures as well, and "within what the verifier judges
+  correctly" was wrong. 2.0.1 judges a moved and edited test file by its base version (Comparison).
 - **t5a depose.** In the first round the move was made without evidence mapped; rerun with the same
   model after context management, Qwen3.8 read the test file three turns running and stopped for no
   progress after 6 turns, nothing changed. Replays agree. t5b ironroot holds the category.
@@ -156,6 +167,39 @@ and the reports say so rather than print zero.
   environment, and its suite runs live inference against whatever Ollama answers, which loaded
   about 24 GB of models beside the coding model. The fix beside an inherited failure is shown by c1
   ruleprobe instead, and the upgrade substitute for resident is t7b.
+
+## Comparison
+
+The two tasks no local model completed, t6 tracemantle and h2 ironroot, done once each by the agent
+running the 16.0.1 patch release (Claude Code, outside `swarm run`), on the same base, judged by the
+same verifier the local runs met, then replayed. One run each; nothing here says more than these
+two tasks. Evidence is in `comparison/`.
+
+| Task | Agent | Commands | Wall | Input / output tokens | swarm-verify 2.0.0 | Replay | swarm-verify `patch/2.0.1` 4e53b13 | Replay |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t6 tracemantle | gemma4-31b-greedy-128k, session 20261101T221712-67545b | 42 turns | 3,127 s | 388,458 / 12,946 | incomplete: 7 new failures | agrees | incomplete: the same 7 | agrees |
+| t6 tracemantle | Claude Code | 12 | 174 s | not available to the agent | incomplete: 18 tests "gone", the README count test failing in the base-tests run | agrees | complete, R1 satisfied, 3 inherited | agrees |
+| h2 ironroot | qwen3.8:27b, session 20261101T203914-4e0ccd | 18 turns | 428 s | 128,114 / 1,992 | incomplete: no-progress, no test written | agrees | not rerun | |
+| h2 ironroot | Claude Code | 7 | 83 s | not available to the agent | complete, R1 satisfied; the one mutant (false to true, `promote.py:133`) survived | agrees | not rerun | |
+
+- The t6 requirement record is `t6-comparison/requirements.json`, fixed before any attempt. h2 has
+  no shared record (the local run's verifications used its own): `comparison/h2/requirements.json`
+  is the one this patch was judged under, R1 being the task's own wording with the project's
+  `test` check and the new test as evidence.
+- Wall time for the hand-made patches runs from the first command on the task to the patch being
+  written, from the commands' timestamps; reading the task beforehand is not counted. Commands are
+  tool calls, each one command, the nearest thing to a turn. The agent has no count of its own tokens.
+- The t6 patch failed verification with 2.0.0, and that is recorded as it happened
+  (`comparison/t6/verify-2.0.0.out`). Its cause was in the verifier: the moved
+  `test_history_io.py` needed `Path(__file__).parent.parent` to reach its fixtures, a body edit,
+  so the file was read as deleted and added. Fixed in swarm-verify 2.0.1 with a failing test first
+  (`swarm-verify/src/probes/edited-move.integration.test.ts`); the same patch then completes and replays in
+  agreement. The local model's patch was judged again with the fix and is unchanged: incomplete,
+  the same 7 failures, which no verifier change could clear, since its moved file reads fixtures
+  that are not there.
+- What this shows: on t6 the correct move was refused by 2.0.0 whoever made it; on h2 a complete
+  fix with a test exists and was judged complete by the verifier the local run met. It does not
+  show how a local model would do on t6 against 2.0.1, which has not been run.
 
 ## Safety
 
@@ -215,7 +259,9 @@ Each is a test that runs without a live model (`npm run gates` in each repositor
   wordings are not read, and a package no manifest declares is noted rather than guessed.
 - Evidence is tamper-evident, not tamper-proof. Runs on the host (`--host`) are not isolated, and
   a host recording replays only on the platform it recorded.
-- The chokepoint's reading is lexical: a program an interpreter starts on its own is not seen, and
-  a relative path after a `cd` is resolved against the workspace root (refused, never allowed).
+- The chokepoint's reading is lexical: a program an interpreter starts on its own is not seen.
+  Since 16.0.1 a relative path after a `cd` is read from the directory it would be opened in, and a
+  `cd` it cannot name (`cd -`, `popd`) makes the command unreadable; until then it was resolved
+  against the workspace root, which refused correct commands and let `cd .git && cat config` pass.
 - Local models stall in ways the loop can report but not repair: repeating a read until the run
   stops for no progress was the most common ending of an incomplete run in both rounds.

@@ -1,0 +1,55 @@
+diff --git a/src/ironroot/cli/promote.py b/src/ironroot/cli/promote.py
+index ccc48d9..d38289c 100644
+--- a/src/ironroot/cli/promote.py
++++ b/src/ironroot/cli/promote.py
+@@ -130,7 +130,8 @@ def _scan_for_patterns(
+     """Scan every ``*.py`` file under ``src_dir`` for any matching pattern.
+ 
+     Triple-quoted strings and ``#`` comments are stripped before matching so
+-    docstrings / examples don't false-positive.
++    docstrings / examples don't false-positive. A stripped string leaves its
++    newlines behind, so reported line numbers stay those of the source file.
+     """
+     hits: list[tuple[Path, int, str]] = []
+     if not src_dir.exists():
+@@ -140,7 +141,7 @@ def _scan_for_patterns(
+         if "__pycache__" in path.parts:
+             continue
+         text = path.read_text(encoding="utf-8", errors="ignore")
+-        cleaned = _TRIPLE_QUOTED.sub("", text)
++        cleaned = _TRIPLE_QUOTED.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+         cleaned = _LINE_COMMENT.sub("", cleaned)
+         for lineno, line in enumerate(cleaned.splitlines(), start=1):
+             for pat in patterns:
+diff --git a/tests/unit/test_promote.py b/tests/unit/test_promote.py
+index 64e5abf..b556e95 100644
+--- a/tests/unit/test_promote.py
++++ b/tests/unit/test_promote.py
+@@ -142,6 +142,27 @@ def test_typed_belief_writes_flags_free_form_create_belief(tmp_path: Path) -> No
+     assert hits, "scanner must flag a free-form create_belief call"
+ 
+ 
++def test_scan_reports_the_source_line_after_a_multiline_docstring(tmp_path: Path) -> None:
++    """Stripping a docstring must keep its newlines, or every later line number shifts up."""
++    from ironroot.cli.promote import _RNG_PATTERNS, _scan_for_patterns
++
++    fixture = tmp_path / "sampler.py"
++    fixture.write_text(
++        '"""Sampling helpers.\n'
++        "\n"
++        "Nothing here may call random.random() directly.\n"
++        '"""\n'
++        "\n"
++        "def sample():\n"
++        "    '''One draw.\n"
++        "    Uses the seeded generator.\n"
++        "    '''\n"
++        "    return random.random()  # line 10\n"
++    )
++    hits = _scan_for_patterns(tmp_path, _RNG_PATTERNS)
++    assert hits == [(fixture, 10, "return random.random()")]
++
++
+ # ---------------------------------------------------------------------------
+ # criterion 3 — falsifiable claim
+ # ---------------------------------------------------------------------------

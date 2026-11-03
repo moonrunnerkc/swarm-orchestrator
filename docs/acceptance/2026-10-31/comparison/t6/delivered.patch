@@ -1,0 +1,873 @@
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 627a096..053ea64 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -22,7 +22,7 @@ A handful of tests skip on Windows because the underlying OS feature is unavaila
+ 
+ - `tests/test_cli.py`: directory-symlink discovery skips on Windows because symlink creation requires privileges.
+ - `tests/test_references.py`: the two `os.symlink`-based tests use the module-level `_skip_symlink = pytest.mark.skipif(sys.platform == "win32", ...)` mark. `os.symlink` on Windows requires developer mode or admin privileges, so the symlink-escape coverage runs on Linux/macOS only.
+-- `tests/test_cli_history.py` and `tests/test_history_io.py`: each has one `pytest.mark.skipif(sys.platform == "win32", ...)` test exercising POSIX file-mode permission errors that Windows does not enforce identically.
++- `tests/test_cli_history.py` and `tests/history/test_history_io.py`: each has one `pytest.mark.skipif(sys.platform == "win32", ...)` test exercising POSIX file-mode permission errors that Windows does not enforce identically.
+ - `tests/test_config_validation.py`: four TOML fallback tests run on Python 3.10 and skip on newer interpreters, which use `tomllib`.
+ - `tests/test_pre_commit.py`: both tests skip wherever the `pre-commit` binary is not installed. CI installs `pre-commit` so they run there; local runs without `pre-commit` show them as skipped.
+ 
+diff --git a/src/tracemantle/commands.py b/src/tracemantle/commands.py
+index 51c1288..0b42fee 100644
+--- a/src/tracemantle/commands.py
++++ b/src/tracemantle/commands.py
+@@ -57,7 +57,7 @@ from tracemantle.formatters import (
+     _format_markdown,
+     _format_text,
+ )
+-from tracemantle.history_store import append_history, comparable_runs, history_identity
++from tracemantle.history.store import append_history, comparable_runs, history_identity
+ from tracemantle.io_limits import (
+     MAX_SCAN_BYTES,
+     MAX_SCAN_FILES,
+diff --git a/src/tracemantle/core/history.py b/src/tracemantle/core/history.py
+index df4df2d..3d22b77 100644
+--- a/src/tracemantle/core/history.py
++++ b/src/tracemantle/core/history.py
+@@ -324,11 +324,11 @@ def render_ledger_json(ledger: Ledger) -> str:
+     return json.dumps(payload, indent=2, sort_keys=False, ensure_ascii=False)
+ 
+ 
+-# Ledger filesystem I/O lives in history_io.py (which imports the model and the
+-# serializer above). Re-exported here so the historical public surface
++# Ledger filesystem I/O lives in tracemantle/history/io.py (which imports the model
++# and the serializer above). Re-exported here so the historical public surface
+ # ``from tracemantle.core.history import load_ledger`` keeps working. The import
+-# sits at the bottom because history_io depends on this module's definitions.
+-from tracemantle.core.history_io import (  # noqa: E402
++# sits at the bottom because history.io depends on this module's definitions.
++from tracemantle.history.io import (  # noqa: E402
+     append_run,
+     load_ledger,
+     save_ledger,
+diff --git a/src/tracemantle/core/history_io.py b/src/tracemantle/core/history_io.py
+index 2b18d75..ae00d9c 100644
+--- a/src/tracemantle/core/history_io.py
++++ b/src/tracemantle/core/history_io.py
+@@ -1,276 +1,11 @@
+-"""Filesystem I/O for the validation history ledger.
++"""Compatibility path; the module now lives at ``tracemantle.history.io``.
+ 
+-Serialization, atomic writes, and load/append of ``.skillcheck-history.json``
+-live here, separated from the model, regression, and rendering logic in
+-``history.py``. ``history.py`` re-exports ``load_ledger``, ``save_ledger``, and
+-``append_run`` so ``from tracemantle.core.history import load_ledger`` still works.
+-
+-The legacy save/append API remains single-writer compatibility code. New CLI
+-writes use immutable per-run records in history_store outside the bundle.
+-Ordinary reads never remove temporary files or migrate user data.
+-
+-Module dependency rule: imports only from stdlib plus the ``history`` model and
+-the ``parser`` sibling module. No ``agents`` imports. No ``cli`` imports.
++The old path names the same module object rather than a copy of its names, so private helpers,
++module attributes and anything patched on one path are the same on the other.
+ """
+ 
+-from __future__ import annotations
+-
+-import json
+-import os
+-import tempfile
+-from pathlib import Path
+-from typing import Any
+-
+-from tracemantle.core.history import (
+-    LEDGER_SCHEMA_VERSION,
+-    Ledger,
+-    LedgerEntry,
+-    LedgerError,
+-    ResultCounts,
+-    RunAgents,
+-    ValidationModes,
+-    _entry_to_dict,
+-)
+-from tracemantle.io_limits import MAX_LEDGER_BYTES, read_guarded_text
+-from tracemantle.parser import ParsedSkill
+-
+-
+-def _entry_from_dict(data: Any, path: Path) -> LedgerEntry:
+-    """Deserialize a LedgerEntry from a dict. Raises LedgerError on missing keys."""
+-    try:
+-        if not isinstance(data, dict):
+-            raise LedgerError(f"Malformed history entry at {path}: expected an object.")
+-        for name in ('timestamp_utc', 'skillcheck_version', 'skill_content_hash'):
+-            if not isinstance(data[name], str) or not data[name]:
+-                raise LedgerError(f"History {name} must be a nonempty string.")
+-        from datetime import datetime
+-        try:
+-            timestamp = datetime.fromisoformat(data['timestamp_utc'].replace('Z', '+00:00'))
+-            if timestamp.tzinfo is None:
+-                raise ValueError('timezone is missing')
+-        except ValueError as exc:
+-            raise LedgerError(f"Invalid history timestamp_utc: {exc}") from exc
+-        if type(data['exit_code']) is not int or data['exit_code'] not in (0, 1, 2, 3):
+-            raise LedgerError('History exit_code must be an integer from 0 to 3.')
+-        for section in ('validation_modes', 'agents', 'result'):
+-            if not isinstance(data[section], dict):
+-                raise LedgerError(f'History {section} must be an object.')
+-        for key in ('symbolic', 'critique', 'graph'):
+-            if type(data['validation_modes'][key]) is not bool:
+-                raise LedgerError(f'History validation_modes.{key} must be a boolean.')
+-        for key in ('error', 'warning', 'info'):
+-            if type(data['result'][key]) is not int or data['result'][key] < 0:
+-                raise LedgerError(f'History result.{key} must be a nonnegative integer.')
+-        if type(data['result']['valid']) is not bool or data['result']['valid'] != (data['result']['error'] == 0):
+-            raise LedgerError('History result.valid must be a boolean consistent with error counts.')
+-        for key in ('critique_agent', 'graph_agent'):
+-            if data['agents'][key] is not None and not isinstance(data['agents'][key], str):
+-                raise LedgerError(f'History agents.{key} must be a string or null.')
+-        modes_d = data["validation_modes"]
+-        agents_d = data["agents"]
+-        result_d = data["result"]
+-        return LedgerEntry(
+-            timestamp_utc=data["timestamp_utc"],
+-            skillcheck_version=data["skillcheck_version"],
+-            skill_content_hash=data["skill_content_hash"],
+-            validation_modes=ValidationModes(
+-                symbolic=modes_d["symbolic"],
+-                critique=modes_d["critique"],
+-                graph=modes_d["graph"],
+-            ),
+-            agents=RunAgents(
+-                critique_agent=agents_d["critique_agent"],
+-                graph_agent=agents_d["graph_agent"],
+-            ),
+-            result=ResultCounts(
+-                error=result_d["error"],
+-                warning=result_d["warning"],
+-                info=result_d["info"],
+-                valid=result_d["valid"],
+-            ),
+-            exit_code=data["exit_code"],
+-        )
+-    except KeyError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} is missing required field {exc}. "
+-            f"The file may be from a different schema version or is corrupt. "
+-            f"Delete it and re-run with --history to start fresh."
+-        ) from exc
+-
+-
+-def load_ledger(path: Path) -> Ledger | None:
+-    """Load and parse the ledger file at *path*.
+-
+-    Args:
+-        path: Path to a ``.skillcheck-history.json`` file.
+-
+-    Returns:
+-        Parsed Ledger, or None if the file does not exist.
+-
+-    Raises:
+-        LedgerError: If the file exists but cannot be read or parsed.
+-    """
+-    if not path.exists():
+-        return None
+-    if path.is_dir():
+-        from tracemantle.history_store import iter_history_records
+-        entries = [entry for _, entry in iter_history_records(path)]
+-        return Ledger(LEDGER_SCHEMA_VERSION, str(path), tuple(sorted(entries, key=lambda e: e.timestamp_utc)))
+-    try:
+-        raw = read_guarded_text(path, max_bytes=MAX_LEDGER_BYTES, what="Ledger", error_cls=LedgerError)
+-    except OSError as exc:
+-        raise LedgerError(
+-            f"Cannot read ledger at {path}: {exc}. "
+-            f"Check file permissions and retry."
+-        ) from exc
+-    try:
+-        from tracemantle.storage import EvidenceError, decode_json
+-        data = decode_json(raw, max_bytes=MAX_LEDGER_BYTES)
+-    except EvidenceError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} is not valid JSON: {exc}. "
+-            f"The file may be corrupt. Delete it and re-run with --history to start fresh."
+-        ) from exc
+-
+-    if not isinstance(data, dict):
+-        raise LedgerError(
+-            f"Ledger at {path} must be a JSON object, got {type(data).__name__}. "
+-            f"The file is corrupt. Delete it and re-run with --history to start fresh."
+-        )
+-
+-    try:
+-        version = data["version"]
+-        skill_path = data["skill_path"]
+-        runs_raw = data["runs"]
+-    except KeyError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} is missing top-level field {exc}. "
+-            f"The file may be incomplete or from an incompatible schema version."
+-        ) from exc
+-
+-    if type(version) is not int or version != LEDGER_SCHEMA_VERSION:
+-        raise LedgerError(
+-            f"Ledger at {path} has schema version {version!r}, but this tracemantle "
+-            f"expects version {LEDGER_SCHEMA_VERSION}. Delete it and re-run with "
+-            f"--history to start fresh under the current schema."
+-        )
+-
+-    if not isinstance(skill_path, str):
+-        raise LedgerError("History skill_path must be a string.")
+-    if not isinstance(runs_raw, list):
+-        raise LedgerError(
+-            f"Ledger at {path} field 'runs' must be a list, got {type(runs_raw).__name__}. "
+-            f"The file is corrupt. Delete it and re-run with --history to start fresh."
+-        )
+-
+-    try:
+-        runs = tuple(_entry_from_dict(r, path) for r in runs_raw)
+-    except TypeError as exc:
+-        raise LedgerError(
+-            f"Ledger at {path} contains a malformed run entry: {exc}. "
+-            f"The file is corrupt. Delete it and re-run with --history to start fresh."
+-        ) from exc
+-    return Ledger(version=version, skill_path=skill_path, runs=runs)
+-
+-
+-def save_ledger(path: Path, ledger: Ledger) -> None:
+-    """Serialize and write the ledger atomically via tempfile + rename.
+-
+-    Writes to a temp file in the same directory as *path*, then uses
+-    ``os.replace`` (atomic on POSIX; best-effort on Windows). If the
+-    directory does not exist, the OS error propagates as LedgerError.
+-
+-    Args:
+-        path: Destination path for the ledger file.
+-        ledger: Ledger to serialize.
+-
+-    Raises:
+-        LedgerError: If the write or rename fails.
+-    """
+-    payload = {
+-        "version": ledger.version,
+-        "skill_path": ledger.skill_path,
+-        "runs": [_entry_to_dict(e) for e in ledger.runs],
+-    }
+-    serialized = json.dumps(payload, indent=2, sort_keys=False, ensure_ascii=False)
+-
+-    try:
+-        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".skillcheck-tmp-")
+-        try:
+-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+-                f.write(serialized)
+-                f.write("\n")
+-                # Force the bytes to disk before the rename so a crash between
+-                # replace and the OS flushing its cache cannot leave a truncated
+-                # ledger. The temp fd is fsynced while still open.
+-                f.flush()
+-                os.fsync(f.fileno())
+-            os.replace(tmp_path, path)
+-        except Exception:
+-            try:
+-                os.unlink(tmp_path)
+-            except OSError:
+-                pass
+-            raise
+-    except OSError as exc:
+-        raise LedgerError(
+-            f"Cannot write ledger to {path}: {exc}. "
+-            f"Check directory permissions or disk space."
+-        ) from exc
+-
+-
+-def append_run(
+-    path: Path,
+-    skill: ParsedSkill,
+-    entry: LedgerEntry,
+-) -> Ledger:
+-    """Load or initialize the ledger, append the entry, save, and return the new ledger.
+-
+-    On first call (no ledger file), initializes with ``version=LEDGER_SCHEMA_VERSION``
+-    and ``skill_path`` set to the relative path of the skill from the ledger directory.
+-
+-    On subsequent calls, verifies that the existing ledger's ``skill_path`` matches
+-    before appending. A mismatch means the ledger file landed in the wrong place.
+-
+-    Args:
+-        path: Path to the ``.skillcheck-history.json`` ledger file.
+-        skill: The skill that was validated (used to derive ``skill_path``).
+-        entry: The entry to append.
+-
+-    Returns:
+-        The updated Ledger with the new entry appended.
+-
+-    Raises:
+-        LedgerError: If the existing ledger is for a different skill, or if any
+-            I/O operation fails.
+-    """
+-    existing = load_ledger(path)
+-
+-    try:
+-        relative_skill_path = str(skill.path.relative_to(path.parent))
+-    except ValueError:
+-        # Skill is not beneath the ledger directory (e.g., different drive on Windows).
+-        # Fall back to the absolute path as a string so the ledger is still useful.
+-        relative_skill_path = str(skill.path)
++import sys
+ 
+-    if existing is None:
+-        ledger = Ledger(
+-            version=LEDGER_SCHEMA_VERSION,
+-            skill_path=relative_skill_path,
+-            runs=(entry,),
+-        )
+-    else:
+-        if existing.skill_path != relative_skill_path:
+-            raise LedgerError(
+-                f"Ledger at {path} is for skill '{existing.skill_path}' but the current skill "
+-                f"resolves to '{relative_skill_path}'. The ledger file may have been moved or "
+-                f"the skill was renamed. Delete the ledger and re-run with --history to restart."
+-            )
+-        ledger = Ledger(
+-            version=existing.version,
+-            skill_path=existing.skill_path,
+-            runs=existing.runs + (entry,),
+-        )
++from tracemantle.history import io as _io
+ 
+-    save_ledger(path, ledger)
+-    return ledger
++sys.modules[__name__] = _io
+diff --git a/src/tracemantle/history/__init__.py b/src/tracemantle/history/__init__.py
+new file mode 100644
+index 0000000..f425b1f
+--- /dev/null
++++ b/src/tracemantle/history/__init__.py
+@@ -0,0 +1,7 @@
++"""Validation history: the legacy ledger's filesystem I/O (``io``) and the immutable per-run
++records new CLI writes use (``store``).
++
++The model, regression and rendering logic stays in ``tracemantle.core.history``. This package
++imports nothing at load time, so ``tracemantle.core.history`` can keep re-exporting from
++``tracemantle.history.io`` at its bottom.
++"""
+diff --git a/src/tracemantle/history/io.py b/src/tracemantle/history/io.py
+new file mode 100644
+index 0000000..11bba54
+--- /dev/null
++++ b/src/tracemantle/history/io.py
+@@ -0,0 +1,277 @@
++"""Filesystem I/O for the validation history ledger.
++
++Serialization, atomic writes, and load/append of ``.skillcheck-history.json``
++live here, separated from the model, regression, and rendering logic in
++``tracemantle/core/history.py``. ``history.py`` re-exports ``load_ledger``, ``save_ledger``, and
++``append_run`` so ``from tracemantle.core.history import load_ledger`` still works.
++
++The legacy save/append API remains single-writer compatibility code. New CLI
++writes use immutable per-run records in ``tracemantle.history.store`` outside the bundle.
++The old path ``tracemantle.core.history_io`` names this same module.
++Ordinary reads never remove temporary files or migrate user data.
++
++Module dependency rule: imports only from stdlib plus the ``history`` model and
++the ``parser`` sibling module. No ``agents`` imports. No ``cli`` imports.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import tempfile
++from pathlib import Path
++from typing import Any
++
++from tracemantle.core.history import (
++    LEDGER_SCHEMA_VERSION,
++    Ledger,
++    LedgerEntry,
++    LedgerError,
++    ResultCounts,
++    RunAgents,
++    ValidationModes,
++    _entry_to_dict,
++)
++from tracemantle.io_limits import MAX_LEDGER_BYTES, read_guarded_text
++from tracemantle.parser import ParsedSkill
++
++
++def _entry_from_dict(data: Any, path: Path) -> LedgerEntry:
++    """Deserialize a LedgerEntry from a dict. Raises LedgerError on missing keys."""
++    try:
++        if not isinstance(data, dict):
++            raise LedgerError(f"Malformed history entry at {path}: expected an object.")
++        for name in ('timestamp_utc', 'skillcheck_version', 'skill_content_hash'):
++            if not isinstance(data[name], str) or not data[name]:
++                raise LedgerError(f"History {name} must be a nonempty string.")
++        from datetime import datetime
++        try:
++            timestamp = datetime.fromisoformat(data['timestamp_utc'].replace('Z', '+00:00'))
++            if timestamp.tzinfo is None:
++                raise ValueError('timezone is missing')
++        except ValueError as exc:
++            raise LedgerError(f"Invalid history timestamp_utc: {exc}") from exc
++        if type(data['exit_code']) is not int or data['exit_code'] not in (0, 1, 2, 3):
++            raise LedgerError('History exit_code must be an integer from 0 to 3.')
++        for section in ('validation_modes', 'agents', 'result'):
++            if not isinstance(data[section], dict):
++                raise LedgerError(f'History {section} must be an object.')
++        for key in ('symbolic', 'critique', 'graph'):
++            if type(data['validation_modes'][key]) is not bool:
++                raise LedgerError(f'History validation_modes.{key} must be a boolean.')
++        for key in ('error', 'warning', 'info'):
++            if type(data['result'][key]) is not int or data['result'][key] < 0:
++                raise LedgerError(f'History result.{key} must be a nonnegative integer.')
++        if type(data['result']['valid']) is not bool or data['result']['valid'] != (data['result']['error'] == 0):
++            raise LedgerError('History result.valid must be a boolean consistent with error counts.')
++        for key in ('critique_agent', 'graph_agent'):
++            if data['agents'][key] is not None and not isinstance(data['agents'][key], str):
++                raise LedgerError(f'History agents.{key} must be a string or null.')
++        modes_d = data["validation_modes"]
++        agents_d = data["agents"]
++        result_d = data["result"]
++        return LedgerEntry(
++            timestamp_utc=data["timestamp_utc"],
++            skillcheck_version=data["skillcheck_version"],
++            skill_content_hash=data["skill_content_hash"],
++            validation_modes=ValidationModes(
++                symbolic=modes_d["symbolic"],
++                critique=modes_d["critique"],
++                graph=modes_d["graph"],
++            ),
++            agents=RunAgents(
++                critique_agent=agents_d["critique_agent"],
++                graph_agent=agents_d["graph_agent"],
++            ),
++            result=ResultCounts(
++                error=result_d["error"],
++                warning=result_d["warning"],
++                info=result_d["info"],
++                valid=result_d["valid"],
++            ),
++            exit_code=data["exit_code"],
++        )
++    except KeyError as exc:
++        raise LedgerError(
++            f"Ledger at {path} is missing required field {exc}. "
++            f"The file may be from a different schema version or is corrupt. "
++            f"Delete it and re-run with --history to start fresh."
++        ) from exc
++
++
++def load_ledger(path: Path) -> Ledger | None:
++    """Load and parse the ledger file at *path*.
++
++    Args:
++        path: Path to a ``.skillcheck-history.json`` file.
++
++    Returns:
++        Parsed Ledger, or None if the file does not exist.
++
++    Raises:
++        LedgerError: If the file exists but cannot be read or parsed.
++    """
++    if not path.exists():
++        return None
++    if path.is_dir():
++        from tracemantle.history.store import iter_history_records
++        entries = [entry for _, entry in iter_history_records(path)]
++        return Ledger(LEDGER_SCHEMA_VERSION, str(path), tuple(sorted(entries, key=lambda e: e.timestamp_utc)))
++    try:
++        raw = read_guarded_text(path, max_bytes=MAX_LEDGER_BYTES, what="Ledger", error_cls=LedgerError)
++    except OSError as exc:
++        raise LedgerError(
++            f"Cannot read ledger at {path}: {exc}. "
++            f"Check file permissions and retry."
++        ) from exc
++    try:
++        from tracemantle.storage import EvidenceError, decode_json
++        data = decode_json(raw, max_bytes=MAX_LEDGER_BYTES)
++    except EvidenceError as exc:
++        raise LedgerError(
++            f"Ledger at {path} is not valid JSON: {exc}. "
++            f"The file may be corrupt. Delete it and re-run with --history to start fresh."
++        ) from exc
++
++    if not isinstance(data, dict):
++        raise LedgerError(
++            f"Ledger at {path} must be a JSON object, got {type(data).__name__}. "
++            f"The file is corrupt. Delete it and re-run with --history to start fresh."
++        )
++
++    try:
++        version = data["version"]
++        skill_path = data["skill_path"]
++        runs_raw = data["runs"]
++    except KeyError as exc:
++        raise LedgerError(
++            f"Ledger at {path} is missing top-level field {exc}. "
++            f"The file may be incomplete or from an incompatible schema version."
++        ) from exc
++
++    if type(version) is not int or version != LEDGER_SCHEMA_VERSION:
++        raise LedgerError(
++            f"Ledger at {path} has schema version {version!r}, but this tracemantle "
++            f"expects version {LEDGER_SCHEMA_VERSION}. Delete it and re-run with "
++            f"--history to start fresh under the current schema."
++        )
++
++    if not isinstance(skill_path, str):
++        raise LedgerError("History skill_path must be a string.")
++    if not isinstance(runs_raw, list):
++        raise LedgerError(
++            f"Ledger at {path} field 'runs' must be a list, got {type(runs_raw).__name__}. "
++            f"The file is corrupt. Delete it and re-run with --history to start fresh."
++        )
++
++    try:
++        runs = tuple(_entry_from_dict(r, path) for r in runs_raw)
++    except TypeError as exc:
++        raise LedgerError(
++            f"Ledger at {path} contains a malformed run entry: {exc}. "
++            f"The file is corrupt. Delete it and re-run with --history to start fresh."
++        ) from exc
++    return Ledger(version=version, skill_path=skill_path, runs=runs)
++
++
++def save_ledger(path: Path, ledger: Ledger) -> None:
++    """Serialize and write the ledger atomically via tempfile + rename.
++
++    Writes to a temp file in the same directory as *path*, then uses
++    ``os.replace`` (atomic on POSIX; best-effort on Windows). If the
++    directory does not exist, the OS error propagates as LedgerError.
++
++    Args:
++        path: Destination path for the ledger file.
++        ledger: Ledger to serialize.
++
++    Raises:
++        LedgerError: If the write or rename fails.
++    """
++    payload = {
++        "version": ledger.version,
++        "skill_path": ledger.skill_path,
++        "runs": [_entry_to_dict(e) for e in ledger.runs],
++    }
++    serialized = json.dumps(payload, indent=2, sort_keys=False, ensure_ascii=False)
++
++    try:
++        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".skillcheck-tmp-")
++        try:
++            with os.fdopen(fd, "w", encoding="utf-8") as f:
++                f.write(serialized)
++                f.write("\n")
++                # Force the bytes to disk before the rename so a crash between
++                # replace and the OS flushing its cache cannot leave a truncated
++                # ledger. The temp fd is fsynced while still open.
++                f.flush()
++                os.fsync(f.fileno())
++            os.replace(tmp_path, path)
++        except Exception:
++            try:
++                os.unlink(tmp_path)
++            except OSError:
++                pass
++            raise
++    except OSError as exc:
++        raise LedgerError(
++            f"Cannot write ledger to {path}: {exc}. "
++            f"Check directory permissions or disk space."
++        ) from exc
++
++
++def append_run(
++    path: Path,
++    skill: ParsedSkill,
++    entry: LedgerEntry,
++) -> Ledger:
++    """Load or initialize the ledger, append the entry, save, and return the new ledger.
++
++    On first call (no ledger file), initializes with ``version=LEDGER_SCHEMA_VERSION``
++    and ``skill_path`` set to the relative path of the skill from the ledger directory.
++
++    On subsequent calls, verifies that the existing ledger's ``skill_path`` matches
++    before appending. A mismatch means the ledger file landed in the wrong place.
++
++    Args:
++        path: Path to the ``.skillcheck-history.json`` ledger file.
++        skill: The skill that was validated (used to derive ``skill_path``).
++        entry: The entry to append.
++
++    Returns:
++        The updated Ledger with the new entry appended.
++
++    Raises:
++        LedgerError: If the existing ledger is for a different skill, or if any
++            I/O operation fails.
++    """
++    existing = load_ledger(path)
++
++    try:
++        relative_skill_path = str(skill.path.relative_to(path.parent))
++    except ValueError:
++        # Skill is not beneath the ledger directory (e.g., different drive on Windows).
++        # Fall back to the absolute path as a string so the ledger is still useful.
++        relative_skill_path = str(skill.path)
++
++    if existing is None:
++        ledger = Ledger(
++            version=LEDGER_SCHEMA_VERSION,
++            skill_path=relative_skill_path,
++            runs=(entry,),
++        )
++    else:
++        if existing.skill_path != relative_skill_path:
++            raise LedgerError(
++                f"Ledger at {path} is for skill '{existing.skill_path}' but the current skill "
++                f"resolves to '{relative_skill_path}'. The ledger file may have been moved or "
++                f"the skill was renamed. Delete the ledger and re-run with --history to restart."
++            )
++        ledger = Ledger(
++            version=existing.version,
++            skill_path=existing.skill_path,
++            runs=existing.runs + (entry,),
++        )
++
++    save_ledger(path, ledger)
++    return ledger
+diff --git a/src/tracemantle/history/store.py b/src/tracemantle/history/store.py
+new file mode 100644
+index 0000000..90bb9b1
+--- /dev/null
++++ b/src/tracemantle/history/store.py
+@@ -0,0 +1,81 @@
++"""New history writes never update a shared ledger or alter a skill bundle."""
++from __future__ import annotations
++
++import re
++import uuid
++from collections.abc import Iterator
++from dataclasses import asdict
++from itertools import islice
++from pathlib import Path
++from typing import Any
++
++from tracemantle import __version__
++from tracemantle.bundle import create_manifest
++from tracemantle.core.history import LedgerEntry, LedgerError, _entry_to_dict, load_ledger
++from tracemantle.history.io import _entry_from_dict
++from tracemantle.io_limits import MAX_LEDGER_BYTES, MAX_SCAN_BYTES, read_bounded_bytes
++from tracemantle.parser import ParsedSkill
++from tracemantle.storage import EvidenceError, decode_json, digest, outside_bundle, put_bytes, put_record
++
++
++def history_identity(skill: ParsedSkill, options: dict[str, Any]) -> tuple[str, str]:
++    manifest = create_manifest(skill.path.parent, document=skill)
++    return manifest.sha256, digest({'document': asdict(skill.settings), 'options': options, 'checker_version': __version__})
++
++
++def append_history(root: Path, skill: ParsedSkill, entry: LedgerEntry, identity: tuple[str, str]) -> Path:
++    outside_bundle(root, skill.path.parent)
++    return put_record(root, {'schema_version': 2, 'kind': 'validation-history', 'run_id': uuid.uuid4().hex,
++                            'bundle_sha256': identity[0], 'configuration_sha256': identity[1], 'entry': _entry_to_dict(entry)})
++
++
++def read_history_record(path: Path, *, max_bytes: int = MAX_LEDGER_BYTES) -> tuple[dict[str, Any], LedgerEntry, int]:
++    try:
++        raw = read_bounded_bytes(path, max_bytes=max_bytes, what="History record", error_cls=EvidenceError)
++        data = decode_json(raw, max_bytes=max_bytes)
++        fields = {'schema_version', 'kind', 'run_id', 'bundle_sha256', 'configuration_sha256', 'entry'}
++        if not isinstance(data, dict) or set(data) != fields or type(data['schema_version']) is not int or data['schema_version'] != 2 or data['kind'] != 'validation-history':
++            raise EvidenceError('Expected exactly the version-two validation-history fields.')
++        if not isinstance(data['run_id'], str) or not data['run_id'] or len(data['run_id']) > 128:
++            raise EvidenceError('History run_id must be a nonempty bounded string.')
++        for field in ('bundle_sha256', 'configuration_sha256'):
++            if not isinstance(data[field], str) or not re.fullmatch('[0-9a-f]{64}', data[field]):
++                raise EvidenceError(f'History {field} requires a full SHA-256 digest.')
++        if path.stem != digest(data):
++            raise EvidenceError('History filename does not match its immutable content digest.')
++        return data, _entry_from_dict(data['entry'], path), len(raw)
++    except EvidenceError as exc:
++        raise LedgerError(f'Malformed history record at {path}: {exc}. Preserve it for inspection.') from exc
++
++
++def iter_history_records(root: Path) -> Iterator[tuple[dict[str, Any], LedgerEntry]]:
++    paths = sorted(islice(root.glob('*.json'), 10001)) if root.is_dir() else []
++    if len(paths) > 10000:
++        raise LedgerError('History exceeds the 10000-record limit; archive older records.')
++    total = 0
++    for path in paths:
++        data, entry, size = read_history_record(path, max_bytes=min(MAX_LEDGER_BYTES, MAX_SCAN_BYTES - total))
++        total += size
++        yield data, entry
++
++
++def comparable_runs(root: Path, identity: tuple[str, str]) -> tuple[LedgerEntry, ...]:
++    runs = [entry for data, entry in iter_history_records(root)
++            if (data['bundle_sha256'], data['configuration_sha256']) == identity]
++    return tuple(sorted(runs, key=lambda r: r.timestamp_utc))
++
++
++def migrate_legacy(source: Path, destination: Path) -> dict[str, object]:
++    outside_bundle(destination, source.parent)
++    ledger = load_ledger(source)
++    if ledger is None:
++        raise EvidenceError(f'Legacy ledger {source} does not exist.')
++    raw = read_bounded_bytes(source, max_bytes=MAX_LEDGER_BYTES, what='Legacy history', error_cls=EvidenceError)
++    artifact = put_bytes(destination / 'sources', raw)
++    records = []
++    for index, entry in enumerate(ledger.runs):
++        record = {'schema_version': 2, 'kind': 'legacy-history', 'source_sha256': artifact.stem,
++                  'source_index': index, 'entry': _entry_to_dict(entry), 'comparison_state': 'unknown',
++                  'reason': 'Version-one history lacks bundle, checker, fixture and execution identities.'}
++        records.append(str(put_record(destination / 'records', record)))
++    return {'source_preserved': str(source), 'source_copy': str(artifact), 'records': records, 'state': 'unknown'}
+diff --git a/src/tracemantle/history_store.py b/src/tracemantle/history_store.py
+index 6238c60..0dde5ae 100644
+--- a/src/tracemantle/history_store.py
++++ b/src/tracemantle/history_store.py
+@@ -1,81 +1,11 @@
+-"""New history writes never update a shared ledger or alter a skill bundle."""
+-from __future__ import annotations
++"""Compatibility path; the module now lives at ``tracemantle.history.store``.
+ 
+-import re
+-import uuid
+-from collections.abc import Iterator
+-from dataclasses import asdict
+-from itertools import islice
+-from pathlib import Path
+-from typing import Any
++The old path names the same module object rather than a copy of its names, so private helpers,
++module attributes and anything patched on one path are the same on the other.
++"""
+ 
+-from tracemantle import __version__
+-from tracemantle.bundle import create_manifest
+-from tracemantle.core.history import LedgerEntry, LedgerError, _entry_to_dict, load_ledger
+-from tracemantle.core.history_io import _entry_from_dict
+-from tracemantle.io_limits import MAX_LEDGER_BYTES, MAX_SCAN_BYTES, read_bounded_bytes
+-from tracemantle.parser import ParsedSkill
+-from tracemantle.storage import EvidenceError, decode_json, digest, outside_bundle, put_bytes, put_record
++import sys
+ 
++from tracemantle.history import store as _store
+ 
+-def history_identity(skill: ParsedSkill, options: dict[str, Any]) -> tuple[str, str]:
+-    manifest = create_manifest(skill.path.parent, document=skill)
+-    return manifest.sha256, digest({'document': asdict(skill.settings), 'options': options, 'checker_version': __version__})
+-
+-
+-def append_history(root: Path, skill: ParsedSkill, entry: LedgerEntry, identity: tuple[str, str]) -> Path:
+-    outside_bundle(root, skill.path.parent)
+-    return put_record(root, {'schema_version': 2, 'kind': 'validation-history', 'run_id': uuid.uuid4().hex,
+-                            'bundle_sha256': identity[0], 'configuration_sha256': identity[1], 'entry': _entry_to_dict(entry)})
+-
+-
+-def read_history_record(path: Path, *, max_bytes: int = MAX_LEDGER_BYTES) -> tuple[dict[str, Any], LedgerEntry, int]:
+-    try:
+-        raw = read_bounded_bytes(path, max_bytes=max_bytes, what="History record", error_cls=EvidenceError)
+-        data = decode_json(raw, max_bytes=max_bytes)
+-        fields = {'schema_version', 'kind', 'run_id', 'bundle_sha256', 'configuration_sha256', 'entry'}
+-        if not isinstance(data, dict) or set(data) != fields or type(data['schema_version']) is not int or data['schema_version'] != 2 or data['kind'] != 'validation-history':
+-            raise EvidenceError('Expected exactly the version-two validation-history fields.')
+-        if not isinstance(data['run_id'], str) or not data['run_id'] or len(data['run_id']) > 128:
+-            raise EvidenceError('History run_id must be a nonempty bounded string.')
+-        for field in ('bundle_sha256', 'configuration_sha256'):
+-            if not isinstance(data[field], str) or not re.fullmatch('[0-9a-f]{64}', data[field]):
+-                raise EvidenceError(f'History {field} requires a full SHA-256 digest.')
+-        if path.stem != digest(data):
+-            raise EvidenceError('History filename does not match its immutable content digest.')
+-        return data, _entry_from_dict(data['entry'], path), len(raw)
+-    except EvidenceError as exc:
+-        raise LedgerError(f'Malformed history record at {path}: {exc}. Preserve it for inspection.') from exc
+-
+-
+-def iter_history_records(root: Path) -> Iterator[tuple[dict[str, Any], LedgerEntry]]:
+-    paths = sorted(islice(root.glob('*.json'), 10001)) if root.is_dir() else []
+-    if len(paths) > 10000:
+-        raise LedgerError('History exceeds the 10000-record limit; archive older records.')
+-    total = 0
+-    for path in paths:
+-        data, entry, size = read_history_record(path, max_bytes=min(MAX_LEDGER_BYTES, MAX_SCAN_BYTES - total))
+-        total += size
+-        yield data, entry
+-
+-
+-def comparable_runs(root: Path, identity: tuple[str, str]) -> tuple[LedgerEntry, ...]:
+-    runs = [entry for data, entry in iter_history_records(root)
+-            if (data['bundle_sha256'], data['configuration_sha256']) == identity]
+-    return tuple(sorted(runs, key=lambda r: r.timestamp_utc))
+-
+-
+-def migrate_legacy(source: Path, destination: Path) -> dict[str, object]:
+-    outside_bundle(destination, source.parent)
+-    ledger = load_ledger(source)
+-    if ledger is None:
+-        raise EvidenceError(f'Legacy ledger {source} does not exist.')
+-    raw = read_bounded_bytes(source, max_bytes=MAX_LEDGER_BYTES, what='Legacy history', error_cls=EvidenceError)
+-    artifact = put_bytes(destination / 'sources', raw)
+-    records = []
+-    for index, entry in enumerate(ledger.runs):
+-        record = {'schema_version': 2, 'kind': 'legacy-history', 'source_sha256': artifact.stem,
+-                  'source_index': index, 'entry': _entry_to_dict(entry), 'comparison_state': 'unknown',
+-                  'reason': 'Version-one history lacks bundle, checker, fixture and execution identities.'}
+-        records.append(str(put_record(destination / 'records', record)))
+-    return {'source_preserved': str(source), 'source_copy': str(artifact), 'records': records, 'state': 'unknown'}
++sys.modules[__name__] = _store
+diff --git a/src/tracemantle/product_commands.py b/src/tracemantle/product_commands.py
+index 40a1130..f56b2b6 100644
+--- a/src/tracemantle/product_commands.py
++++ b/src/tracemantle/product_commands.py
+@@ -14,7 +14,7 @@ from tracemantle.core.history import LedgerError
+ from tracemantle.display import terminal
+ from tracemantle.evidence import evidence_from_dict
+ from tracemantle.formatters import _escape_data, _escape_property
+-from tracemantle.history_store import migrate_legacy
++from tracemantle.history.store import migrate_legacy
+ from tracemantle.io_limits import MAX_INGEST_BYTES, MAX_SCAN_BYTES, read_bounded_bytes
+ from tracemantle.policy import load_trusted_policy
+ from tracemantle.promptfoo import import_promptfoo
+diff --git a/tests/history/__init__.py b/tests/history/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/test_history_io.py b/tests/history/test_history_io.py
+similarity index 96%
+rename from tests/test_history_io.py
+rename to tests/history/test_history_io.py
+index 619271f..3746d42 100644
+--- a/tests/test_history_io.py
++++ b/tests/history/test_history_io.py
+@@ -91,7 +91,7 @@ def test_load_raises_error_includes_path(tmp_path: Path):
+ 
+ 
+ def test_load_from_fixture_one_run():
+-    lp = Path(__file__).parent / "fixtures" / "history" / "ledger_one_run.json"
++    lp = Path(__file__).parent.parent / "fixtures" / "history" / "ledger_one_run.json"
+     ledger = load_ledger(lp)
+     assert ledger is not None
+     assert ledger.version == 1
+@@ -100,7 +100,7 @@ def test_load_from_fixture_one_run():
+ 
+ 
+ def test_load_from_fixture_multi_run():
+-    lp = Path(__file__).parent / "fixtures" / "history" / "ledger_multi_run_passing.json"
++    lp = Path(__file__).parent.parent / "fixtures" / "history" / "ledger_multi_run_passing.json"
+     ledger = load_ledger(lp)
+     assert ledger is not None
+     assert len(ledger.runs) == 3
+@@ -108,12 +108,12 @@ def test_load_from_fixture_multi_run():
+ 
+ 
+ def test_load_from_fixture_malformed_raises():
+-    lp = Path(__file__).parent / "fixtures" / "history" / "ledger_malformed.json"
++    lp = Path(__file__).parent.parent / "fixtures" / "history" / "ledger_malformed.json"
+     with pytest.raises(LedgerError):
+         load_ledger(lp)
+ 
+ 
+-_HISTORY_FIXTURES = Path(__file__).parent / "fixtures" / "history"
++_HISTORY_FIXTURES = Path(__file__).parent.parent / "fixtures" / "history"
+ 
+ 
+ def test_load_raises_when_root_is_not_object():
+diff --git a/tests/test_history_model.py b/tests/history/test_history_model.py
+similarity index 100%
+rename from tests/test_history_model.py
+rename to tests/history/test_history_model.py
+diff --git a/tests/test_history_regression.py b/tests/history/test_history_regression.py
+similarity index 100%
+rename from tests/test_history_regression.py
+rename to tests/history/test_history_regression.py
