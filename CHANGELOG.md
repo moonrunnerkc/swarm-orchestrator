@@ -3,6 +3,33 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
+## 16.0.3 - 2026-11-04
+
+A patch release for two verifier defects, found while resolving 16.0.2's open items.
+
+### Fixed
+
+- **swarm-verify 2.0.3**, pinned exactly:
+  - **No refactor passes without structure evidence.** When a refactor named no structure, the
+    verifier counted any changed file as its evidence. qwen3.6:35b-a3b added two files of an
+    eight-part move, and 2.0.2 called the run complete. A refactor now needs at least one structure
+    claim that holds, and one that names none is told what to name.
+  - **A generated uv.lock is kept.** A uv.lock that `uv lock` resolves while preparing is now kept
+    with the evidence, and a replay installs from it. 2.0.2 called that lock reproducible,
+    discarded it, and a later replay diverged.
+- **The optional review's prompt carries the platform facts.** It omits the block's advice on
+  editing, because the reviewer replies with one command and changes no file.
+
+### Corrected
+
+- **t5b ironroot is withdrawn as the refactor category's complete run.** Its verdict rested on
+  that made-up evidence. Judged again by 2.0.3, it is incomplete, so neither refactor category has
+  a complete run.
+- **The fix category is verified in isolation.** Two isolated runs from real tracemantle bug-fix
+  commits are complete, each judged by the fix commit's own test sealed as a held-out check (see
+  the acceptance README, "Runs after 16.0.2"). The 16.0.2 notes called the category host-verified
+  only.
+
 ## 16.0.2 - 2026-11-03
 
 A patch release. The model is now told what machine its commands run on, and it can change a file
