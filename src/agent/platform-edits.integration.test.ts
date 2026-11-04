@@ -70,7 +70,7 @@ function followingThePrefix(): ModelClient & { seen: Message[][] } {
     async complete(messages) {
       seen.push([...messages]);
       const turn = turns[seen.length - 1];
-      const offersEdits = (messages[0]?.content ?? "").includes("```edit path/to/file");
+      const offersEdits = (messages[0]?.content ?? "").includes("```edit src/app.ts");
       const content =
         turn === undefined
           ? bash("git status --short")

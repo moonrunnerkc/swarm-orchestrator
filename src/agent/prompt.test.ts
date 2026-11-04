@@ -54,6 +54,15 @@ describe("reading a reply", () => {
 });
 
 describe("reading an edit or write block", () => {
+  // qwen3.6:35b-a3b read the forms' placeholder `path/to/file` as a field name and wrote
+  // ```edit path=src/adversarial/fs-walk.ts in both of its dossier runs (sessions
+  // 20261104T141857-20e7e3 and the 16.0.4 candidate's check); the forms show a file as it is named.
+  it("shows each block's fence line with a file name, not a placeholder a model reads as a field", () => {
+    expect(systemPrompt).toContain("```edit src/app.ts\n");
+    expect(systemPrompt).toContain("```write src/app.ts\n");
+    expect(systemPrompt).not.toMatch(/```(edit|write) path/);
+  });
+
   const edit = "```edit src/a.ts\n<<<<<<< SEARCH\n  a\n=======\n  b\n>>>>>>> REPLACE\n```";
 
   it("takes an edit block as the file and its pairs, indentation kept", () => {
@@ -100,8 +109,8 @@ describe("reading an edit or write block", () => {
   });
 
   it("describes both blocks in the system prompt", () => {
-    expect(systemPrompt).toContain("```edit path/to/file");
-    expect(systemPrompt).toContain("```write path/to/file");
+    expect(systemPrompt).toContain("```edit src/app.ts");
+    expect(systemPrompt).toContain("```write src/app.ts");
   });
 });
 
