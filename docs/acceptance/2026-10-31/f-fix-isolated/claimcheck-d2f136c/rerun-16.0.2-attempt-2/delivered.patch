@@ -1,0 +1,80 @@
+diff --git a/src/adapters/vitest-run.test.ts b/src/adapters/vitest-run.test.ts
+new file mode 100644
+index 0000000..1e0a6d0
+--- /dev/null
++++ b/src/adapters/vitest-run.test.ts
+@@ -0,0 +1,36 @@
++import { describe, it, expect } from "vitest";
++import { runVitest } from "./vitest-run.js";
++import { mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
++import { join } from "node:path";
++import { tmpdir } from "node:os";
++
++describe("runVitest", () => {
++  it("reports failedToRun when a test file cannot load", async () => {
++    const dir = await mkdtemp(join(tmpdir(), "vitest-run-test-"));
++    try {
++      await writeFile(join(dir, "package.json"), JSON.stringify({
++        name: "test-run",
++        type: "module",
++        devDependencies: { vitest: "latest" }
++      }));
++      
++      // Create a test file that will fail to load due to a syntax error
++      await writeFile(join(dir, "broken.test.ts"), "import { test } from 'vitest'; test('fail', () => {");
++      
++      // Symlink the project's node_modules so runVitest can find the vitest binary
++      const projectNodeModules = join(process.cwd(), "node_modules");
++      await symlink(projectNodeModules, join(dir, "node_modules"), "junction");
++      
++      const result = await runVitest({
++        cwd: dir,
++        testFiles: ["broken.test.ts"],
++      });
++
++      expect(result.failedToRun).toBe(true);
++      expect(result.passed).toBe(false);
++      expect(result.outcomes).toHaveLength(0);
++    } finally {
++      await rm(dir, { recursive: true, force: true });
++    }
++  });
++});
+diff --git a/src/adapters/vitest-run.ts b/src/adapters/vitest-run.ts
+index e564dc8..08a0fe6 100644
+--- a/src/adapters/vitest-run.ts
++++ b/src/adapters/vitest-run.ts
+@@ -21,6 +21,8 @@ export interface TestOutcome {
+ export interface VitestResult {
+   /** True when the run completed and no test failed. */
+   readonly passed: boolean;
++  /** True when the run failed to execute (e.g. config error, missing dependency). */
++  readonly failedToRun: boolean;
+   /** True when vitest found no test files to run. */
+   readonly noTests: boolean;
+   readonly outcomes: readonly TestOutcome[];
+@@ -143,9 +145,12 @@ export async function runVitest(
+       );
+     const passed =
+       result.code === 0 && !outcomes.some((o) => o.status === "fail");
++    const failedToRun =
++      result.code !== 0 && outcomes.length === 0 && !noTests;
+ 
+     return {
+       passed,
++      failedToRun,
+       noTests,
+       outcomes,
+       exitCode: result.code,
+diff --git a/src/core/pipeline.ts b/src/core/pipeline.ts
+index 3726816..e8c672e 100644
+--- a/src/core/pipeline.ts
++++ b/src/core/pipeline.ts
+@@ -180,6 +180,7 @@ export async function runPipeline(
+     const headTestsPass =
+       activeTestFiles.length > 0 &&
+       !coverage.run.noTests &&
++      !coverage.run.failedToRun &&
+       !trustedOutcomes.some((o) => o.status === "fail");
+     const coveredChangedLines = intersectChangedLines(
+       changedRanges,

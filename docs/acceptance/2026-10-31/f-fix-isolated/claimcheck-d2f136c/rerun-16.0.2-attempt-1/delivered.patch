@@ -1,0 +1,116 @@
+diff --git a/src/adapters/vitest-run.test.ts b/src/adapters/vitest-run.test.ts
+new file mode 100644
+index 0000000..31c7be1
+--- /dev/null
++++ b/src/adapters/vitest-run.test.ts
+@@ -0,0 +1,68 @@
++import { describe, it, expect, vi } from "vitest";
++import { runVitest, type VitestRunOptions } from "./vitest-run.js";
++import { exec } from "../util/exec.js";
++import * as fs from "node:fs/promises";
++import { join } from "node:path";
++import { tmpdir } from "node:os";
++
++vi.mock("../util/exec.js");
++vi.mock("node:fs/promises", async () => {
++  const actual = await vi.importActual("node:fs/promises");
++  return { ...actual };
++});
++
++describe("runVitest", () => {
++  it("reports failedToRun when vitest exits with error and no results file is created", async () => {
++    const cwd = await fs.mkdtemp(join(tmpdir(), "claimcheck-test-cwd-"));
++    
++    // Mock exec to return a non-zero exit code and an error message that is NOT "no tests found"
++    (exec as any).mockResolvedValue({
++      code: 1,
++      stdout: "",
++      stderr: "Error: Cannot find module './missing-dep.js'",
++    });
++
++    // We need to make sure readFile fails because the results file won't exist
++    // The implementation uses mkdtemp for reportDir, so we can't easily mock the file path
++    // but we can mock readFile to throw.
++    const readFileSpy = vi.spyOn(fs, "readFile").mockRejectedValue(new Error("File not found"));
++
++    const options: VitestRunOptions = {
++      cwd,
++      testFiles: ["test.ts"],
++    };
++
++    const result = await runVitest(options);
++
++    expect(result.outcomes).toEqual([{ name: "suite", status: "failedToRun" }]);
++    expect(result.passed).toBe(false);
++    expect(result.noTests).toBe(false);
++
++    readFileSpy.mockRestore();
++    await fs.rm(cwd, { recursive: true, force: true });
++  });
++
++  it("reports noTests when vitest exits with 0 and says no tests found", async () => {
++    const cwd = await fs.mkdtemp(join(tmpdir(), "claimcheck-test-cwd-2-"));
++    
++    (exec as any).mockResolvedValue({
++      code: 0,
++      stdout: "No test files found",
++      stderr: "",
++    });
++
++    vi.spyOn(fs, "readFile").mockRejectedValue(new Error("File not found"));
++
++    const options: VitestRunOptions = {
++      cwd,
++      testFiles: ["non-existent.ts"],
++    };
++
++    const result = await runVitest(options);
++
++    expect(result.noTests).toBe(true);
++    expect(result.outcomes).toEqual([]);
++    
++    await fs.rm(cwd, { recursive: true, force: true });
++  });
++});
+diff --git a/src/adapters/vitest-run.ts b/src/adapters/vitest-run.ts
+index e564dc8..535e7f6 100644
+--- a/src/adapters/vitest-run.ts
++++ b/src/adapters/vitest-run.ts
+@@ -10,7 +10,7 @@ import { exec } from "../util/exec.js";
+  */
+ 
+ /** Status of one test, normalized across runner vocabularies. */
+-export type TestStatus = "pass" | "fail" | "skip";
++export type TestStatus = "pass" | "fail" | "skip" | "failedToRun";
+ 
+ export interface TestOutcome {
+   /** Fully-qualified test name, stable across runs. */
+@@ -136,6 +136,10 @@ export async function runVitest(
+     } catch {
+       // No results file: vitest failed to start or found no tests.
+     }
++
++    if (outcomes.length === 0 && result.code !== 0 && !/No test files found|no test (files|suite)/i.test(result.stderr + result.stdout)) {
++      outcomes = [{ name: "suite", status: "failedToRun" }];
++    }
+     const noTests =
+       outcomes.length === 0 &&
+       /No test files found|no test (files|suite)/i.test(
+diff --git a/src/determinism/flake-fallback.ts b/src/determinism/flake-fallback.ts
+index 9818e97..61ee274 100644
+--- a/src/determinism/flake-fallback.ts
++++ b/src/determinism/flake-fallback.ts
+@@ -22,9 +22,11 @@ export function findFlips(runs: readonly (readonly TestOutcome[])[]): string[] {
+   const seen = new Map<string, Set<"pass" | "fail">>();
+   for (const run of runs) {
+     for (const outcome of run) {
+-      if (outcome.status === "skip") continue;
++      if (outcome.status === "skip" || outcome.status === "failedToRun") continue;
+       const set = seen.get(outcome.name) ?? new Set<"pass" | "fail">();
+-      set.add(outcome.status);
++      if (outcome.status === "pass" || outcome.status === "fail") {
++        set.add(outcome.status as "pass" | "fail");
++      }
+       seen.set(outcome.name, set);
+     }
+   }

@@ -1,0 +1,112 @@
+state        incomplete
+reason       check test: 16 test(s) fail at the base commit and still fail, which does not block: packages/bundle/test/e2e.acceptance.test.ts, packages/bundle/test/phase3-acceptance.test.ts, packages/bundle/test/roundtrip.test.ts, packages/bundle/test/writer.deterministic.test.ts, packages/bundle/test/writer.mode-contract.test.ts and 11 more
+reason       check typecheck is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+reason       check build is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+requirement  R1 satisfied (generateUlid() in packages/core/src/events/ids.ts is meant to put the creation time in a ULID's first 48 bits, but the ids it generates decode to random times (ulidToTime gives anything from 1970 to the year 10888), so event ids do not sort in creation order. Make generated ULIDs carry the current time in their timestamp prefix, keep setFixedUlidSeed deterministic, and add a test.)
+regression   unresolved; 16 inherited; unresolved check build, check typecheck
+base         3429b76176a8516d421738b29c1bc4c87545b08a
+change       2 file(s) from the patch
+check        test: inherited-failures (pnpm run test, pre-existing)
+check        lint: pass (pnpm run lint, pre-existing)
+check        typecheck: unresolved (pnpm run typecheck, pre-existing)
+check        build: unresolved (pnpm run build, pre-existing)
+baseline     1 of 4 check(s) pass at the base commit
+held-out     visible 100%, held-out 100%, gap 0%, judged in 7 process(es)
+test files   1 added
+coverage     unmeasured: the V8 offsets for packages/core/src/events/ids.ts run past the file, so a transform ran first
+mutation     unmeasured: no changed source line has an operator to mutate
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:1b4af39b92a0970aed65065505523670bcd9a175bf06dd17271072945015af05
+
+$ pnpm run test
+e_modules/vite/dist/node/chunks/config.js:[2m27131:22[22m[39m
+[90m [2m❯[22m node_modules/.pnpm/vite@7.3.3_@types+node@24.12.4_yaml@2.9.0/node_modules/vite/dist/node/chunks/config.js:[2m27197:32[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/16]⎯[22m[39m
+
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m packages/cli/test/commands.install.test.ts[2m > [22mPhase 3: installShellShims[2m > [22mcreates shim directory and reports installed binaries
+[31m[1mError[22m: depose-shim binary not found. Build it first:
+  (cd apps/capture-shim && make build-local)
+Or install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including "rm") on your PATH.[39m
+[36m [2m❯[22m installShellShims packages/cli/src/commands/install.ts:[2m302:11[22m[39m
+    [90m300| [39m  [35mconst[39m shimBinary [33m=[39m options[33m.[39mshimBinary [33m||[39m [34mfindShimBinary[39m()[33m;[39m
+    [90m301| [39m  [35mif[39m ([33m![39mshimBinary [33m||[39m [33m![39m[34mexistsSync[39m(shimBinary)) {
+    [90m302| [39m    [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m          [31m^[39m
+    [90m303| [39m      [32m'depose-shim binary not found. Build it first:\n'[39m [33m+[39m
+    [90m304| [39m      [32m'  (cd apps/capture-shim && make build-local)\n'[39m [33m+[39m
+[90m [2m❯[22m packages/cli/test/commands.install.test.ts:[2m130:20[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/16]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m packages/cli/test/commands.install.test.ts[2m > [22mPhase 3: installShellShims[2m > [22mcreates capture directory
+[31m[1mError[22m: depose-shim binary not found. Build it first:
+  (cd apps/capture-shim && make build-local)
+Or install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including "rm") on your PATH.[39m
+[36m [2m❯[22m installShellShims packages/cli/src/commands/install.ts:[2m302:11[22m[39m
+    [90m300| [39m  [35mconst[39m shimBinary [33m=[39m options[33m.[39mshimBinary [33m||[39m [34mfindShimBinary[39m()[33m;[39m
+    [90m301| [39m  [35mif[39m ([33m![39mshimBinary [33m||[39m [33m![39m[34mexistsSync[39m(shimBinary)) {
+    [90m302| [39m    [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m          [31m^[39m
+    [90m303| [39m      [32m'depose-shim binary not found. Build it first:\n'[39m [33m+[39m
+    [90m304| [39m      [32m'  (cd apps/capture-shim && make build-local)\n'[39m [33m+[39m
+[90m [2m❯[22m packages/cli/test/commands.install.test.ts:[2m142:5[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/16]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m packages/cli/test/commands.install.test.ts[2m > [22mPhase 3: installShellShims[2m > [22mreturns empty installed binaries without real shim binary
+[31m[1mError[22m: depose-shim binary not found. Build it first:
+  (cd apps/capture-shim && make build-local)
+Or install a release that includes depose-shim. Refusing to install shell shims because that would leave dangling symlinks (including "rm") on your PATH.[39m
+[36m [2m❯[22m installShellShims packages/cli/src/commands/install.ts:[2m302:11[22m[39m
+    [90m300| [39m  [35mconst[39m shimBinary [33m=[39m options[33m.[39mshimBinary [33m||[39m [34mfindShimBinary[39m()[33m;[39m
+    [90m301| [39m  [35mif[39m ([33m![39mshimBinary [33m||[39m [33m![39m[34mexistsSync[39m(shimBinary)) {
+    [90m302| [39m    [35mthrow[39m [35mnew[39m [33mError[39m(
+    [90m   | [39m          [31m^[39m
+    [90m303| [39m      [32m'depose-shim binary not found. Build it first:\n'[39m [33m+[39m
+    [90m304| [39m      [32m'  (cd apps/capture-shim && make build-local)\n'[39m [33m+[39m
+[90m [2m❯[22m packages/cli/test/commands.install.test.ts:[2m153:20[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/16]⎯[22m[39m
+
+
+
+$ pnpm run typecheck
+
+> depose@0.1.0 typecheck /Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree
+> tsc --build --noEmit
+
+packages/chain/src/hash-chain.ts(18,59): error TS2307: Cannot find module '@depose/core' or its corresponding type declarations.
+packages/narrative/tsconfig.json(12,5): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/core' may not disable emit.
+packages/bundle/tsconfig.json(13,5): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/core' may not disable emit.
+packages/bundle/tsconfig.json(14,5): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/chain' may not disable emit.
+packages/bundle/tsconfig.json(15,5): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/narrative' may not disable emit.
+packages/capture-claude/tsconfig.json(12,18): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/core' may not disable emit.
+packages/bundle/tsconfig.json(14,5): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/chain' may not disable emit.
+packages/bundle/tsconfig.json(15,5): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/narrative' may not disable emit.
+packages/cli/tsconfig.json(12,18): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/core' may not disable emit.
+packages/cli/tsconfig.json(12,41): error TS6310: Referenced project '/Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree/packages/bundle' may not disable emit.
+ ELIFECYCLE  Command failed with exit code 2.
+
+
+$ pnpm run build
+
+> depose@0.1.0 build /Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/home/work/swarm-verify-HO6Fra/tree
+> tsc --build && npm run build:shim && npm run build:bundle
+
+
+> depose@0.1.0 build:shim
+> cd apps/capture-shim && make build-local
+
+go build -ldflags "-s -w" -o depose-shim .
+ ELIFECYCLE  Command failed with exit code 2.
+/bin/sh: 1: go: not found
+make: *** [Makefile:21: build-local] Error 127
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/patch-run/fix-depose/attempt-2/held-out/verdict/attestation.pub.pem
+exit 4

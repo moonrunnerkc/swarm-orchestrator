@@ -33,16 +33,17 @@ A category counts only with a complete run of its own task whose replay agrees; 
 | Fix a real defect | t3 ruleprobe (`--host`) | 20261101T042617-8a01e0 | complete | swarm-redesign-qwen36-32k, Ollama auto | 560,835 / 4,765 | agrees on the host (`final/replay-host.out`); the first replay ran in a container and diverged | |
 | Fix beside an unrelated inherited failure | c1 ruleprobe (`--host`) | 20261101T205458-33e203 | complete | gemma4:31b, Ollama auto | 499,019 / 9,095 | agrees, on the host | |
 | Refactor: move without behavior change | t5b ironroot | 20261101T054940-b71a2a | complete | swarm-redesign-qwen36-32k, Ollama auto | 735,845 / 7,243 | agrees | |
-| Refactor across modules, tests and config | t6 tracemantle | 20261101T221712-67545b | incomplete | gemma4-31b-greedy-128k, Ollama named, 65,536 | 388,458 / 12,946 | agrees | open: the best attempt moved its tests without the fixture path they read, 7 new failures; the narrower attempt changed nothing. Corrected 2026-11-02: under 2.0.0 the move with that path fixed was refused as well, a verifier defect fixed in 2.0.1 (see Comparison). Rerun against 2.0.1 (20261103T175257-900062, same model): incomplete, the same 7 failures, the moves read correctly, replay agrees |
+| Refactor across modules, tests and config | t6 tracemantle | 20261103T231418-6662f6 | incomplete | gemma4:31b, escalated to swarm-redesign-qwen36-32k, Ollama auto | 89,562 / 1,551 | agrees | open: the first run whose edit tools work on macOS and that no harness defect misled (16.0.2 candidate). The moved `history/history_store.py` imports `_entry_from_dict` from the old path, whose shim is `from tracemantle.history.history_io import *`, which does not re-export an underscore name, so test collection fails (ImportError, regression found); the model never ran the tests, repeated `ls -F` three times, and the escalated model repeated one `grep` three times. Every earlier t6 run met a defect of the product: swarm-verify 2.0.0 refused the correct move (fixed in 2.0.1), BSD `sed -i` failed every in-place edit (fixed in 16.0.2), and the first 16.0.2 attempt was misled by the diff view (fixed in 16.0.2); see Reruns for 16.0.2 |
 | Upgrade a dependency | t7a claimcheck | 20261101T235811-1133bb | complete | gemma4:31b, Ollama auto | 133,999 / 1,099 | agrees | |
 | Upgrade the runtime | t8 quantproof | 20261101T073344-9bf3e4 | complete | qwen3.6:35b-a3b, Ollama auto | 222,006 / 1,990 | agrees | |
 
 Seven of the eight categories have a complete run of their own task whose replay agrees. The
-cross-module refactor (t6 tracemantle) does not. It was recorded as a limit of the models; the
-Comparison below found that swarm-verify 2.0.0 refused the correct move too, so that reading is
-withdrawn. Rerun once against 2.0.1 with the same model (session 20261103T175257-900062), it
-made the same mistake: the test file moved unchanged, its 7 fixture tests failing, which 2.0.1
-read and attributed correctly; the replay agrees. `t6-comparison/` holds the task, its base, a fixed requirement record and both attempts,
+cross-module refactor (t6 tracemantle) does not. No earlier t6 run says anything about what a local
+model can do with it: swarm-verify 2.0.0 refused the correct move whoever made it (Comparison), BSD
+`sed -i` failed every in-place edit on this Mac until 16.0.2 gave the model a probed platform block and
+edit blocks, and the first 16.0.2 attempt was misled by a diff view that hid file headers. The second
+16.0.2 attempt is the first that met none of those, and its patch is wrong in a way the verifier caught
+(Reruns for 16.0.2). `t6-comparison/` holds the task, its base, a fixed requirement record and both attempts,
 so another agent's patch can be judged by the same verifier on the same base. t7b dependency detector (20261101T102609-e587a2,
 complete, replay agrees), the upgrade substitute of the first round, completed as well. Of the two
 held-back tasks, h1 completed on its first run with a replay that agrees, and h2 did not complete
@@ -50,10 +51,14 @@ in either round. No known false completion remains: claimcheck's "latest 9.x" is
 verifier, and its complete run resolves Stryker 9.6.1, the registry's latest 9.x.
 
 The fix category is host-verified only. Its complete runs (t3 and c1, ruleprobe) ran on the host,
-and the two isolated attempts the 16.0.1 patch release made from real bug-fix commits did not
-complete: depose 09b01c1 (session 20261103T012746-36fbbf), a correct fix left incomplete by the
-base's own typecheck and build failing in the container, and claimcheck d2f136c (session
-20261103T015145-ff5ff2), a wrong fix the held-out test caught. Both are in `f-fix-isolated/`.
+and no isolated attempt from a real bug-fix commit has completed. Both picks fail at their base in the
+container for reasons of their own (depose's typecheck and build, claimcheck's missing
+`claimcheck/src/coverage/collect.js`), so those checks stay unresolved and no isolated run of either can be
+complete; the sealed held-out test is what judges the fix. depose 09b01c1: correct in 16.0.1's
+attempt and again in 16.0.2's (the sealed test fails at the base and passes with the patch).
+claimcheck d2f136c: wrong in 16.0.1's attempt and in 16.0.2's first, which also circled on one import
+line until the step budget; the second 16.0.2 attempt, after that loop defect was fixed, passes the
+sealed test. All are in `f-fix-isolated/`.
 
 ## Final runs
 
@@ -74,6 +79,66 @@ base's own typecheck and build failing in the container, and claimcheck d2f136c 
 | t8 quantproof | qwen3.6:35b-a3b (Ollama, auto) | complete | complete | 34 | 222,006 / 1,990 | 226 s | 1 |
 | h1 crossfire | gemma4-31b-greedy-128k (Ollama, auto) | complete | complete | 23 | 299,897 / 3,421 | 944 s | 0 |
 | h2 ironroot | qwen3.8:27b (Rapid-MLX) | incomplete | no-progress | 18 | 128,114 / 1,992 | 428 s | 2 |
+
+## Reruns for 16.0.2 (2026-11-03)
+
+The runs the macOS `sed -i` defect invalidated, rerun on the 16.0.2 candidate: the prompt opens
+with the machine as probed (here: macOS 26.6.2, BSD `sed`, `grep`, `find`, `awk` and `xargs`), and
+files change through edit and write blocks. Each ran `swarm run "<task>" --model auto --approve auto
+--max-steps 60 --max-minutes 60`, isolated, with swarm-verify 2.0.1, then `swarm-verify replay`;
+the fix picks were then judged against their sealed held-out test with `witness.sh`, as before. The
+first four ran on a build of e368b3ce7. Two defects of the loop showed in them and were fixed with a
+failing test first (838ed8fa9, the diff view; 6767b2789, a tree changed back and forth), and the two
+runs they met ran once more on a build of 6767b2789. No run edited with `sed -i`, and every source
+repository was unchanged.
+
+| Task | Directory | Session | State | Stop | Model | Turns | Input / output tokens | Wall | Replay | Held-out |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| t6 tracemantle | `t6-tracemantle/rerun-16.0.2-attempt-1` | 20261103T213819-76ab1e | incomplete | no-progress | gemma4:31b, escalated | 25 | 120,919 / 2,974 | 933 s | agrees | |
+| t6 tracemantle | `t6-tracemantle/rerun-16.0.2-attempt-2` | 20261103T231418-6662f6 | incomplete | no-progress | gemma4:31b, escalated | 19 | 89,562 / 1,551 | 1,212 s | agrees | |
+| dossier (clean-install task) | `e-dossier-16.0.2/attempt-1` | 20261103T220620-05a97e | complete | complete | gemma4:31b | 14 | 70,938 / 1,055 | 209 s | agrees | |
+| fix: depose 09b01c1 | `f-fix-isolated/depose-09b01c1/rerun-16.0.2-attempt-1` | 20261103T221128-fcb79f | incomplete | no-progress | gemma4:31b, escalated | 28 | 189,098 / 1,902 | 554 s | agrees | fails at the base, passes with the patch |
+| fix: claimcheck d2f136c | `f-fix-isolated/claimcheck-d2f136c/rerun-16.0.2-attempt-1` | 20261103T222355-8f8758 | incomplete | step-budget | gemma4:31b | 60 | 678,379 / 14,386 | 2,339 s | agrees | fails at the base and with the patch |
+| fix: claimcheck d2f136c | `f-fix-isolated/claimcheck-d2f136c/rerun-16.0.2-attempt-2` | 20261103T235146-3d4f21 | incomplete | step-budget | gemma4:31b, escalated | 60 | 637,741 / 22,632 | 2,331 s | agrees | fails at the base, passes with the patch |
+
+"Escalated" is to swarm-redesign-qwen36-32k, the one escalation a model-related stop allows. Wall
+is the run's, final verification included; the replay and the held-out judgment are after it.
+
+- **t6, attempt 1** (the first t6 run whose edits work on macOS). The model moved `history_io.py` and
+  `history_store.py` into `tracemantle/history/` and wrote both shims with write blocks; both are
+  right (ledger records 29 and 32). It then read, in the turn's diff, the second shim under the first
+  file's header and said it had "accidentally wrote the history_store shim into history_io.py", and
+  read that file three turns running. Cause: the loop cut the 33,609-byte diff to 6,000 bytes from
+  its middle, which dropped four of the five file headers. Fixed in 838ed8fa9 (each file's change is
+  shortened under its own header); `src/agent/diff-view.test.ts` failed before. The escalated model
+  repeated one `grep` three times. The test files were not moved.
+- **t6, attempt 2** (the first t6 run that met no defect of the product). Both modules moved, both
+  shims written as `from tracemantle.history.<module> import *`, the three test files moved, the
+  mypy list and hatch packages left as the repository already had them. The moved `history_store.py`
+  still imports `_entry_from_dict` from `tracemantle.core.history_io`, and a star import does not
+  re-export an underscore name, so collection fails with ImportError
+  (`rerun-16.0.2-attempt-2/import-error.txt`); the verifier found the regression, 3 failures
+  inherited. The model ran no test and asked for no verification: it repeated `ls -F` three times,
+  and the escalated model one `grep` three times. This is what a local model did with working tools
+  and nothing misleading it: a wrong shim, left untested.
+- **dossier**, the task that stopped in 16.0.1's clean install when both `sed -i` edits failed:
+  complete in 14 turns, the test written with a write block and `.venv` added with an edit block.
+- **depose**: the same fix as 16.0.1's attempt, and the sealed test confirms it again. Incomplete
+  because the base's typecheck and build fail in the container (unresolved, never a pass), then the
+  model marked the task complete on an unchanged tree and the escalated model reread the file.
+- **claimcheck, attempt 1**: from step 38 the model split one import into two lines and joined it
+  again, every edit applied and every turn different, to the step budget. The no-progress rule saw
+  only a command repeated with the same result. Fixed in 6767b2789: three changes in a row that put
+  the tree back where it had already been stop the run (`src/agent/tree-cycles.test.ts` failed
+  before). Its patch adds `failedToRun` to `runVitest` only, and the sealed test refutes it.
+- **claimcheck, attempt 2**: the patch adds `failedToRun` and stops `headTestsPass` counting a run
+  that failed to load, in `claimcheck/src/core/pipeline.ts`, as the fix commit does; the sealed test fails at
+  the base and passes with it. Incomplete: the step budget ran out while the model tried to repair
+  the base's missing `claimcheck/src/coverage/collect.js` import, which no change to the task's files can.
+
+Integrity and tamper on the candidate's verifier (swarm-verify 2.0.1 source at b49b7ff): the
+integrity set 15 of 15; the tamper evaluation 20 honest with 0 flagged and 24 of 24 cheats flagged
+(`swarm-verify/eval/results/tamper-2026-11-04T00-40-36-286Z.json`).
 
 ## Input tokens before and after context management
 
@@ -212,7 +277,8 @@ two tasks. Evidence is in `comparison/`.
 - What this shows: on t6 the correct move was refused by 2.0.0 whoever made it; on h2 a complete
   fix with a test exists and was judged complete by the verifier the local run met. It does not
   show a local model completing t6: the one rerun against 2.0.1 (above, What remains incomplete)
-  repeated the unchanged move and its 7 failures.
+  repeated the unchanged move and its 7 failures, with every in-place edit failing on BSD `sed`, and
+  the 16.0.2 reruns (Reruns for 16.0.2) did not complete either.
 
 ## Safety
 

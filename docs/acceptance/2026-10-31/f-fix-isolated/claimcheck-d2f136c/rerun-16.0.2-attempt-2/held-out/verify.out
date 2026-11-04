@@ -1,0 +1,99 @@
+(node:71499) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+state        incomplete
+reason       check test: 4 test(s) fail at the base commit and still fail, which does not block: eval/corpus.test.ts, src/cli/run.integration.test.ts, src/core/pipeline.integration.test.ts, src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes
+reason       check typecheck is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+reason       check build is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+requirement  R1 satisfied (When a test file cannot load (a missing dependency, a transform or a config error), runVitest in src/adapters/vitest-run.ts returns no outcomes, and the pipeline reads that empty set as passes-on-head, so ClaimCheck gives a PASS built on a suite that never ran. runVitest should report such a run as failedToRun (and not passed), and the pipeline should not count it as passing on head; add a test.)
+regression   unresolved; 4 inherited; unresolved check build, check typecheck
+base         8efdaa0363b522dc1064e8ae72c0e3c18f2ff6c5
+change       3 file(s) from the patch
+check        test: inherited-failures (npm run test, pre-existing)
+check        typecheck: unresolved (npm run typecheck, pre-existing)
+check        build: unresolved (npm run build, pre-existing)
+baseline     0 of 3 check(s) pass at the base commit
+held-out     visible 100%, held-out 100%, gap 0%, judged in 3 process(es)
+test files   1 added
+coverage     unmeasured: the V8 offsets for src/core/pipeline.ts run past the file, so a transform ran first
+mutation     killed: === to !== at src/adapters/vitest-run.ts:149
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:e638057cdd533ef045c640ddcdf5b788edd2a8d1864f0d75c3fcbd21d8a3e34d
+
+$ npm run test
+ test[22m[2m)[22m
+ [32m✓[39m src/analysis/nondeterminism-scan.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/analysis/instrument.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m src/checks/test-weakening.test.ts [2m ([22m[2m5 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m src/analysis/mutant-equivalence.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/checks/error-suppression.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m src/cache/analysis-cache.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m src/adapters/vitest-run.test.ts [2m ([22m[2m1 test[22m[2m)[22m[33m 437[2mms[22m[39m
+ [32m✓[39m src/cli/args.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+ [32m✓[39m src/determinism/flake-fallback.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/core/verdict.test.ts [2m ([22m[2m5 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/cli/format.test.ts [2m ([22m[2m2 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+ [32m✓[39m src/mutation/concurrency.test.ts [2m ([22m[2m3 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/mutation/stryker-runner.integration.test.ts [2m ([22m[2m2 tests[22m[2m)[22m[33m 4599[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m4 failed[39m[22m[2m | [22m[1m[32m22 passed[39m[22m[90m (26)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m141 passed[39m[22m[90m (142)[39m
+[2m   Start at [22m 00:35:37
+[2m   Duration [22m 7.59s[2m (transform 3.41s, setup 1ms, collect 4.81s, tests 5.21s, environment 2ms, prepare 2.41s)[22m
+
+JSON report written to /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-3/held-out/home/work/swarm-verify-2fD0jB/reports/candidate-test.report
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Suites 3 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m src/cli/run.integration.test.ts [2m[ src/cli/run.integration.test.ts ][22m
+[31m[1m[7m FAIL [27m[22m[39m src/core/pipeline.integration.test.ts [2m[ src/core/pipeline.integration.test.ts ][22m
+[31m[1m[7m FAIL [27m[22m[39m eval/corpus.test.ts [2m[ eval/corpus.test.ts ][22m
+[31m[1mError[22m: Failed to load url ../coverage/collect.js (resolved id: ../coverage/collect.js) in /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-3/held-out/home/work/swarm-verify-2fD0jB/tree/src/core/pipeline.ts. Does the file exist?[39m
+[90m [2m❯[22m loadAndTransform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m51969:17[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m src/determinism/sandbox.test.ts[2m > [22msandbox crypto pins[2m > [22mmakes crypto.randomUUID deterministic across separate processes
+[31m[1mAssertionError[22m: expected '{"a":"babe8798-f99d-42e7-a41f-e133c4c…' to deeply equal '{"a":"33eabd67-4371-4264-bb61-373ee8e…'[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- {"a":"33eabd67-4371-4264-bb61-373ee8eafad5","b":"2643be78-a868-4fc2-af94-679a621d6126","buf":[186,84,7,247]}[39m
+[31m+ {"a":"babe8798-f99d-42e7-a41f-e133c4ca3ea6","b":"653f8485-1834-4d4c-a877-2cd19cce4afb","buf":[152,112,63,147]}[39m
+
+[36m [2m❯[22m src/determinism/sandbox.test.ts:[2m42:19[22m[39m
+    [90m 40| [39m    [35mconst[39m first [33m=[39m [35mawait[39m [34mrunUnderSandbox[39m(script)[33m;[39m
+    [90m 41| [39m    [35mconst[39m second [33m=[39m [35mawait[39m [34mrunUnderSandbox[39m(script)[33m;[39m
+    [90m 42| [39m    [34mexpect[39m(first)[33m.[39m[34mtoEqual[39m(second)[33m;[39m
+    [90m   | [39m                  [31m^[39m
+    [90m 43| [39m  })[33m;[39m
+    [90m 44| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯[22m[39m
+
+
+
+$ npm run typecheck
+
+> claimcheck@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+src/core/pipeline.ts(27,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.
+src/core/pipeline.ts(178,8): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/core/pipeline.ts(184,30): error TS7006: Parameter 'o' implicitly has an 'any' type.
+
+
+$ npm run build
+
+> claimcheck@0.1.0 build
+> tsc -p tsconfig.build.json
+
+src/core/pipeline.ts(27,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.
+src/core/pipeline.ts(178,8): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/core/pipeline.ts(184,30): error TS7006: Parameter 'o' implicitly has an 'any' type.
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-3/held-out/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/patch-run/fix-claimcheck/attempt-3/held-out/verdict/attestation.pub.pem
+exit 4

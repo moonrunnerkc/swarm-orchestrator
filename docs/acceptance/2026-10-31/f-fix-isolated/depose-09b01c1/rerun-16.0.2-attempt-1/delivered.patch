@@ -1,0 +1,62 @@
+diff --git a/packages/core/src/events/ids.ts b/packages/core/src/events/ids.ts
+index c0df3b9..4e96501 100644
+--- a/packages/core/src/events/ids.ts
++++ b/packages/core/src/events/ids.ts
+@@ -40,6 +40,9 @@ export function clearFixedUlidSeed(): void {
+ /** Generate a new random ULID. */
+ export function generateUlid(): string {
+   const bytes = randomBytes(TOTAL);
++  if (!_usingFixed) {
++    writeMsToBytes(bytes, Date.now());
++  }
+   return encodeUlid(bytes);
+ }
+ 
+diff --git a/packages/core/test/ids.test.ts b/packages/core/test/ids.test.ts
+new file mode 100644
+index 0000000..b497ba3
+--- /dev/null
++++ b/packages/core/test/ids.test.ts
+@@ -0,0 +1,42 @@
++import { describe, it, expect } from 'vitest';
++import { generateUlid, ulidToTime, setFixedUlidSeed, clearFixedUlidSeed } from '../src/events/ids';
++
++describe('ULID generation', () => {
++  it('should generate ULIDs with current timestamp', () => {
++    const now = Date.now();
++    const ulid = generateUlid();
++    const time = ulidToTime(ulid);
++    
++    // Allow a small window for execution time
++    expect(time).toBeGreaterThanOrEqual(now);
++    expect(time).toBeLessThan(now + 1000);
++  });
++
++  it('should be deterministic when fixed seed is set', () => {
++    const seed = 123456789;
++    setFixedUlidSeed(seed);
++    
++    const ulid1 = generateUlid();
++    const ulid2 = generateUlid();
++    
++    expect(ulid1).not.toBe(ulid2); // Should increment mono counter
++    expect(ulidToTime(ulid1)).toBe(seed);
++    expect(ulidToTime(ulid2)).toBe(seed + 1);
++    
++    clearFixedUlidSeed();
++  });
++
++  it('should sort in creation order', () => {
++    const ulids: string[] = [];
++    for (let i = 0; i < 10; i++) {
++      ulids.push(generateUlid());
++      // Small delay to ensure timestamp might change, 
++      // though ULID spec handles same-ms with monotonicity.
++      // In this simple impl, we just check they are non-decreasing.
++    }
++    
++    for (let i = 0; i < ulids.length - 1; i++) {
++      expect(ulidToTime(ulids[i])).toBeLessThanOrEqual(ulidToTime(ulids[i+1]));
++    }
++  });
++});

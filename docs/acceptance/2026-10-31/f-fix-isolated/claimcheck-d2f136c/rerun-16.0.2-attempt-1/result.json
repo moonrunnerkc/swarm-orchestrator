@@ -1,0 +1,342 @@
+{
+  "state": "incomplete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 4 test(s) fail at the base commit and still fail, which does not block: eval/corpus.test.ts, src/cli/run.integration.test.ts, src/core/pipeline.integration.test.ts, src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes",
+    "check typecheck is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one",
+    "check build is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one"
+  ],
+  "base": {
+    "commit": "8efdaa0363b522dc1064e8ae72c0e3c18f2ff6c5"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/adapters/vitest-run.test.ts",
+        "status": "added"
+      },
+      {
+        "path": "src/adapters/vitest-run.ts",
+        "status": "modified"
+      },
+      {
+        "path": "src/determinism/flake-fallback.ts",
+        "status": "modified"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "When a test file cannot load (a missing dependency, a transform or a config error), runVitest in src/adapters/vitest-run.ts returns no outcomes, and the pipeline reads that empty set as passes-on-head, so ClaimCheck gives a PASS built on a suite that never ran. runVitest should report such a run as failedToRun (and not passed), and the pipeline should not count it as passing on head; add a test.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "runVitest > reports failedToRun when vitest exits with error and no results file is created"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "src/adapters/vitest-run.test.ts::runVitest > reports failedToRun when vitest exits with error and no results file is created",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "unresolved",
+    "newFailures": [],
+    "inherited": [
+      "eval/corpus.test.ts",
+      "src/cli/run.integration.test.ts",
+      "src/core/pipeline.integration.test.ts",
+      "src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes"
+    ],
+    "removed": [],
+    "unresolved": [
+      "check build",
+      "check typecheck"
+    ],
+    "flaky": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 146,
+      "exitCode": 1,
+      "durationMs": 9003,
+      "outputSha256": "4fd2c3560469eb0a65dc61bf57e12fda26f31224ff18d660702c483b10cf8b12",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 144,
+          "candidate": 146
+        },
+        "counts": {
+          "preserved": 140,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 4,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 2,
+          "addedFailing": 0,
+          "witnesses": 1,
+          "skipped": 0,
+          "flaky": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "eval/corpus.test.ts",
+          "src/cli/run.integration.test.ts",
+          "src/core/pipeline.integration.test.ts",
+          "src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "src/adapters/vitest-run.test.ts::runVitest > reports failedToRun when vitest exits with error and no results file is created",
+          "src/adapters/vitest-run.test.ts::runVitest > reports noTests when vitest exits with 0 and says no tests found"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "src/adapters/vitest-run.test.ts::runVitest > reports failedToRun when vitest exits with error and no results file is created"
+        ],
+        "flaky": [],
+        "reruns": [
+          {
+            "id": "src/adapters/vitest-run.test.ts::runVitest > reports failedToRun when vitest exits with error and no results file is created",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "unresolved",
+      "collected": null,
+      "exitCode": 2,
+      "durationMs": 2247,
+      "outputSha256": "7f6946b037ff662be8dec2394ae9059c826602e688434d7d6f6f435ecb963b9a"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "unresolved",
+      "collected": null,
+      "exitCode": 2,
+      "durationMs": 2195,
+      "outputSha256": "d3d164372275ef6d18bd8098228237f155e8563bdf2989f24d966aac641e359a"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": true,
+    "environmentSha256": "e638057cdd533ef045c640ddcdf5b788edd2a8d1864f0d75c3fcbd21d8a3e34d",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 144,
+        "exitCode": 1,
+        "durationMs": 7633,
+        "outputSha256": "bc640e27e69b0bbec72cca83085eb36d21e906da2143d5d7b958cd598b803ca5"
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": null,
+        "exitCode": 2,
+        "durationMs": 2279,
+        "outputSha256": "7f6946b037ff662be8dec2394ae9059c826602e688434d7d6f6f435ecb963b9a"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": null,
+        "exitCode": 2,
+        "durationMs": 2236,
+        "outputSha256": "d3d164372275ef6d18bd8098228237f155e8563bdf2989f24d966aac641e359a"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/adapters/vitest-run.test.ts",
+      "category": "tests"
+    },
+    {
+      "path": "src/adapters/vitest-run.ts",
+      "category": "source"
+    },
+    {
+      "path": "src/determinism/flake-fallback.ts",
+      "category": "source"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "src/adapters/vitest-run.test.ts"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "movedAndEdited": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the V8 offsets for src/adapters/vitest-run.ts run past the file, so a transform ran first"
+  },
+  "mutation": {
+    "status": "killed",
+    "path": "src/adapters/vitest-run.ts",
+    "line": 140,
+    "operator": "=== to !==",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "16.0.1",
+    "model": "gemma4:31b",
+    "promptSha256": "39f3d69ee9d6a7f48290f5fd1ec0c08cbafe393d23f7a6d46b1aff207c16430d",
+    "ledgerSha256": "6759accbc158925561e5aeb7b23cb7092f2fdb6025a2856d7cb0ffcaaa140719",
+    "ledgerRecords": 168,
+    "reportSha256": "9b903ef7a1cd08e0b71b48d6a2f3eaa2e1aa53c404650f58a7e20587053010cb",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "1716f7588a3792287041ff8a72700c5008c773dba9b71b6810f4429f3022a221"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "e638057cdd533ef045c640ddcdf5b788edd2a8d1864f0d75c3fcbd21d8a3e34d",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "11d4d9651a2684171bbaf18ac616ab2bc27f4edcbafe8cb4740464082d9c396d",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "a9a4cd6c48adc7583d54e856f3f0db40a3fae32c43aacc6bc02ef214c81f672a"
+      },
+      "treeSha256": "11d4d9651a2684171bbaf18ac616ab2bc27f4edcbafe8cb4740464082d9c396d",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none",
+    "reruns": 3
+  },
+  "unmeasured": [
+    "check typecheck: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one",
+    "check build: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one",
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the V8 offsets for src/adapters/vitest-run.ts run past the file, so a transform ran first"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "4fd2c3560469eb0a65dc61bf57e12fda26f31224ff18d660702c483b10cf8b12"
+    },
+    {
+      "name": "logs/typecheck.txt",
+      "sha256": "7f6946b037ff662be8dec2394ae9059c826602e688434d7d6f6f435ecb963b9a"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "d3d164372275ef6d18bd8098228237f155e8563bdf2989f24d966aac641e359a"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.1"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "8efdaa0363b522dc1064e8ae72c0e3c18f2ff6c5",
+    "patchSha256": "7fe0c8677f14e20d69b7ce6df841a46d8ba85570f5bbd87ca53843e63aeef855",
+    "treeSha256": "770ab9a6f2e00fe2b2804ed10a3a37df75792dabae81b6447b73f5c7f97345fe"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "422b2323bd8e916628c871d5d1840d830d4e36a7db1d8cf70340a95fbf33f640",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261103T222355-8f8758/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261103T222355-8f8758/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261103T222355-8f8758/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261103T222355-8f8758/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261103T222355-8f8758/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "$ npm run test\n22m\u001b[39m\n \u001b[32m✓\u001b[39m src/adapters/vitest-run.test.ts \u001b[2m (\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 3\u001b[2mms\u001b[22m\u001b[39m\n \u001b[33m❯\u001b[39m src/cli/run.integration.test.ts \u001b[2m (\u001b[22m\u001b[2m0 test\u001b[22m\u001b[2m)\u001b[22m\n \u001b[33m❯\u001b[39m eval/corpus.test.ts \u001b[2m (\u001b[22m\u001b[2m0 test\u001b[22m\u001b[2m)\u001b[22m\n \u001b[32m✓\u001b[39m src/analysis/nondeterminism-scan.test.ts \u001b[2m (\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 7\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/analysis/instrument.test.ts \u001b[2m (\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 6\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/checks/test-weakening.test.ts \u001b[2m (\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 8\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/analysis/mutant-equivalence.test.ts \u001b[2m (\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 1\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/checks/error-suppression.test.ts \u001b[2m (\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 5\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/cache/analysis-cache.test.ts \u001b[2m (\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 3\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/cli/args.test.ts \u001b[2m (\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 1\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/determinism/flake-fallback.test.ts \u001b[2m (\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 1\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/cli/format.test.ts \u001b[2m (\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 1\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/core/verdict.test.ts \u001b[2m (\u001b[22m\u001b[2m5 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 1\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/mutation/concurrency.test.ts \u001b[2m (\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 1\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/mutation/stryker-runner.integration.test.ts \u001b[2m (\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 4548\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[31m4 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m22 passed\u001b[39m\u001b[22m\u001b[90m (26)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m142 passed\u001b[39m\u001b[22m\u001b[90m (143)\u001b[39m\n\u001b[2m   Start at \u001b[22m 23:01:58\n\u001b[2m   Duration \u001b[22m 7.59s\u001b[2m (transform 3.48s, setup 3ms, collect 4.92s, tests 4.72s, environment 2ms, prepare 2.26s)\u001b[22m\n\nJSON report written to /Users/brad/.swarm/work/swarm-verify-jotjD6/reports/candidate-test.report\n\u001b[31m⎯⎯⎯⎯⎯⎯\u001b[1m\u001b[7m Failed Suites 3 \u001b[27m\u001b[22m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m src/core/pipeline.integration.test.ts \u001b[2m[ src/core/pipeline.integration.test.ts ]\u001b[22m\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m src/cli/run.integration.test.ts \u001b[2m[ src/cli/run.integration.test.ts ]\u001b[22m\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m eval/corpus.test.ts \u001b[2m[ eval/corpus.test.ts ]\u001b[22m\n\u001b[31m\u001b[1mError\u001b[22m: Failed to load url ../coverage/collect.js (resolved id: ../coverage/collect.js) in /Users/brad/.swarm/work/swarm-verify-jotjD6/tree/src/core/pipeline.ts. Does the file exist?\u001b[39m\n\u001b[90m \u001b[2m❯\u001b[22m loadAndTransform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:\u001b[2m51969:17\u001b[22m\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯\u001b[22m\u001b[39m\n\n\u001b[31m⎯⎯⎯⎯⎯⎯⎯\u001b[1m\u001b[7m Failed Tests 1 \u001b[27m\u001b[22m⎯⎯⎯⎯⎯⎯⎯\u001b[39m\n\n\u001b[31m\u001b[1m\u001b[7m FAIL \u001b[27m\u001b[22m\u001b[39m src/determinism/sandbox.test.ts\u001b[2m > \u001b[22msandbox crypto pins\u001b[2m > \u001b[22mmakes crypto.randomUUID deterministic across separate processes\n\u001b[31m\u001b[1mAssertionError\u001b[22m: expected '{\"a\":\"a4dbd8c4-86a2-4bae-9be1-d65a5b6…' to deeply equal '{\"a\":\"ad80110f-1b2c-4ca3-ad51-935c785…'\u001b[39m\n\n\u001b[32m- Expected\u001b[39m\n\u001b[31m+ Received\u001b[39m\n\n\u001b[32m- {\"a\":\"ad80110f-1b2c-4ca3-ad51-935c785cef77\",\"b\":\"1f80026f-f33b-450d-ae25-fdcbbd3e9f9e\",\"buf\":[149,229,233,118]}\u001b[39m\n\u001b[31m+ {\"a\":\"a4dbd8c4-86a2-4bae-9be1-d65a5b65186e\",\"b\":\"693d228e-1c2e-4848-81d3-c17707bfb8ee\",\"buf\":[85,227,106,177]}\u001b[39m\n\n\u001b[36m \u001b[2m❯\u001b[22m src/determinism/sandbox.test.ts:\u001b[2m42:19\u001b[22m\u001b[39m\n    \u001b[90m 40| \u001b[39m    \u001b[35mconst\u001b[39m first \u001b[33m=\u001b[39m \u001b[35mawait\u001b[39m \u001b[34mrunUnderSandbox\u001b[39m(script)\u001b[33m;\u001b[39m\n    \u001b[90m 41| \u001b[39m    \u001b[35mconst\u001b[39m second \u001b[33m=\u001b[39m \u001b[35mawait\u001b[39m \u001b[34mrunUnderSandbox\u001b[39m(script)\u001b[33m;\u001b[39m\n    \u001b[90m 42| \u001b[39m    \u001b[34mexpect\u001b[39m(first)\u001b[33m.\u001b[39m\u001b[34mtoEqual\u001b[39m(second)\u001b[33m;\u001b[39m\n    \u001b[90m   | \u001b[39m                  \u001b[31m^\u001b[39m\n    \u001b[90m 43| \u001b[39m  })\u001b[33m;\u001b[39m\n    \u001b[90m 44| \u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯\u001b[22m\u001b[39m\n\n\n\n$ npm run typecheck\n\n> claimcheck@0.1.0 typecheck\n> tsc -p tsconfig.json --noEmit\n\nsrc/core/pipeline.ts(27,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.\nsrc/core/pipeline.ts(178,8): error TS7006: Parameter 'o' implicitly has an 'any' type.\nsrc/core/pipeline.ts(183,30): error TS7006: Parameter 'o' implicitly has an 'any' type.\n\n\n$ npm run build\n\n> claimcheck@0.1.0 build\n> tsc -p tsconfig.build.json\n\nsrc/core/pipeline.ts(27,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.\nsrc/core/pipeline.ts(178,8): error TS7006: Parameter 'o' implicitly has an 'any' type.\nsrc/core/pipeline.ts(183,30): error TS7006: Parameter 'o' implicitly has an 'any' type.\n"
+}

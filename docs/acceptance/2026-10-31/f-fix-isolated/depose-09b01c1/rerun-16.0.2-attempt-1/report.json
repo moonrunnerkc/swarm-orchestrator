@@ -1,0 +1,281 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "generateUlid() in packages/core/src/events/ids.ts is meant to put the creation time in a ULID's first 48 bits, but the ids it generates decode to random times (ulidToTime gives anything from 1970 to the year 10888), so event ids do not sort in creation order. Make generated ULIDs carry the current time in their timestamp prefix, keep setFixedUlidSeed deterministic, and add a test.",
+  "model": {
+    "name": "gemma4:31b, then escalated",
+    "reason": "the best record here: 83% of its finished tasks complete, needs 25.3 GiB at a 65536-token context, 24.1 tok/s in its probe"
+  },
+  "stop": "no-progress",
+  "reason": "the same command printed the same result 3 turns running",
+  "state": "incomplete",
+  "snapshot": {
+    "base": "3429b76176a8516d421738b29c1bc4c87545b08a",
+    "patchSha256": "5d4c41b1e80cb2fb77fde2e9bae9df5b18257f0abb5de97dda441ad2c214b267",
+    "patch": "/Users/brad/.swarm/sessions/20261103T221128-fcb79f/final/delivered.patch",
+    "treeSha256": "f65922422e6c8e841ed2afdca4492b2e03e124bdfdb323fe47c03f880f9e7d20"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "packages/core/src/events/ids.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/core/test/ids.test.ts",
+      "status": "added"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "generateUlid() in packages/core/src/events/ids.ts is meant to put the creation time in a ULID's first 48 bits, but the ids it generates decode to random times (ulidToTime gives anything from 1970 to the year 10888), so event ids do not sort in creation order. Make generated ULIDs carry the current time in their timestamp prefix, keep setFixedUlidSeed deterministic, and add a test.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "ULID generation > should generate ULIDs with current timestamp"
+          },
+          {
+            "name": "ULID generation > should sort in creation order"
+          },
+          {
+            "name": "ULID generation > should be deterministic when fixed seed is set"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "packages/core/test/ids.test.ts::ULID generation > should generate ULIDs with current timestamp",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "packages/core/test/ids.test.ts::ULID generation > should sort in creation order",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "packages/core/test/ids.test.ts::ULID generation > should be deterministic when fixed seed is set",
+          "authority": "implementation-authored",
+          "outcome": "passes before and after",
+          "detail": "passes against the base's source too"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": "unresolved (16 inherited failure(s))",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261103T221128-fcb79f/verifications/2/attestation.sigstore.json",
+  "startingState": {
+    "head": "3429b76176a8516d421738b29c1bc4c87545b08a",
+    "base": "3429b76176a8516d421738b29c1bc4c87545b08a",
+    "edits": [],
+    "python": null
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 28,
+    "inputTokens": 189098,
+    "outputTokens": 1902,
+    "estimatedTurns": 0,
+    "inferenceMs": 431273,
+    "inferenceTurns": 28,
+    "wallMs": 554081,
+    "retries": 0,
+    "escalations": 1,
+    "verifications": 2,
+    "cost": "none (local runtime)",
+    "turns": [
+      {
+        "inputTokens": 1551,
+        "outputTokens": 114,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 1708,
+        "outputTokens": 18,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 3679,
+        "outputTokens": 9,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 3707,
+        "outputTokens": 11,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 3740,
+        "outputTokens": 10,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 4109,
+        "outputTokens": 103,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 2484,
+        "outputTokens": 18,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 4475,
+        "outputTokens": 475,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 5561,
+        "outputTokens": 9,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 10126,
+        "outputTokens": 18,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 10298,
+        "outputTokens": 25,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8586,
+        "outputTokens": 94,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8337,
+        "outputTokens": 22,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 5382,
+        "outputTokens": 18,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7372,
+        "outputTokens": 119,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7724,
+        "outputTokens": 22,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8954,
+        "outputTokens": 143,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7835,
+        "outputTokens": 22,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6420,
+        "outputTokens": 7,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9380,
+        "outputTokens": 203,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8685,
+        "outputTokens": 230,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8893,
+        "outputTokens": 22,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9266,
+        "outputTokens": 7,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9263,
+        "outputTokens": 7,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9166,
+        "outputTokens": 7,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 5441,
+        "outputTokens": 95,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7478,
+        "outputTokens": 37,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9478,
+        "outputTokens": 37,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      }
+    ]
+  }
+}

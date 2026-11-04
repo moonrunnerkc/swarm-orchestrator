@@ -1,0 +1,73 @@
+diff --git a/src/adversarial/fs-walk.ts b/src/adversarial/fs-walk.ts
+index 9f3eda5..a4395ae 100644
+--- a/src/adversarial/fs-walk.ts
++++ b/src/adversarial/fs-walk.ts
+@@ -7,7 +7,7 @@
+ import { readdirSync, statSync } from 'fs';
+ import { join, relative } from 'path';
+ 
+-const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.dossier', 'dist', 'out', 'build', 'coverage']);
++const EXCLUDED_DIRS = new Set(['node_modules', '.venv', '.git', '.dossier', 'dist', 'out', 'build', 'coverage']);
+ 
+ export function walkRepo(repo: string): string[] {
+   const out: string[] = [];
+diff --git a/tests/adversarial/fs-walk.test.ts b/tests/adversarial/fs-walk.test.ts
+new file mode 100644
+index 0000000..2b724c5
+--- /dev/null
++++ b/tests/adversarial/fs-walk.test.ts
+@@ -0,0 +1,54 @@
++import { describe, it, expect } from 'vitest';
++import { walkRepo } from '../../src/adversarial/fs-walk';
++import { writeFileSync, mkdirSync, rmSync } from 'fs';
++import { join } from 'path';
++import { tmpdir } from 'os';
++
++describe('walkRepo', () => {
++  it('should skip .venv and node_modules directories', () => {
++    const root = join(tmpdir(), `dossier-test-walk-${Date.now()}`);
++    mkdirSync(root, { recursive: true });
++
++    try {
++      // Setup directory structure
++      const dirs = [
++        'src/main.ts',
++        'node_modules/pkg/index.js',
++        '.venv/bin/python',
++        '.git/config',
++        'dist/bundle.js',
++        'README.md',
++        'docs/index.md',
++      ];
++
++      for (const path of dirs) {
++        const fullPath = join(root, path);
++        const dir = join(fullPath, '..');
++        // Simple way to ensure parent dirs exist
++        const parts = path.split('/');
++        let current = root;
++        for (let i = 0; i < parts.length - 1; i++) {
++          current = join(current, parts[i]);
++          mkdirSync(current, { recursive: true });
++        }
++        writeFileSync(fullPath, 'test');
++      }
++
++      const files = walkRepo(root);
++
++      expect(files).toContain('README.md');
++      expect(files).toContain('src/main.ts');
++      expect(files).toContain('docs/index.md');
++      
++      // Should NOT contain files from excluded dirs
++      files.forEach(file => {
++        expect(file).not.toContain('node_modules/');
++        expect(file).not.toContain('.venv/');
++        expect(file).not.toContain('.git/');
++        expect(file).not.toContain('dist/');
++      });
++    } finally {
++      rmSync(root, { recursive: true, force: true });
++    }
++  });
++});
