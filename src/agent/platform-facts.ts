@@ -97,6 +97,19 @@ function programs(facts: Readonly<Record<string, string>>): string[] {
   ];
 }
 
+/** The block's last paragraph: how the coding model changes files. A reviewer changes none. */
+export const editAdvice = [
+  "Change a file's text with an edit or write block, not with sed, awk, perl or a shell",
+  "redirection: those blocks behave the same on every platform. Keep bash for running programs,",
+  "reading files, and moving or deleting them.",
+].join("\n");
+
+/** The block's facts alone, for a prompt whose reply is a command and never a change to a file. */
+export function machineFacts(block: string): string {
+  const advice = `\n${editAdvice}`;
+  return block.endsWith(advice) ? block.slice(0, -advice.length) : block;
+}
+
 /**
  * The machine as the model's commands meet it, said once at the head of the prompt. Only what
  * the probe saw is stated; a tool it could not place is called unidentified, never guessed.
@@ -119,18 +132,13 @@ export function renderPlatform(input: {
       ? ["- The probe ran out of time; what it did not reach is not listed."]
       : []),
   ];
-  const tail = [
-    "Change a file's text with an edit or write block, not with sed, awk, perl or a shell",
-    "redirection: those blocks behave the same on every platform. Keep bash for running programs,",
-    "reading files, and moving or deleting them.",
-  ];
   const names = input.probe.layout.map((name) =>
     name.length > nameKept ? `${name.slice(0, nameKept)}...` : name,
   );
   for (let kept = Math.min(names.length, layoutKept); ; kept -= 1) {
     const rest = names.length - kept;
     const layout = `- Repository root, where commands start: ${input.root}. Its entries: ${names.slice(0, kept).join(" ") || "none"}${rest > 0 ? ` (and ${rest} more)` : ""}.`;
-    const block = [...head, layout, ...tail].join("\n");
+    const block = [...head, layout, editAdvice].join("\n");
     if (Buffer.byteLength(block) <= platformBlockBytes || kept === 0) return block;
   }
 }

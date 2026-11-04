@@ -6,6 +6,7 @@ import type { Chokepoint } from "../tools/chokepoint.ts";
 import { estimateTokens } from "./context.ts";
 import { gitText } from "./git.ts";
 import { type ModelClient, ModelError } from "./model.ts";
+import { machineFacts } from "./platform-facts.ts";
 import { truncate } from "./prompt.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 
@@ -80,6 +81,8 @@ export async function runReview(input: {
   readonly chokepoint: Chokepoint;
   readonly evidence: EvidenceRecorder;
   readonly task: string;
+  /** The platform block the coding model read; the reviewer's check runs on the same machine. */
+  readonly environment: string;
   readonly record: RequirementRecord;
   readonly diff: string;
   readonly workspace: string;
@@ -104,7 +107,12 @@ export async function runReview(input: {
   try {
     reply = await input.model.complete(
       [
-        { role: "system", content: reviewPrompt },
+        {
+          role: "system",
+          content: [reviewPrompt, machineFacts(input.environment)]
+            .filter((part) => part.length > 0)
+            .join("\n\n"),
+        },
         { role: "user", content: prompt },
       ],
       { signal: input.signal, maxTokens: input.turnTokens },

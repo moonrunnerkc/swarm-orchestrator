@@ -45,6 +45,18 @@ describe("swarm run with one fresh-context review", () => {
     );
   });
 
+  it("tells the reviewer the machine its check runs on, without the advice on editing files", async () => {
+    const model = scripted([exact, mapped, "NO_FINDING"]);
+    await (await fixture({}, task)).run(model, { review: true });
+    const coding = model.seen[0]?.[0]?.content ?? "";
+    const reviewer = model.seen[2]?.[0]?.content ?? "";
+    const sed = coding.split("\n").find((line) => line.startsWith("- sed: "));
+    expect(sed).toBeDefined();
+    expect(reviewer).toContain("This machine, probed when the run started.");
+    expect(reviewer).toContain(sed);
+    expect(reviewer).not.toContain("edit or write block");
+  });
+
   it("puts the tree back when a review's command writes to it", async () => {
     const writes =
       "It breaks.\n```bash\necho 'export const half = () => 0;' > half.mjs; exit 1\n```";

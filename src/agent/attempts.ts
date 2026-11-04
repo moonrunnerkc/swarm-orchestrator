@@ -68,6 +68,7 @@ export async function runAttempts(input: {
         chokepoint: shared.chokepoint,
         evidence: input.evidence,
         task: shared.task,
+        environment: shared.environment,
         record: progress.record,
         diff,
         workspace: shared.outputs.root,

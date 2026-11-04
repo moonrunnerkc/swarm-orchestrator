@@ -390,3 +390,7 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 ## 2026-11-03: 16.0.2, report
 
 - The release report is docs/plans/2026-11-03-16.0.2-report.md: commits, tags, published versions with their provenance, the platform fix with its before and after tests, the reruns, the publishing state, the machine and the open items. Document only; colima is stopped after its gates, which need the node:24 image.
+
+## 2026-11-03: after 16.0.2, the review's prompt carries the platform facts
+
+- The optional review's command runs on the same machine as the coding model's, so its prompt now carries the platform block's facts, without the block's last paragraph on edit and write blocks: the reviewer replies with one bash command and must not change files. The paragraph is one constant (`editAdvice`), and `machineFacts` takes the block without it, so the two prompts cannot state different facts. The follow-up that deferred this is removed. Test: `src/agent/review.integration.test.ts` ("tells the reviewer the machine its check runs on"), which failed before.
