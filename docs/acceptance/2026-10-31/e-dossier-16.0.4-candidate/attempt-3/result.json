@@ -1,0 +1,342 @@
+{
+  "state": "complete",
+  "scope": "requirements",
+  "reasons": [],
+  "base": {
+    "commit": "1baa9c63d512f1afd3c4c77a3895a46da38544c3"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/adversarial/fs-walk.ts",
+        "status": "modified"
+      },
+      {
+        "path": "tests/adversarial/fs-walk.test.ts",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "walkRepo in src/adversarial/fs-walk.ts should skip a .venv directory the way it skips node_modules; add it with a test.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "walkRepo > skips .venv directories"
+          }
+        ],
+        "checks": [],
+        "structure": [
+          {
+            "path": "src/adversarial/fs-walk.ts",
+            "contains": ".venv"
+          },
+          {
+            "path": "tests/adversarial/fs-walk.test.ts",
+            "contains": "skips .venv directories"
+          }
+        ],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/adversarial/fs-walk.test.ts::walkRepo > skips .venv directories",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "structure",
+          "ref": "src/adversarial/fs-walk.ts contains \".venv\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        },
+        {
+          "kind": "structure",
+          "ref": "tests/adversarial/fs-walk.test.ts contains \"skips .venv directories\"",
+          "authority": "pre-existing",
+          "outcome": "observed",
+          "detail": "expected contains"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [],
+    "removed": [],
+    "unresolved": [],
+    "flaky": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "npm run test",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": 82,
+      "exitCode": 0,
+      "durationMs": 3588,
+      "outputSha256": "4ed666a9138734a1603fb6a06c2868b087331cdab7219fb9310241d0c7fc531c",
+      "tests": {
+        "runner": "vitest",
+        "collected": {
+          "base": 74,
+          "candidate": 82
+        },
+        "counts": {
+          "preserved": 74,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 0,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 8,
+          "addedFailing": 0,
+          "witnesses": 1,
+          "skipped": 0,
+          "flaky": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips .dossier directories",
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips .git directories",
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips .venv directories",
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips build directories",
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips coverage directories",
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips dist directories",
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips node_modules directories",
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips out directories"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "tests/adversarial/fs-walk.test.ts::walkRepo > skips .venv directories"
+        ],
+        "flaky": [],
+        "reruns": [
+          {
+            "id": "tests/adversarial/fs-walk.test.ts::walkRepo > skips .venv directories",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2115,
+      "outputSha256": "2ab618920c7128d45a22eb0004fb6c44998f64cca72c84a0407285df24ce96a6"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "kind": "other",
+      "authority": "pre-existing",
+      "result": "pass",
+      "collected": null,
+      "exitCode": 0,
+      "durationMs": 2213,
+      "outputSha256": "a372148a4529f96a5510cca0ba705291841347c846b98d2fb4c8f9818245de13"
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "0bed9472229041ae721d716b993c48164dc85413685645f38d1314aa14f76d21",
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 74,
+        "exitCode": 0,
+        "durationMs": 3229,
+        "outputSha256": "d681f2b1a9a6a57a656952df692b47e568c6e11f7ab3deb8cdf62869e7cdde05"
+      },
+      {
+        "name": "lint",
+        "command": "npm run lint",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2141,
+        "outputSha256": "2ab618920c7128d45a22eb0004fb6c44998f64cca72c84a0407285df24ce96a6"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2224,
+        "outputSha256": "a372148a4529f96a5510cca0ba705291841347c846b98d2fb4c8f9818245de13"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/adversarial/fs-walk.ts",
+      "category": "source"
+    },
+    {
+      "path": "tests/adversarial/fs-walk.test.ts",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "tests/adversarial/fs-walk.test.ts"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "movedAndEdited": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the V8 offsets for src/adversarial/fs-walk.ts run past the file, so a transform ran first"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "no changed source line has an operator to mutate"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "16.0.3",
+    "model": "qwen3.6:35b-a3b",
+    "promptSha256": "8366b2f83bd7a965d2264e4940516ddc9e06dc277b1387fefd7e6e3db978da7b",
+    "ledgerSha256": "122b59b6fd58564c39877ce622edb04de8879ae2e74654e82f15cb369eb4c4b4",
+    "ledgerRecords": 38,
+    "reportSha256": "ad1d96cd46efc04d6346d5228097aaa5af5f0ff4bdbb69786ddb06fe9a3ce173",
+    "instructions": [
+      {
+        "path": "CLAUDE.md",
+        "sha256": "bd1ac7593ad557d48019ec8bc836b4b3871eb297f294bf2072ccff681c7156a4"
+      }
+    ]
+  },
+  "environment": {
+    "sha256": "0bed9472229041ae721d716b993c48164dc85413685645f38d1314aa14f76d21",
+    "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "0c405d218c1c472d88bb3e0a7c65528183c43719855f770777a6a833165b9a8d",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "package-lock.json": "b243f31776f8749ca98ff01e76af555a83c56664679f78e3a2cd840606c738d8",
+        "local:../ironroot/packages/core-ts": "2e8e5c6092aec6f9e353f8b33d9c3b59c7f945423945cf0862dde88370880be1"
+      },
+      "treeSha256": "0c405d218c1c472d88bb3e0a7c65528183c43719855f770777a6a833165b9a8d",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none",
+    "reruns": 3
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the V8 offsets for src/adversarial/fs-walk.ts run past the file, so a transform ran first",
+    "mutation: no changed source line has an operator to mutate"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "4ed666a9138734a1603fb6a06c2868b087331cdab7219fb9310241d0c7fc531c"
+    },
+    {
+      "name": "logs/lint.txt",
+      "sha256": "2ab618920c7128d45a22eb0004fb6c44998f64cca72c84a0407285df24ce96a6"
+    },
+    {
+      "name": "logs/build.txt",
+      "sha256": "a372148a4529f96a5510cca0ba705291841347c846b98d2fb4c8f9818245de13"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.3"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "1baa9c63d512f1afd3c4c77a3895a46da38544c3",
+    "patchSha256": "2ffd14f9236f9f9b730e3add294cfeef6c87bfd7dbb4395b08e71277f5681d8f",
+    "treeSha256": "6afec8fff3e68d575f07444139947095ef6386b63f22ed782828d57afee4da34"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "d6eb3018ed5937f6982dcc52da1b8d8d168dcb02774afbb75dbc73a88972336f",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261104T145327-847f57/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261104T145327-847f57/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261104T145327-847f57/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261104T145327-847f57/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261104T145327-847f57/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": ""
+}

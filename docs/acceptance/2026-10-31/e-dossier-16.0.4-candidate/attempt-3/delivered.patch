@@ -1,0 +1,116 @@
+diff --git a/src/adversarial/fs-walk.ts b/src/adversarial/fs-walk.ts
+index 9f3eda5..d11709c 100644
+--- a/src/adversarial/fs-walk.ts
++++ b/src/adversarial/fs-walk.ts
+@@ -7,7 +7,7 @@
+ import { readdirSync, statSync } from 'fs';
+ import { join, relative } from 'path';
+ 
+-const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.dossier', 'dist', 'out', 'build', 'coverage']);
++const EXCLUDED_DIRS = new Set(['node_modules', '.git', '.dossier', 'dist', 'out', 'build', 'coverage', '.venv']);
+ 
+ export function walkRepo(repo: string): string[] {
+   const out: string[] = [];
+diff --git a/tests/adversarial/fs-walk.test.ts b/tests/adversarial/fs-walk.test.ts
+new file mode 100644
+index 0000000..7f6ae51
+--- /dev/null
++++ b/tests/adversarial/fs-walk.test.ts
+@@ -0,0 +1,97 @@
++/** fs-walk: directory exclusion behaviour. */
++
++import { describe, it, expect } from 'vitest';
++import { walkRepo } from '../../src/adversarial/fs-walk.js';
++import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
++import { tmpdir } from 'os';
++import { join } from 'path';
++
++describe('walkRepo', () => {
++  it('skips node_modules directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'node_modules', 'pkg'), { recursive: true });
++    writeFileSync(join(repo, 'node_modules', 'pkg', 'index.js'), 'module.exports = {}');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('node_modules/pkg/index.js');
++    expect(files).toContain('src.ts');
++  });
++
++  it('skips .venv directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, '.venv', 'lib', 'site-packages'), { recursive: true });
++    writeFileSync(join(repo, '.venv', 'lib', 'site-packages', 'foo.py'), '# venv file');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('.venv/lib/site-packages/foo.py');
++    expect(files).toContain('src.ts');
++  });
++
++  it('skips .git directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, '.git', 'objects'), { recursive: true });
++    writeFileSync(join(repo, '.git', 'config'), '[core]');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('.git/config');
++    expect(files).toContain('src.ts');
++  });
++
++  it('skips .dossier directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, '.dossier', 'ledger'), { recursive: true });
++    writeFileSync(join(repo, '.dossier', 'ledger.db'), 'sqlite');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('.dossier/ledger.db');
++    expect(files).toContain('src.ts');
++  });
++
++  it('skips dist directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'dist'), { recursive: true });
++    writeFileSync(join(repo, 'dist', 'bundle.js'), 'compiled');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('dist/bundle.js');
++    expect(files).toContain('src.ts');
++  });
++
++  it('skips out directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'out'), { recursive: true });
++    writeFileSync(join(repo, 'out', 'result.txt'), 'output');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('out/result.txt');
++    expect(files).toContain('src.ts');
++  });
++
++  it('skips build directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'build'), { recursive: true });
++    writeFileSync(join(repo, 'build', 'app.js'), 'built');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('build/app.js');
++    expect(files).toContain('src.ts');
++  });
++
++  it('skips coverage directories', () => {
++    const repo = mkdtempSync(join(tmpdir(), 'dossier-walk-'));
++    mkdirSync(join(repo, 'coverage'), { recursive: true });
++    writeFileSync(join(repo, 'coverage', 'lcov.info'), 'LCOV');
++    writeFileSync(join(repo, 'src.ts'), 'export const x = 1;');
++
++    const files = walkRepo(repo);
++    expect(files).not.toContain('coverage/lcov.info');
++    expect(files).toContain('src.ts');
++  });
++});

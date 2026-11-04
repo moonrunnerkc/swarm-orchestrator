@@ -202,6 +202,33 @@ checks); they are inherited, and a regression among them would not be seen.
   unverified, replay agreeing (`t5b-ironroot/judged-2.0.3/`). Its 2.0.0 verdict rested on the same
   made-up evidence.
 
+**The released 16.0.3, installed**, and what its dossier run showed (`e-dossier-installed-16.0.3/`).
+The install works: `swarm --version` 16.0.3 with swarm-verify 2.0.3 inside it, and `npm audit
+signatures` verifies four packages' signatures and attestations. Its dossier run did not complete,
+and it found three defects in the loop, each fixed with a failing test and checked on a build of
+the fixes (`e-dossier-16.0.4-candidate/`):
+
+| Run | Directory | Session | State | Stop | Model | Turns | Input / output tokens | Wall | Replay |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| installed 16.0.3, auto | `e-dossier-installed-16.0.3/attempt-1` | 20261104T141857-20e7e3 | incomplete | no-progress | qwen3.6:35b-a3b | 28 | 237,974 / 17,591 | 303 s | agrees |
+| fixes, auto | `e-dossier-16.0.4-candidate/attempt-1` | 20261104T143145-759a26 | complete | complete | gemma4:31b | 25 | 173,912 / 4,438 | 644 s | agrees |
+| fixes but the fence form, qwen named | `e-dossier-16.0.4-candidate/attempt-2` | 20261104T144429-e52419 | incomplete | no-progress | qwen3.6:35b-a3b | 24 | 141,205 / 1,881 | 132 s | agrees |
+| all three fixes, qwen named | `e-dossier-16.0.4-candidate/attempt-3` | 20261104T145327-847f57 | complete | unusable-replies | qwen3.6:35b-a3b | 17 | 114,193 / 5,356 | 171 s | agrees |
+
+- **Selection stopped probing too early.** `--model auto` probes the largest model first and
+  stopped once the next was smaller with no better record, without looking past it: qwen3.6:35b-a3b
+  (2 of 5 complete) was ready, the next model had 2 of 7, and gemma4:31b, with 7 of 9, was never a
+  candidate. Probing now stops only when every model left is smaller with no better record; the
+  same build picked gemma4:31b, which completed.
+- **The prompt's fence example read as a field.** The forms showed `` ```edit path/to/file ``, and
+  qwen3.6 wrote `` ```edit path=src/adversarial/fs-walk.ts ``, so the path read was
+  `path=src/...` and every edit was refused. The forms now show `` ```edit src/app.ts ``; with
+  that, qwen3.6 wrote the edit correctly and the run completed.
+- **The refusal did not say how it read the path.** It said `path=src/adversarial/fs-walk.ts does
+  not exist; use a write block to create it`; the model checked that the file existed and sent the
+  same block five more times. It now quotes the path as read and shows how a fence names a file.
+  On its own (attempt 2) that did not change qwen's fence; the form change did.
+
 ## Input tokens before and after context management
 
 The same task, model and context, before the loop kept its prompt bounded and after. The reruns
