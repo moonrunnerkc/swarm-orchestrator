@@ -103,6 +103,24 @@ describe("replacing exactly once", () => {
         path: "c.txt",
         pairs: [{ search: "a", replace: "b" }],
       }),
-    ).toMatchObject({ applied: false, refused: expect.stringContaining("use a write block") });
+    ).toMatchObject({
+      applied: false,
+      refused: expect.stringContaining("a write block creates one"),
+    });
+  });
+
+  // The installed 16.0.3 dossier run (session 20261104T141857-20e7e3): the model wrote its fence as
+  // ```edit path=src/adversarial/fs-walk.ts, was told "path=src/adversarial/fs-walk.ts does not
+  // exist", checked that the file existed, and sent the same block five times more.
+  it("quotes the path as it read it when no file is there, and says how a fence names one", async () => {
+    const root = await mkdtemp(join(tmpdir(), "edit-"));
+    await writeFile(join(root, "fs-walk.ts"), "const a = 1;\n");
+    const block = readEditBlock("path=fs-walk.ts", pair("const a = 1;", "const a = 2;"));
+    if ("malformed" in block) throw new Error(block.malformed);
+    const refused = await applyFileEdit(join(root, block.path), block);
+    expect(refused).toMatchObject({ applied: false });
+    const said = "refused" in refused ? refused.refused : "";
+    expect(said).toContain('no file at "path=fs-walk.ts"');
+    expect(said).toContain("```edit src/app.ts");
   });
 });

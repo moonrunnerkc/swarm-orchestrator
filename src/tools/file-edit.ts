@@ -159,7 +159,8 @@ export async function applyFileEdit(target: string, edit: FileEdit): Promise<Edi
   if (before === null) {
     return {
       applied: false,
-      refused: `${edit.path} does not exist; use a write block to create it`,
+      // Quoted as read: a fence line like ```edit path=src/a.ts names a file called "path=src/a.ts".
+      refused: `no file at "${edit.path}": a fence line names the file after the block's name and nothing else, as in \`\`\`edit src/app.ts; an edit changes a file that exists, and a write block creates one`,
     };
   }
   const next = applyReplacements(before, edit.pairs);
