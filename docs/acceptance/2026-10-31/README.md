@@ -140,6 +140,19 @@ Integrity and tamper on the candidate's verifier (swarm-verify 2.0.1 source at b
 integrity set 15 of 15; the tamper evaluation 20 honest with 0 flagged and 24 of 24 cheats flagged
 (`swarm-verify/eval/results/tamper-2026-11-04T00-40-36-286Z.json`).
 
+The released packages, installed into an empty prefix from npm (`swarm-orchestrator@16.0.2` and
+`swarm-verify@2.0.2`, both published by their release workflows through npm trusted publishing),
+ran the dossier task once more with `--model auto` (`e-dossier-installed-16.0.2/`). The installed
+`swarm` reports 16.0.2, its swarm-verify is 2.0.2, and `npm audit signatures` verifies the
+registry signatures and provenance attestations of all four installed packages.
+
+| Task | Directory | Session | State | Stop | Model | Turns | Input / output tokens | Wall | Replay |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| dossier, installed 16.0.2 | `e-dossier-installed-16.0.2/attempt-1` | 20261104T021549-359a1e | complete | complete | gemma4:31b | 23 | 136,501 / 1,869 | 437 s | agrees |
+
+It changed `fs-walk.ts` with edit blocks and wrote the test with a write block; no command used
+`sed -i`, and dossier was unchanged.
+
 ## Input tokens before and after context management
 
 The same task, model and context, before the loop kept its prompt bounded and after. The reruns
