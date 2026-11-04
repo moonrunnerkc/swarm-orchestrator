@@ -386,3 +386,7 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - `NPM_TOKEN` was deleted from moonrunnerkc/swarm-orchestrator after 16.0.2 published through OIDC; neither repository holds an npm secret.
 - Clean install into an empty prefix: `swarm --version` 16.0.2, swarm-verify 2.0.2 inside it, `npm audit signatures` verifies four packages' signatures and attestations. `swarm doctor --models` exits 0; its probe lines are read from this machine's profile, cached by model identity, not probed again. The dossier task through the installed CLI completed (session 20261104T021549-359a1e), with edit and write blocks and no `sed -i`, replay agreeing, dossier unchanged (docs/acceptance/2026-10-31/e-dossier-installed-16.0.2/).
 - The first command of this run was `git fetch -q origin` in /Users/brad/projects/swarm-orchestrator, the shell's starting directory, which this run was not to touch: it added tag v16.0.1 and moved remote-tracking refs there. Its branch, HEAD (cce4bde43, seven commits ahead of origin) and work tree are unchanged; the tag is left, since removing it would be a second change.
+
+## 2026-11-03: 16.0.2, report
+
+- The release report is docs/plans/2026-11-03-16.0.2-report.md: commits, tags, published versions with their provenance, the platform fix with its before and after tests, the reruns, the publishing state, the machine and the open items. Document only; colima is stopped after its gates, which need the node:24 image.
