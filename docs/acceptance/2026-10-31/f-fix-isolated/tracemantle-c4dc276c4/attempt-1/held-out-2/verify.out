@@ -1,0 +1,39 @@
+state        complete
+reason       check test: 135 test(s) fail at the base commit and still fail, which does not block: tests.test_cli::test_directory_mode_finds_skill_files, tests.test_cli::test_directory_mode_ignores_non_skill_md_files, tests.test_cli::test_fail_shows_cross_symbol, tests.test_cli::test_ignore_prefix_suppresses_matching_rules, tests.test_cli::test_ingest_critique_non_utf8_response_exits_two and 95 more
+requirement  R1 satisfied (Harden skillcheck.toml handling in src/skillcheck/config_loader.py and the CLI: (1) a wrong-typed value must name the value it got, as in "Config key 'max-lines' must be an integer (got 'nope')", "must be true or false (got 'yes')" and "must be a string (got 5)"; (2) the fallback parser used when tomllib is missing must drop an inline # comment without cutting a # inside a quoted value, through a helper _strip_inline_comment(line) that returns the line without its comment; (3) find_config must stop climbing at a directory that holds .git (a skillcheck.toml there is still found) or at the user's home, never reaching a config above them; (4) the CLI must print "Loaded config from <path>" to stderr when it loads a config file. Add tests.)
+regression   none; 100 inherited
+base         07e36940ff90bd9e6b6ed4bed959da93d4859941
+change       3 file(s) from the patch
+check        test: inherited-failures (python3 -m pytest -q, pre-existing)
+baseline     0 of 1 check(s) pass at the base commit
+held-out     visible 100%, held-out 100%, gap 0%, judged in 2 process(es)
+test files   1 added
+coverage     unmeasured: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break
+mutation     survived: == to != at src/skillcheck/config_loader.py:93
+execution    isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:f54efe5eac20c40bdb1e4090d5291cb710c7464ae06e9cce6627d27986034d88
+
+$ python3 -m pytest -q
+e_fixes.py::test_template_detection_keeps_body_budget_rule - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='openaipublic.blob.core.windows.net', port=443): Max retries exceeded with url: /encodings/cl100k_base.tiktoken (Caused by NameResolutionError("HTTPSConnection(host='openaipublic.blob.core.windows.net', port=443): Failed to resolve 'openaipublic.blob.core.windows.net' ([Errno -3] Temporary failure in name resolution)"))
+FAILED tests/test_v1_2_false_positive_fixes.py::test_non_template_placeholder_word_documents_false_positive - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='openaipublic.blob.core.windows.net', port=443): Max retries exceeded with url: /encodings/cl100k_base.tiktoken (Caused by NameResolutionError("HTTPSConnection(host='openaipublic.blob.core.windows.net', port=443): Failed to resolve 'openaipublic.blob.core.windows.net' ([Errno -3] Temporary failure in name resolution)"))
+FAILED tests/test_v1_2_false_positive_fixes.py::test_claude_api_name_cli_exit_code_zero - assert 1 == 0
+ +  where 1 = CompletedProcess(args=['/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-o...443): Failed to resolve \'openaipublic.blob.core.windows.net\' ([Errno -3] Temporary failure in name resolution)"))\n').returncode
+FAILED tests/test_v1_2_false_positive_fixes.py::test_canvas_design_pattern_cli_exit_code_zero - assert 1 == 0
+ +  where 1 = CompletedProcess(args=['/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-o...443): Failed to resolve \'openaipublic.blob.core.windows.net\' ([Errno -3] Temporary failure in name resolution)"))\n').returncode
+FAILED tests/test_v1_architecture.py::test_validate_smoke_for_known_good_and_bad_fixtures - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='openaipublic.blob.core.windows.net', port=443): Max retries exceeded with url: /encodings/cl100k_base.tiktoken (Caused by NameResolutionError("HTTPSConnection(host='openaipublic.blob.core.windows.net', port=443): Failed to resolve 'openaipublic.blob.core.windows.net' ([Errno -3] Temporary failure in name resolution)"))
+FAILED tests/test_v1_completion.py::test_format_md_outputs_markdown_report - assert 1 == 0
+ +  where 1 = CompletedProcess(args=['/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-o...443): Failed to resolve \'openaipublic.blob.core.windows.net\' ([Errno -3] Temporary failure in name resolution)"))\n').returncode
+FAILED tests/test_v1_completion.py::test_format_agent_outputs_agent_report - assert 1 == 0
+ +  where 1 = CompletedProcess(args=['/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-o...443): Failed to resolve \'openaipublic.blob.core.windows.net\' ([Errno -3] Temporary failure in name resolution)"))\n').returncode
+FAILED tests/test_v1_completion.py::test_semantic_enables_graph_analysis - assert 1 == 0
+ +  where 1 = CompletedProcess(args=['/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-o...443): Failed to resolve \'openaipublic.blob.core.windows.net\' ([Errno -3] Temporary failure in name resolution)"))\n').returncode
+FAILED tests/test_v1_completion.py::test_skillcheck_toml_applies_defaults - assert 1 == 0
+ +  where 1 = CompletedProcess(args=['/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-o...443): Failed to resolve \'openaipublic.blob.core.windows.net\' ([Errno -3] Temporary failure in name resolution)"))\n').returncode
+FAILED tests/test_v1_completion.py::test_json_diagnostics_include_source_and_confidence - assert 1 == 0
+ +  where 1 = CompletedProcess(args=['/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-o...443): Failed to resolve \'openaipublic.blob.core.windows.net\' ([Errno -3] Temporary failure in name resolution)"))\n').returncode
+135 failed, 689 passed in 105.60s (0:01:45)
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-out-2/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-tracemantle-c4dc276c4/attempt-1/held-out-2/verdict/attestation.pub.pem
+exit 0

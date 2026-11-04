@@ -1,0 +1,81 @@
+diff --git a/src/skillcheck/template_detection.py b/src/skillcheck/template_detection.py
+index 6508f3e..d9210d6 100644
+--- a/src/skillcheck/template_detection.py
++++ b/src/skillcheck/template_detection.py
+@@ -11,7 +11,8 @@ _PLACEHOLDER_PATTERNS = [
+     re.compile(r"\b(TODO|FIXME)\b"),
+     re.compile(r"\byour (skill|description|name|tool)\b", re.IGNORECASE),
+     re.compile(r"<[a-z][a-z0-9_-]*>"),
+-    re.compile(r"\[(description|name|skill name|placeholder|TODO|...)\]", re.IGNORECASE),
++    re.compile(r"\[(description|name|skill name|placeholder|TODO)\]", re.IGNORECASE),
++    re.compile(r"\[\.\.\.\]"),
+     re.compile(r"\{[a-z][a-z0-9_]*\}"),
+     re.compile(r"\b(lorem ipsum|placeholder|sample description)\b", re.IGNORECASE),
+ ]
+diff --git a/tests/test_template_detection.py b/tests/test_template_detection.py
+new file mode 100644
+index 0000000..4570138
+--- /dev/null
++++ b/tests/test_template_detection.py
+@@ -0,0 +1,61 @@
++import pytest
++from pathlib import Path
++from src.skillcheck.parser import ParsedSkill
++from src.skillcheck.template_detection import is_template
++
++def test_is_template_with_acronyms():
++    # These should NOT be detected as templates
++    acronyms = [
++        "This is a skill for [ISO] standards.",
++        "Using the [API] for integration.",
++        "Command line interface [CLI] guide.",
++        "A skill about [REST] services.",
++    ]
++    for desc in acronyms:
++        skill = ParsedSkill(
++            path=Path("skills/my-skill/SKILL.md"),
++            frontmatter={"description": desc},
++            body="body",
++            body_lines=1,
++            raw_text="--- \ndescription: " + desc + "\n---\nbody",
++        )
++        assert not is_template(skill), f"Should not be a template: {desc}"
++
++def test_is_template_with_placeholders():
++    # These SHOULD be detected as templates
++    placeholders = [
++        "Replace with your description",
++        "TODO: add details",
++        "This is a [description] placeholder",
++        "Enter [name] here",
++        "[...]",
++    ]
++    for desc in placeholders:
++        skill = ParsedSkill(
++            path=Path("skills/my-skill/SKILL.md"),
++            frontmatter={"description": desc},
++            body="body",
++            body_lines=1,
++            raw_text="--- \ndescription: " + desc + "\n---\nbody",
++        )
++        assert is_template(skill), f"Should be a template: {desc}"
++
++def test_is_template_frontmatter():
++    skill = ParsedSkill(
++        path=Path("skills/my-skill/SKILL.md"),
++        frontmatter={"template": True},
++        body="body",
++        body_lines=1,
++        raw_text="--- \ntemplate: true\n---\nbody",
++    )
++    assert is_template(skill)
++
++def test_is_template_directory():
++    skill = ParsedSkill(
++        path=Path("skills/templates/SKILL.md"),
++        frontmatter={},
++        body="body",
++        body_lines=1,
++        raw_text="body",
++    )
++    assert is_template(skill)

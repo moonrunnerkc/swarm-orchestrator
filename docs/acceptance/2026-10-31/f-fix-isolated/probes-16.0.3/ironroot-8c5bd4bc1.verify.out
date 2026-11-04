@@ -1,0 +1,56 @@
+state        incomplete (regression only: no requirements were declared)
+reason       check test: 31 test(s) pass at the base commit and fail against the candidate: tests.e2e.test_full_research_cycle.TestFullResearchCycle::test_deterministic_run_produces_bundle, tests.integration.test_api_runs.TestHealthApi::test_health_check, tests.integration.test_api_runs.TestRunsApi::test_create_run, tests.integration.test_api_runs.TestRunsApi::test_get_run, tests.integration.test_api_runs.TestRunsApi::test_get_trace and 26 more
+reason       check test: 1 test(s) fail at the base commit and still fail, which does not block: tests.integration.test_agi_campaign
+regression   found: new failures tests.e2e.test_full_research_cycle.TestFullResearchCycle::test_deterministic_run_produces_bundle, tests.integration.test_api_runs.TestHealthApi::test_health_check, tests.integration.test_api_runs.TestRunsApi::test_create_run, tests.integration.test_api_runs.TestRunsApi::test_get_run, tests.integration.test_api_runs.TestRunsApi::test_get_trace; 1 inherited
+base         5dd2885d69f61ffb29fe18213df48255fe48f91e
+change       4 file(s) from the commit
+check        test: fail (python3 -m pytest -q, pre-existing)
+baseline     0 of 1 check(s) pass at the base commit
+held-out     unmeasured: no held-out checks are sealed for this workspace
+test files   1 added, 1 modified
+coverage     unmeasured: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break
+mutation     unmeasured: a check failed, so no mutant can be told apart from that failure
+execution    isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:594e5dbe7ca65306dc6b16f58bd180eafff5c85360520a659202283ca7d86d64
+
+$ python3 -m pytest -q
+y                      57     57     16      0     0%   8-411
+src/ironroot/research/llm_engine.py                       216    216     62      0     0%   10-602
+src/ironroot/research/semantic.py                         142    142     76      0     0%   11-482
+src/ironroot/research/service.py                          316    203     54      0    31%   37, 151-176, 181-184, 189-192, 206-215, 228-242, 254-300, 306-436, 458-520, 540-593, 630-762, 793-924, 955-963, 990-1036, 1041-1096, 1101-1187
+src/ironroot/research/sources/__init__.py                   4      4      0      0     0%   10-14
+src/ironroot/research/sources/arxiv.py                     99     99     20      0     0%   4-200
+src/ironroot/research/sources/grok_search.py               62     62     10      0     0%   4-189
+src/ironroot/research/sources/semantic_scholar.py          71     71     14      0     0%   4-169
+src/ironroot/settings.py                                   58      4      8      1    92%   66, 91, 99, 107
+src/ironroot/storage/__init__.py                            0      0      0      0   100%
+src/ironroot/storage/artifact_service.py                   55     37     12      0    27%   19, 31-53, 57-60, 64-67, 78-100, 104, 108, 112, 122-124
+src/ironroot/storage/artifacts.py                          51      3     12      1    94%   34, 72-73
+src/ironroot/storage/models.py                            115      0      0      0   100%
+src/ironroot/storage/postgres.py                           31     17      4      0    40%   31-38, 44-47, 53-60, 66
+src/ironroot/ui_backend/__init__.py                         0      0      0      0   100%
+src/ironroot/ui_backend/events.py                          12     12      0      0     0%   4-30
+src/ironroot/ui_backend/websocket.py                       15     15      4      0     0%   4-32
+src/ironroot/verification/__init__.py                       0      0      0      0   100%
+src/ironroot/verification/falsification.py                 11     11      0      0     0%   4-26
+src/ironroot/verification/gate_service.py                  97     77     32      0    16%   32-109, 115-118, 128-145, 155-172, 183-192, 200-215, 226-232, 242-244
+src/ironroot/verification/integrity.py                      8      1      0      0    88%   20
+src/ironroot/verification/invariants.py                    15     15      0      0     0%   4-60
+src/ironroot/verification/regression_gate.py               22      0      0      0   100%
+src/ironroot/verification/replay.py                        23      1      6      1    93%   52
+src/ironroot/world_models/__init__.py                     162     81     26      0    43%   62, 87, 104, 109, 114, 119, 124, 129, 144-152, 156, 160, 164-177, 182-192, 196-201, 205-210, 214, 228-231, 241-268, 278-338, 342, 346, 350, 359-361
+---------------------------------------------------------------------------------------------------
+TOTAL                                                    7720   4702   1418     16    34%
+FAIL Required test coverage of 70% not reached. Total coverage: 33.68%
+=========================== short test summary info ============================
+ERROR tests/integration/test_agi_campaign.py
+=================== 155 passed, 2 warnings, 1 error in 4.22s ===================
+/Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/ironroot-8c5bd4bc1/home/work/swarm-verify-ftAPLq/tree/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/ironroot-8c5bd4bc1/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/ironroot-8c5bd4bc1/verdict/attestation.pub.pem
+exit 1

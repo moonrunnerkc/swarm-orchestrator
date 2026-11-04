@@ -32,13 +32,14 @@ A category counts only with a complete run of its own task whose replay agrees; 
 | Multi-file feature, backward compatible | t2 crossfire | 20261101T142858-cff296 | complete | qwen3.8:27b, Rapid-MLX, 65,536 | 646,974 / 4,653 | agrees | |
 | Fix a real defect | t3 ruleprobe (`--host`) | 20261101T042617-8a01e0 | complete | swarm-redesign-qwen36-32k, Ollama auto | 560,835 / 4,765 | agrees on the host (`final/replay-host.out`); the first replay ran in a container and diverged | |
 | Fix beside an unrelated inherited failure | c1 ruleprobe (`--host`) | 20261101T205458-33e203 | complete | gemma4:31b, Ollama auto | 499,019 / 9,095 | agrees, on the host | |
-| Refactor: move without behavior change | t5b ironroot | 20261101T054940-b71a2a | complete | swarm-redesign-qwen36-32k, Ollama auto | 735,845 / 7,243 | agrees | |
-| Refactor across modules, tests and config | t6 tracemantle | 20261103T231418-6662f6 | incomplete | gemma4:31b, escalated to swarm-redesign-qwen36-32k, Ollama auto | 89,562 / 1,551 | agrees | open: the first run whose edit tools work on macOS and that no harness defect misled (16.0.2 candidate). The moved `history/history_store.py` imports `_entry_from_dict` from the old path, whose shim is `from tracemantle.history.history_io import *`, which does not re-export an underscore name, so test collection fails (ImportError, regression found); the model never ran the tests, repeated `ls -F` three times, and the escalated model repeated one `grep` three times. Every earlier t6 run met a defect of the product: swarm-verify 2.0.0 refused the correct move (fixed in 2.0.1), BSD `sed -i` failed every in-place edit (fixed in 16.0.2), and the first 16.0.2 attempt was misled by the diff view (fixed in 16.0.2); see Reruns for 16.0.2 |
+| Refactor: move without behavior change | t5b ironroot | 20261101T054940-b71a2a | incomplete, judged again by swarm-verify 2.0.3 | swarm-redesign-qwen36-32k, Ollama auto | 735,845 / 7,243 | agrees | open: recorded complete under 2.0.0 only because the verifier counted any changed file as a refactor's evidence; its requirement names no structure, so 2.0.3 holds it unverified (`t5b-ironroot/judged-2.0.3/`); see Runs after 16.0.2 |
+| Refactor across modules, tests and config | t6 tracemantle | 20261103T231418-6662f6 | incomplete | gemma4:31b, escalated to swarm-redesign-qwen36-32k, Ollama auto | 89,562 / 1,551 | agrees | open: the first run whose edit tools work on macOS and that no harness defect misled (16.0.2 candidate). The moved `history/history_store.py` imports `_entry_from_dict` from the old path, whose shim is `from tracemantle.history.history_io import *`, which does not re-export an underscore name, so test collection fails (ImportError, regression found); the model never ran the tests, repeated `ls -F` three times, and the escalated model repeated one `grep` three times. Every earlier t6 run met a defect of the product: swarm-verify 2.0.0 refused the correct move (fixed in 2.0.1), BSD `sed -i` failed every in-place edit (fixed in 16.0.2), and the first 16.0.2 attempt was misled by the diff view (fixed in 16.0.2); see Reruns for 16.0.2. Named, qwen3.6:35b-a3b and mistral-small3.2:24b did not complete it either (Runs after 16.0.2) |
 | Upgrade a dependency | t7a claimcheck | 20261101T235811-1133bb | complete | gemma4:31b, Ollama auto | 133,999 / 1,099 | agrees | |
 | Upgrade the runtime | t8 quantproof | 20261101T073344-9bf3e4 | complete | qwen3.6:35b-a3b, Ollama auto | 222,006 / 1,990 | agrees | |
 
-Seven of the eight categories have a complete run of their own task whose replay agrees. The
-cross-module refactor (t6 tracemantle) does not. No earlier t6 run says anything about what a local
+Six of the eight categories have a complete run of their own task whose replay agrees. Neither
+refactor does: t5b's complete run rested on evidence the verifier made up (fixed in swarm-verify
+2.0.3, Runs after 16.0.2), and the cross-module refactor (t6 tracemantle) has none. No earlier t6 run says anything about what a local
 model can do with it: swarm-verify 2.0.0 refused the correct move whoever made it (Comparison), BSD
 `sed -i` failed every in-place edit on this Mac until 16.0.2 gave the model a probed platform block and
 edit blocks, and the first 16.0.2 attempt was misled by a diff view that hid file headers. The second
@@ -47,18 +48,18 @@ edit blocks, and the first 16.0.2 attempt was misled by a diff view that hid fil
 so another agent's patch can be judged by the same verifier on the same base. t7b dependency detector (20261101T102609-e587a2,
 complete, replay agrees), the upgrade substitute of the first round, completed as well. Of the two
 held-back tasks, h1 completed on its first run with a replay that agrees, and h2 did not complete
-in either round. No known false completion remains: claimcheck's "latest 9.x" is now held by the
-verifier, and its complete run resolves Stryker 9.6.1, the registry's latest 9.x.
+in either round. claimcheck's "latest 9.x" is held by the verifier, and its complete run resolves Stryker 9.6.1, the
+registry's latest 9.x. Two false completions were found after 16.0.2, both from the same verifier
+defect: t5b's, and a t6 run of qwen3.6:35b-a3b (Runs after 16.0.2).
 
-The fix category is host-verified only. Its complete runs (t3 and c1, ruleprobe) ran on the host,
-and no isolated attempt from a real bug-fix commit has completed. Both picks fail at their base in the
-container for reasons of their own (depose's typecheck and build, claimcheck's missing
-`claimcheck/src/coverage/collect.js`), so those checks stay unresolved and no isolated run of either can be
-complete; the sealed held-out test is what judges the fix. depose 09b01c1: correct in 16.0.1's
-attempt and again in 16.0.2's (the sealed test fails at the base and passes with the patch).
-claimcheck d2f136c: wrong in 16.0.1's attempt and in 16.0.2's first, which also circled on one import
-line until the step budget; the second 16.0.2 attempt, after that loop defect was fixed, passes the
-sealed test. All are in `f-fix-isolated/`.
+The fix category is verified in isolation. Two isolated runs from real tracemantle bug-fix commits,
+each judged by the fix commit's own test sealed as a held-out check the model never saw, are complete
+with replays that agree, and the sealed test fails at the base and passes with each patch (Runs after
+16.0.2). The first picks could not complete in a container whatever the patch: depose 09b01c1 and
+claimcheck d2f136c fail their own typecheck and build at the base (Go is not in the image; a missing
+`claimcheck/src/coverage/collect.js`), so those checks stay unresolved. depose's patch was correct in
+16.0.1's attempt and in 16.0.2's; claimcheck's was wrong in 16.0.1's attempt and in 16.0.2's first,
+and right in the second. All are in `f-fix-isolated/`.
 
 ## Final runs
 
@@ -153,6 +154,54 @@ registry signatures and provenance attestations of all four installed packages.
 It changed `fs-walk.ts` with edit blocks and wrote the test with a write block; no command used
 `sed -i`, and dossier was unchanged.
 
+## Runs after 16.0.2 (2026-11-04)
+
+The open items of the 16.0.2 report, run on a build of 6d440afd0 (16.0.2 and the review's platform
+facts) with swarm-verify 2.0.2, isolated, each replayed. Every source repository was unchanged.
+
+**New fix picks.** Each bug-fix commit that adds a test was first judged as the human made it
+(`swarm-verify verify --range <base>..<fix>`, isolated) to see whether its base can complete in the
+container at all (`f-fix-isolated/probes-16.0.3/`). Of six candidates, two can: tracemantle
+f69ad0c58 and c4dc276c4, complete with the fix's own test passing. claimcheck 247ff8f05 and
+e48bd4064 fail their base's typecheck and build or regress under the human fix in the container,
+tracemantle 590c8e61e's human fix fails a README test-count test, and ironroot 8c5bd4bc1's human fix
+fails 31 tests the base passes. depose was not probed: every candidate there touches its Go apps,
+and its build needs Go, which the image lacks. tracemantle's base has 131 to 135 tests that fail in
+the container, all for one reason (they download a tiktoken encoding, and the network is closed for
+checks); they are inherited, and a regression among them would not be seen.
+
+| Task | Directory | Session | State | Stop | Model | Turns | Input / output tokens | Wall | Replay | Held-out |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fix: tracemantle f69ad0c58 | `f-fix-isolated/tracemantle-f69ad0c58/attempt-1` | 20261104T043531-a99a49 | complete | complete | gemma4:31b | 20 | 121,792 / 2,988 | 821 s | agrees | fails at the base, passes with the patch |
+| fix: tracemantle c4dc276c4 | `f-fix-isolated/tracemantle-c4dc276c4/attempt-1` | 20261104T051054-41553d | complete | no-progress | gemma4:31b, escalated | 45 | 336,767 / 8,134 | 1,507 s | diverges on the generated uv.lock only | fails at the base, passes with the patch |
+| t6 tracemantle | `t6-tracemantle/rerun-qwen36-35b-a3b` | 20261104T060822-ad6089 | complete under 2.0.2; incomplete under 2.0.3 | no-progress | qwen3.6:35b-a3b, named | 34 | 283,483 / 5,905 | 1,048 s | agrees | |
+| t6 tracemantle | `t6-tracemantle/rerun-mistral-small32-24b` | 20261104T064024-016839 | incomplete | no-progress | mistral-small3.2:24b, named | 24 | 144,462 / 17,649 | 2,036 s | agrees | |
+
+- **The held-out judgment, corrected.** Each fix run's first held-out verdict (`held-out/`) ran
+  pytest under the project's own `--cov-fail-under=68`, which fails any run of one test file: it
+  failed at the base and with every patch, so it said nothing. Both were judged again with
+  `--no-cov` (`held-out-2/`): the sealed test fails at the base and passes with each patch, the
+  verdicts are complete, and their replays agree. On f69ad0c58 the sealed set is the test and the
+  two fixtures it reads, sealed by `tests/**/*templat*`, which also takes four base fixtures with
+  unchanged bytes.
+- **f69ad0c58**: the model escaped the literal `[...]` placeholder in its own pattern, as the fix
+  commit does in place, and wrote its own test. **c4dc276c4**: all four config changes (typed
+  error messages naming the value, a quote-aware inline comment strip, `find_config` stopping at a
+  `.git` root or the home directory, the loaded config's path on stderr); the stop was no progress,
+  and finalization judged the delivered tree complete. Its replay diverged on the uv.lock the
+  verifier resolved while preparing: tracemantle tracks none, and 2.0.2 recorded that lock as
+  reproducible without keeping it. Fixed in swarm-verify 2.0.3, which keeps it with the evidence.
+- **t6, qwen3.6:35b-a3b**: a false completion. Asked for an eight-part move, it added
+  `history/__init__.py` and a copy of `history_io.py`, moved nothing, wrote no shim and named no
+  evidence; 2.0.2 counted the two changed files as the refactor's evidence and called it complete.
+  The same patch judged by the fixed verifier is incomplete, R1 unverified ("no structure claim
+  shows what the refactor leaves"), replay agreeing (`judged-2.0.3/`). **t6, mistral-small3.2:24b**:
+  moved the three test files, tried `mv core/history_io.py` four times from the wrong directory, and
+  the verifier found the regression.
+- **t5b ironroot**, judged again by 2.0.3 on its recorded patch and requirements: incomplete, R1
+  unverified, replay agreeing (`t5b-ironroot/judged-2.0.3/`). Its 2.0.0 verdict rested on the same
+  made-up evidence.
+
 ## Input tokens before and after context management
 
 The same task, model and context, before the loop kept its prompt bounded and after. The reruns
@@ -200,8 +249,11 @@ and the reports say so rather than print zero.
   quantproof, the contract's first candidate, has no inherited failure on the host or in a
   container (635 of 635 tests pass), and ruleprobe has none in a container, so this run is on the
   host.
-- **t5b ironroot.** Three classes moved to `cli/promote_report.py` and re-exported; the suite passes
-  at the base and with the change, in a closed container.
+- **t5b ironroot**, withdrawn. Three classes moved to `cli/promote_report.py` and re-exported; the
+  suite passes at the base and with the change, in a closed container. Its requirement names no
+  structure, and its complete verdict came from the verifier treating the changed files as the
+  refactor's evidence; judged again by swarm-verify 2.0.3 it is incomplete, R1 unverified
+  (`t5b-ironroot/judged-2.0.3/`). The move itself was not shown wrong; it was never shown right.
 - **t7a claimcheck.** vitest 4.1.8 to 4.1.10; both Stryker packages stay at 9.6.1, which the
   registry, read while dependencies were prepared, names the latest 9.x. The task's three version
   constraints (vitest within 4.1.10, each Stryker package within the latest 9.x) were read from its
@@ -248,7 +300,8 @@ and the reports say so rather than print zero.
   `t6-tracemantle/closing-attempt-3/`.
 - **t5a depose.** In the first round the move was made without evidence mapped; rerun with the same
   model after context management, Qwen3.8 read the test file three turns running and stopped for no
-  progress after 6 turns, nothing changed. Replays agree. t5b ironroot holds the category.
+  progress after 6 turns, nothing changed. Replays agree. No refactor run holds the category (t5b's
+  complete run was withdrawn when the verifier stopped making up refactor evidence).
 - **h2 ironroot** (held back). First round: Gemma ran out of time; Qwen3.8 repeated a patch script.
   Closing round, Qwen3.8: the one-line source fix was made, no test was written, and the same read
   was repeated until the run stopped (18 turns). This run also found that a project with a

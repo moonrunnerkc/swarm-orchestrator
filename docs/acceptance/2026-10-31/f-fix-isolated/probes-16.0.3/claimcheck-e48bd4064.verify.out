@@ -1,0 +1,70 @@
+state        incomplete (regression only: no requirements were declared)
+reason       check test: 6 test(s) pass at the base commit and fail against the candidate: eval/corpus.test.ts, src/cli/run.integration.test.ts, src/core/pipeline.integration.test.ts, src/oracle/graceful-degradation.test.ts, src/oracle/issue-repro.test.ts and 1 more
+reason       check test: 1 test(s) fail at the base commit and still fail, which does not block: src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes
+regression   found: new failures eval/corpus.test.ts, src/cli/run.integration.test.ts, src/core/pipeline.integration.test.ts, src/oracle/graceful-degradation.test.ts, src/oracle/issue-repro.test.ts; 1 inherited
+base         2ab9231e5a985b16b7e49edd5b70ec951acd9ba6
+change       4 file(s) from the commit
+check        test: fail (npm run test, pre-existing)
+check        typecheck: pass (npm run typecheck, pre-existing)
+check        build: pass (npm run build, pre-existing)
+baseline     0 of 3 check(s) pass at the base commit
+held-out     unmeasured: no held-out checks are sealed for this workspace
+test files   1 added
+coverage     unmeasured: the V8 offsets for src/adapters/vitest-run.ts run past the file, so a transform ran first
+mutation     unmeasured: a check failed, so no mutant can be told apart from that failure
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:220ec6e5fb65b7261f2daa35d890ae94a3c29c87afc8113543710dad707729b0
+
+$ npm run test
+/analysis-cache.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m src/cli/args.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m eval/scoring.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m src/adapters/head-run.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m src/core/verdict.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m src/oracle/stubs.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m src/analysis/mutant-equivalence.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32m✓[39m src/mutation/concurrency.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32m✓[39m src/cli/format.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32m✓[39m src/core/pipeline.integration.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 49282[2mms[22m[39m
+     [33m[2m✓[22m[39m passes an honest fix whose test pins the changed value [33m 4856[2mms[22m[39m
+     [33m[2m✓[22m[39m blocks a vacuous fix whose test never checks the value [33m 4767[2mms[22m[39m
+     [33m[2m✓[22m[39m catches both vacuous fixes by assertion-reachability alone [33m 7528[2mms[22m[39m
+     [33m[2m✓[22m[39m does not let taint false-flag the honest or equivalent-mutant fix [33m 7452[2mms[22m[39m
+     [33m[2m✓[22m[39m blocks the other vacuous fix via the coverage-but-no-assertion path [33m 3648[2mms[22m[39m
+     [33m[2m✓[22m[39m does not block an honest fix that leaves an equivalent mutant [33m 3762[2mms[22m[39m
+     [33m[2m✓[22m[39m passes a flaky-clock fix once the sandbox pins the wall clock [33m 3645[2mms[22m[39m
+     [33m[2m✓[22m[39m quarantines a test that needs uncontrollable network and warns [33m 1080[2mms[22m[39m
+     [33m[2m✓[22m[39m warns on a correct fix that carries a @ts-ignore on the changed line [33m 3712[2mms[22m[39m
+     [33m[2m✓[22m[39m blocks a test that mocks the changed module so the fix never runs [33m 1429[2mms[22m[39m
+     [33m[2m✓[22m[39m reproduces an identical bundle hash across reruns [33m 7384[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m33 passed[39m[22m[90m (34)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m220 passed[39m[22m[90m (221)[39m
+[2m   Start at [22m 04:05:34
+[2m   Duration [22m 50.20s[2m (transform 727ms, setup 0ms, import 3.31s, tests 65.99s, environment 2ms)[22m
+
+JSON report written to /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/claimcheck-e48bd4064/home/work/swarm-verify-7SXTiQ/reports/candidate-test.report
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/determinism/sandbox.test.ts[2m > [22msandbox crypto pins[2m > [22mmakes crypto.randomUUID deterministic across separate processes
+[31m[1mAssertionError[22m: expected '{"a":"e6266df2-c395-4b19-b092-4432b38…' to deeply equal '{"a":"19f3fe3f-1cd9-4a8e-ad11-b16072a…'[39m
+
+Expected: [32m"{"a":"[7m19f3fe3f-1cd9-4a8e-ad11-b16072a79a60","b":"8988eba5-ea5b-4a3c-ac1b-b41b5a47c588","buf":[170,231,36,233[27m]}"[39m
+Received: [31m"{"a":"[7me6266df2-c395-4b19-b092-4432b38b8789","b":"897613e8-5767-4fe7-bee5-597adf20dca5","buf":[41,223,78,7[27m]}"[39m
+
+[36m [2m❯[22m src/determinism/sandbox.test.ts:[2m42:19[22m[39m
+    [90m 40|[39m     [35mconst[39m first [33m=[39m [35mawait[39m [34mrunUnderSandbox[39m(script)[33m;[39m
+    [90m 41|[39m     [35mconst[39m second [33m=[39m [35mawait[39m [34mrunUnderSandbox[39m(script)[33m;[39m
+    [90m 42|[39m     [34mexpect[39m(first)[33m.[39m[34mtoEqual[39m(second)[33m;[39m
+    [90m   |[39m                   [31m^[39m
+    [90m 43|[39m   })[33m;[39m
+    [90m 44|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/claimcheck-e48bd4064/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/claimcheck-e48bd4064/verdict/attestation.pub.pem
+exit 1

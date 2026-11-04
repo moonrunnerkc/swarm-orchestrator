@@ -1,0 +1,94 @@
+(node:53304) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+state        incomplete (regression only: no requirements were declared)
+reason       check test: 4 test(s) fail at the base commit and still fail, which does not block: eval/corpus.test.ts, src/cli/run.integration.test.ts, src/core/pipeline.integration.test.ts, src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes
+reason       check typecheck is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+reason       check build is unresolved: it fails at the base commit and with the candidate, and no per-test report tells a new failure from an old one
+regression   unresolved; 4 inherited; unresolved check build, check typecheck
+base         dcf57c2711ac07bb62e28f609e905b46aaee2707
+change       4 file(s) from the commit
+check        test: inherited-failures (npm run test, pre-existing)
+check        typecheck: unresolved (npm run typecheck, pre-existing)
+check        build: unresolved (npm run build, pre-existing)
+baseline     0 of 3 check(s) pass at the base commit
+held-out     unmeasured: no held-out checks are sealed for this workspace
+test files   1 added
+coverage     unmeasured: the V8 offsets for src/oracle/issue-repro.ts run past the file, so a transform ran first
+mutation     survived: === to !== at src/adapters/vitest-run.ts:122
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:e638057cdd533ef045c640ddcdf5b788edd2a8d1864f0d75c3fcbd21d8a3e34d
+
+$ npm run test
+[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/adapters/vitest-run.test.ts [2m ([22m[2m2 tests[22m[2m)[22m[33m 877[2mms[22m[39m
+ [32m✓[39m src/analysis/instrument.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m src/checks/test-weakening.test.ts [2m ([22m[2m5 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m src/analysis/mutant-equivalence.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/checks/error-suppression.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m src/oracle/stubs.test.ts [2m ([22m[2m3 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/cli/args.test.ts [2m ([22m[2m6 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+ [32m✓[39m src/cache/analysis-cache.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+ [32m✓[39m src/determinism/flake-fallback.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 2[2mms[22m[39m
+ [32m✓[39m src/cli/format.test.ts [2m ([22m[2m2 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/core/verdict.test.ts [2m ([22m[2m5 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/mutation/concurrency.test.ts [2m ([22m[2m3 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m src/mutation/stryker-runner.integration.test.ts [2m ([22m[2m2 tests[22m[2m)[22m[33m 4879[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m4 failed[39m[22m[2m | [22m[1m[32m28 passed[39m[22m[90m (32)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m198 passed[39m[22m[90m (199)[39m
+[2m   Start at [22m 04:04:40
+[2m   Duration [22m 8.16s[2m (transform 1.99s, setup 2ms, collect 4.79s, tests 5.94s, environment 3ms, prepare 3.18s)[22m
+
+JSON report written to /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/claimcheck-247ff8f05/home/work/swarm-verify-5wBbEq/reports/candidate-test.report
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Suites 3 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m src/cli/run.integration.test.ts [2m[ src/cli/run.integration.test.ts ][22m
+[31m[1m[7m FAIL [27m[22m[39m src/core/pipeline.integration.test.ts [2m[ src/core/pipeline.integration.test.ts ][22m
+[31m[1m[7m FAIL [27m[22m[39m eval/corpus.test.ts [2m[ eval/corpus.test.ts ][22m
+[31m[1mError[22m: Failed to load url ../coverage/collect.js (resolved id: ../coverage/collect.js) in /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/claimcheck-247ff8f05/home/work/swarm-verify-5wBbEq/tree/src/core/pipeline.ts. Does the file exist?[39m
+[90m [2m❯[22m loadAndTransform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m51969:17[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m src/determinism/sandbox.test.ts[2m > [22msandbox crypto pins[2m > [22mmakes crypto.randomUUID deterministic across separate processes
+[31m[1mAssertionError[22m: expected '{"a":"e1813b4a-35cb-45dd-ab40-c05429d…' to deeply equal '{"a":"f2debc82-477f-48c0-b926-2e013e6…'[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- {"a":"f2debc82-477f-48c0-b926-2e013e61e2ed","b":"d6328408-7044-4131-bc53-7a8f30492402","buf":[189,181,251,45]}[39m
+[31m+ {"a":"e1813b4a-35cb-45dd-ab40-c05429d5b4af","b":"1a195280-5ad1-4fa3-bc02-7e541547981d","buf":[30,86,84,59]}[39m
+
+[36m [2m❯[22m src/determinism/sandbox.test.ts:[2m42:19[22m[39m
+    [90m 40| [39m    [35mconst[39m first [33m=[39m [35mawait[39m [34mrunUnderSandbox[39m(script)[33m;[39m
+    [90m 41| [39m    [35mconst[39m second [33m=[39m [35mawait[39m [34mrunUnderSandbox[39m(script)[33m;[39m
+    [90m 42| [39m    [34mexpect[39m(first)[33m.[39m[34mtoEqual[39m(second)[33m;[39m
+    [90m   | [39m                  [31m^[39m
+    [90m 43| [39m  })[33m;[39m
+    [90m 44| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯[22m[39m
+
+
+
+$ npm run typecheck
+
+> claimcheck@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+src/core/pipeline.ts(28,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.
+
+
+$ npm run build
+
+> claimcheck@0.1.0 build
+> tsc -p tsconfig.build.json
+
+src/core/pipeline.ts(28,56): error TS2307: Cannot find module '../coverage/collect.js' or its corresponding type declarations.
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/claimcheck-247ff8f05/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/run-16.0.2/fix-probes/claimcheck-247ff8f05/verdict/attestation.pub.pem
+exit 4

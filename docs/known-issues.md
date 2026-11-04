@@ -12,6 +12,9 @@ moved both modules and the three test files and wrote both shims as `from ... im
 not re-export an underscore name; the moved `history_store.py` imports `_entry_from_dict` from the
 old path, so test collection fails with ImportError and the verifier reports the regression. The
 model ran no test, then both models repeated a read until the run stopped for no progress.
+Named on 2026-11-04, qwen3.6:35b-a3b added two files of the move and stopped, and swarm-verify 2.0.2
+called it complete through a defect fixed in 2.0.3 (incomplete when judged again); mistral-small3.2:24b
+moved the test files, ran its module moves from the wrong directory, and the regression was found.
 Every t6 run before it was invalidated by a defect of the product, not a limit of the model: swarm-verify 2.0.0 refused the correct
 move (fixed in 2.0.1), BSD `sed -i` failed every in-place edit on macOS (fixed in 16.0.2), and the
 first 16.0.2 attempt (session 20261103T213819-76ab1e) read a diff cut so that its second shim showed

@@ -1,0 +1,513 @@
+{
+  "state": "complete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 135 test(s) fail at the base commit and still fail, which does not block: tests.test_cli::test_directory_mode_finds_skill_files, tests.test_cli::test_directory_mode_ignores_non_skill_md_files, tests.test_cli::test_fail_shows_cross_symbol, tests.test_cli::test_ignore_prefix_suppresses_matching_rules, tests.test_cli::test_ingest_critique_non_utf8_response_exits_two and 95 more"
+  ],
+  "base": {
+    "commit": "07e36940ff90bd9e6b6ed4bed959da93d4859941"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/skillcheck/cli.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/skillcheck/config_loader.py",
+        "status": "modified"
+      },
+      {
+        "path": "tests/skillcheck/test_config_loader.py",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Harden skillcheck.toml handling in src/skillcheck/config_loader.py and the CLI: (1) a wrong-typed value must name the value it got, as in \"Config key 'max-lines' must be an integer (got 'nope')\", \"must be true or false (got 'yes')\" and \"must be a string (got 5)\"; (2) the fallback parser used when tomllib is missing must drop an inline # comment without cutting a # inside a quoted value, through a helper _strip_inline_comment(line) that returns the line without its comment; (3) find_config must stop climbing at a directory that holds .git (a skillcheck.toml there is still found) or at the user's home, never reaching a config above them; (4) the CLI must print \"Loaded config from <path>\" to stderr when it loads a config file. Add tests.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_find_config_stops_at_git_v2"
+          },
+          {
+            "name": "test_load_config_type_errors"
+          },
+          {
+            "name": "test_fallback_parser_comments"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_find_config_stops_at_git_v2",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_load_config_type_errors",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [
+      "tests.test_cli::test_directory_mode_finds_skill_files",
+      "tests.test_cli::test_directory_mode_ignores_non_skill_md_files",
+      "tests.test_cli::test_fail_shows_cross_symbol",
+      "tests.test_cli::test_ignore_prefix_suppresses_matching_rules",
+      "tests.test_cli::test_ingest_critique_non_utf8_response_exits_two",
+      "tests.test_cli::test_ingest_response_over_size_cap_exits_two",
+      "tests.test_cli::test_json_output_is_valid_json",
+      "tests.test_cli::test_json_output_schema_for_invalid_file",
+      "tests.test_cli::test_json_output_schema_for_valid_file",
+      "tests.test_cli::test_max_lines_override_triggers_warning",
+      "tests.test_cli::test_max_lines_override_with_strict_exits_one",
+      "tests.test_cli::test_max_tokens_override_triggers_warning",
+      "tests.test_cli::test_no_color_flag_accepted",
+      "tests.test_cli::test_pass_shows_checkmark_symbol",
+      "tests.test_cli::test_quiet_flag_short_form",
+      "tests.test_cli::test_quiet_flag_suppresses_output_valid",
+      "tests.test_cli::test_quiet_flag_with_json_format",
+      "tests.test_cli::test_strict_cursor_fails_on_folded_keep",
+      "tests.test_cli::test_strict_cursor_passes_on_folded_strip",
+      "tests.test_cli::test_strict_escalates_warning_run_to_exit_one",
+      "tests.test_cli::test_strict_passes_on_clean_skill",
+      "tests.test_cli::test_strict_promotes_cursor_block_scalar_to_error",
+      "tests.test_cli::test_summary_includes_warning_count",
+      "tests.test_cli::test_target_agent_cursor_accepted",
+      "tests.test_cli::test_text_output_includes_summary_line",
+      "tests.test_cli::test_text_output_is_default",
+      "tests.test_cli::test_text_output_shows_fail_for_invalid_file",
+      "tests.test_cli::test_text_output_shows_rule_id_and_message",
+      "tests.test_cli::test_valid_file_exits_zero",
+      "tests.test_cli::test_warning_severity_shown_in_diagnostics",
+      "tests.test_cli_critique::test_ingest_critique_clean_passing_skill_exits_zero",
+      "tests.test_cli_critique::test_ingest_critique_clean_passing_skill_produces_report",
+      "tests.test_cli_critique::test_ingest_critique_contradiction_on_passing_skill_exits_three",
+      "tests.test_cli_critique::test_ingest_critique_contradiction_report_shows_contradiction",
+      "tests.test_cli_critique::test_ingest_critique_failing_skill_report_shows_both_issues",
+      "tests.test_cli_critique::test_ingest_critique_malformed_json_emits_ingest_error_rule",
+      "tests.test_cli_critique::test_ingest_critique_missing_path_exits_two",
+      "tests.test_cli_critique::test_ingest_critique_missing_path_message_names_path",
+      "tests.test_cli_critique::test_ingest_critique_schema_error_emits_ingest_rule",
+      "tests.test_cli_critique::test_ingest_critique_stdin_clean_exits_zero",
+      "tests.test_cli_critique::test_ingest_critique_stdin_contradiction_exits_three",
+      "tests.test_cli_critique::test_regression_ignore_flag",
+      "tests.test_cli_critique::test_regression_json_format",
+      "tests.test_cli_critique::test_regression_target_agent_vscode",
+      "tests.test_cli_critique::test_regression_valid_skill_text_format",
+      "tests.test_cli_critique_agent::test_ingest_default_agent_adds_claude_source",
+      "tests.test_cli_critique_agent::test_ingest_json_default_agent_adds_claude_source_field",
+      "tests.test_cli_critique_agent::test_ingest_json_output_has_critique_source_field",
+      "tests.test_cli_critique_agent::test_ingest_text_output_has_critique_source",
+      "tests.test_cli_critique_agent::test_ingest_without_critique_agent_exits_zero",
+      "tests.test_cli_graph::test_analyze_graph_exits_zero_for_clean_file",
+      "tests.test_cli_graph::test_analyze_graph_exits_zero_when_only_warnings",
+      "tests.test_cli_graph::test_analyze_graph_includes_graph_rule_in_output",
+      "tests.test_cli_graph::test_analyze_graph_json_includes_graph_diagnostics",
+      "tests.test_cli_graph::test_analyze_graph_no_graph_diagnostics_for_empty_graph",
+      "tests.test_cli_graph::test_analyze_graph_still_includes_validation_summary",
+      "tests.test_cli_graph::test_format_json_still_works_without_graph_flags",
+      "tests.test_cli_graph::test_normal_validation_unaffected_by_new_flags",
+      "tests.test_cli_graph_agent::test_analyze_graph_alone_baseline",
+      "tests.test_cli_graph_agent::test_analyze_graph_shows_heuristic_source_json",
+      "tests.test_cli_graph_agent::test_analyze_graph_shows_heuristic_source_text",
+      "tests.test_cli_graph_agent::test_baseline_valid_skill_exits_0",
+      "tests.test_cli_graph_agent::test_baseline_valid_skill_json_format",
+      "tests.test_cli_graph_agent::test_ingest_critique_alone_baseline",
+      "tests.test_cli_graph_agent::test_ingest_graph_and_ingest_critique_shows_both_source_headers",
+      "tests.test_cli_graph_agent::test_ingest_graph_and_ingest_critique_together_exits_0",
+      "tests.test_cli_graph_agent::test_ingest_graph_clean_exits_0",
+      "tests.test_cli_graph_agent::test_ingest_graph_contradiction_has_error_diagnostic",
+      "tests.test_cli_graph_agent::test_ingest_graph_explicit_codex_agent_shows_in_header",
+      "tests.test_cli_graph_agent::test_ingest_graph_json_report_has_graph_source_field",
+      "tests.test_cli_graph_agent::test_ingest_graph_parse_error_has_semantic_diagnostic",
+      "tests.test_cli_graph_agent::test_ingest_graph_text_report_has_graph_source_header",
+      "tests.test_cli_history::test_history_creates_ledger_with_one_run",
+      "tests.test_cli_history::test_history_fans_out_across_multiple_paths",
+      "tests.test_cli_history::test_history_passing_skill_exits_zero",
+      "tests.test_cli_history::test_history_records_both_critique_and_graph_agents",
+      "tests.test_cli_history::test_history_records_correct_modes_symbolic_only",
+      "tests.test_cli_history::test_history_regression_emits_warning",
+      "tests.test_cli_history::test_history_run_twice_creates_two_entries",
+      "tests.test_cli_history::test_history_schema_keys_present",
+      "tests.test_cli_history::test_history_write_failure_warns_but_keeps_exit_code",
+      "tests.test_cli_history::test_show_history_json_is_valid_json",
+      "tests.test_cli_history::test_show_history_json_top_level_keys",
+      "tests.test_cli_history::test_show_history_text_contains_pass_or_fail",
+      "tests.test_cli_history::test_show_history_text_contains_timestamps",
+      "tests.test_cli_history::test_show_history_warns_on_extra_paths",
+      "tests.test_compat::test_cursor_block_scalar_default_severity_is_info",
+      "tests.test_compat::test_cursor_block_scalar_strict_cursor_replaces_info",
+      "tests.test_compat::test_cursor_block_scalar_strict_cursor_target_cursor",
+      "tests.test_compat::test_cursor_block_scalar_target_cursor_emits_single_warning",
+      "tests.test_compat::test_strict_vscode_all_emits_single_dirname_diagnostic",
+      "tests.test_disclosure::test_body_budget_passes_for_small_body",
+      "tests.test_disclosure::test_body_budget_warns_for_large_body",
+      "tests.test_disclosure::test_metadata_budget_passes_for_small_frontmatter",
+      "tests.test_disclosure::test_metadata_budget_warns_for_large_frontmatter",
+      "tests.test_explain_score::test_json_breakdown_present",
+      "tests.test_explain_score::test_text_explain_score_shows_breakdown",
+      "tests.test_explain_score::test_text_flag_off_suppresses_breakdown",
+      "tests.test_fail_on_regression.TestFailOnRegressionCLI::test_flag_set_no_regression_exits_0",
+      "tests.test_fail_on_regression.TestFailOnRegressionCLI::test_flag_unset_regression_warns_exit_0"
+    ],
+    "removed": [],
+    "unresolved": [],
+    "flaky": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 824,
+      "exitCode": 1,
+      "durationMs": 107397,
+      "outputSha256": "a804bc4716e3cf1c2c0878e2e638be2b8f49988611af099128d8018f548fc1fb",
+      "tests": {
+        "runner": "pytest",
+        "collected": {
+          "base": 821,
+          "candidate": 824
+        },
+        "counts": {
+          "preserved": 686,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 135,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 3,
+          "addedFailing": 0,
+          "witnesses": 3,
+          "skipped": 0,
+          "flaky": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "tests.test_cli::test_directory_mode_finds_skill_files",
+          "tests.test_cli::test_directory_mode_ignores_non_skill_md_files",
+          "tests.test_cli::test_fail_shows_cross_symbol",
+          "tests.test_cli::test_ignore_prefix_suppresses_matching_rules",
+          "tests.test_cli::test_ingest_critique_non_utf8_response_exits_two",
+          "tests.test_cli::test_ingest_response_over_size_cap_exits_two",
+          "tests.test_cli::test_json_output_is_valid_json",
+          "tests.test_cli::test_json_output_schema_for_invalid_file",
+          "tests.test_cli::test_json_output_schema_for_valid_file",
+          "tests.test_cli::test_max_lines_override_triggers_warning",
+          "tests.test_cli::test_max_lines_override_with_strict_exits_one",
+          "tests.test_cli::test_max_tokens_override_triggers_warning",
+          "tests.test_cli::test_no_color_flag_accepted",
+          "tests.test_cli::test_pass_shows_checkmark_symbol",
+          "tests.test_cli::test_quiet_flag_short_form",
+          "tests.test_cli::test_quiet_flag_suppresses_output_valid",
+          "tests.test_cli::test_quiet_flag_with_json_format",
+          "tests.test_cli::test_strict_cursor_fails_on_folded_keep",
+          "tests.test_cli::test_strict_cursor_passes_on_folded_strip",
+          "tests.test_cli::test_strict_escalates_warning_run_to_exit_one",
+          "tests.test_cli::test_strict_passes_on_clean_skill",
+          "tests.test_cli::test_strict_promotes_cursor_block_scalar_to_error",
+          "tests.test_cli::test_summary_includes_warning_count",
+          "tests.test_cli::test_target_agent_cursor_accepted",
+          "tests.test_cli::test_text_output_includes_summary_line",
+          "tests.test_cli::test_text_output_is_default",
+          "tests.test_cli::test_text_output_shows_fail_for_invalid_file",
+          "tests.test_cli::test_text_output_shows_rule_id_and_message",
+          "tests.test_cli::test_valid_file_exits_zero",
+          "tests.test_cli::test_warning_severity_shown_in_diagnostics",
+          "tests.test_cli_critique::test_ingest_critique_clean_passing_skill_exits_zero",
+          "tests.test_cli_critique::test_ingest_critique_clean_passing_skill_produces_report",
+          "tests.test_cli_critique::test_ingest_critique_contradiction_on_passing_skill_exits_three",
+          "tests.test_cli_critique::test_ingest_critique_contradiction_report_shows_contradiction",
+          "tests.test_cli_critique::test_ingest_critique_failing_skill_report_shows_both_issues",
+          "tests.test_cli_critique::test_ingest_critique_malformed_json_emits_ingest_error_rule",
+          "tests.test_cli_critique::test_ingest_critique_missing_path_exits_two",
+          "tests.test_cli_critique::test_ingest_critique_missing_path_message_names_path",
+          "tests.test_cli_critique::test_ingest_critique_schema_error_emits_ingest_rule",
+          "tests.test_cli_critique::test_ingest_critique_stdin_clean_exits_zero",
+          "tests.test_cli_critique::test_ingest_critique_stdin_contradiction_exits_three",
+          "tests.test_cli_critique::test_regression_ignore_flag",
+          "tests.test_cli_critique::test_regression_json_format",
+          "tests.test_cli_critique::test_regression_target_agent_vscode",
+          "tests.test_cli_critique::test_regression_valid_skill_text_format",
+          "tests.test_cli_critique_agent::test_ingest_default_agent_adds_claude_source",
+          "tests.test_cli_critique_agent::test_ingest_json_default_agent_adds_claude_source_field",
+          "tests.test_cli_critique_agent::test_ingest_json_output_has_critique_source_field",
+          "tests.test_cli_critique_agent::test_ingest_text_output_has_critique_source",
+          "tests.test_cli_critique_agent::test_ingest_without_critique_agent_exits_zero",
+          "tests.test_cli_graph::test_analyze_graph_exits_zero_for_clean_file",
+          "tests.test_cli_graph::test_analyze_graph_exits_zero_when_only_warnings",
+          "tests.test_cli_graph::test_analyze_graph_includes_graph_rule_in_output",
+          "tests.test_cli_graph::test_analyze_graph_json_includes_graph_diagnostics",
+          "tests.test_cli_graph::test_analyze_graph_no_graph_diagnostics_for_empty_graph",
+          "tests.test_cli_graph::test_analyze_graph_still_includes_validation_summary",
+          "tests.test_cli_graph::test_format_json_still_works_without_graph_flags",
+          "tests.test_cli_graph::test_normal_validation_unaffected_by_new_flags",
+          "tests.test_cli_graph_agent::test_analyze_graph_alone_baseline",
+          "tests.test_cli_graph_agent::test_analyze_graph_shows_heuristic_source_json",
+          "tests.test_cli_graph_agent::test_analyze_graph_shows_heuristic_source_text",
+          "tests.test_cli_graph_agent::test_baseline_valid_skill_exits_0",
+          "tests.test_cli_graph_agent::test_baseline_valid_skill_json_format",
+          "tests.test_cli_graph_agent::test_ingest_critique_alone_baseline",
+          "tests.test_cli_graph_agent::test_ingest_graph_and_ingest_critique_shows_both_source_headers",
+          "tests.test_cli_graph_agent::test_ingest_graph_and_ingest_critique_together_exits_0",
+          "tests.test_cli_graph_agent::test_ingest_graph_clean_exits_0",
+          "tests.test_cli_graph_agent::test_ingest_graph_contradiction_has_error_diagnostic",
+          "tests.test_cli_graph_agent::test_ingest_graph_explicit_codex_agent_shows_in_header",
+          "tests.test_cli_graph_agent::test_ingest_graph_json_report_has_graph_source_field",
+          "tests.test_cli_graph_agent::test_ingest_graph_parse_error_has_semantic_diagnostic",
+          "tests.test_cli_graph_agent::test_ingest_graph_text_report_has_graph_source_header",
+          "tests.test_cli_history::test_history_creates_ledger_with_one_run",
+          "tests.test_cli_history::test_history_fans_out_across_multiple_paths",
+          "tests.test_cli_history::test_history_passing_skill_exits_zero",
+          "tests.test_cli_history::test_history_records_both_critique_and_graph_agents",
+          "tests.test_cli_history::test_history_records_correct_modes_symbolic_only",
+          "tests.test_cli_history::test_history_regression_emits_warning",
+          "tests.test_cli_history::test_history_run_twice_creates_two_entries",
+          "tests.test_cli_history::test_history_schema_keys_present",
+          "tests.test_cli_history::test_history_write_failure_warns_but_keeps_exit_code",
+          "tests.test_cli_history::test_show_history_json_is_valid_json",
+          "tests.test_cli_history::test_show_history_json_top_level_keys",
+          "tests.test_cli_history::test_show_history_text_contains_pass_or_fail",
+          "tests.test_cli_history::test_show_history_text_contains_timestamps",
+          "tests.test_cli_history::test_show_history_warns_on_extra_paths",
+          "tests.test_compat::test_cursor_block_scalar_default_severity_is_info",
+          "tests.test_compat::test_cursor_block_scalar_strict_cursor_replaces_info",
+          "tests.test_compat::test_cursor_block_scalar_strict_cursor_target_cursor",
+          "tests.test_compat::test_cursor_block_scalar_target_cursor_emits_single_warning",
+          "tests.test_compat::test_strict_vscode_all_emits_single_dirname_diagnostic",
+          "tests.test_disclosure::test_body_budget_passes_for_small_body",
+          "tests.test_disclosure::test_body_budget_warns_for_large_body",
+          "tests.test_disclosure::test_metadata_budget_passes_for_small_frontmatter",
+          "tests.test_disclosure::test_metadata_budget_warns_for_large_frontmatter",
+          "tests.test_explain_score::test_json_breakdown_present",
+          "tests.test_explain_score::test_text_explain_score_shows_breakdown",
+          "tests.test_explain_score::test_text_flag_off_suppresses_breakdown",
+          "tests.test_fail_on_regression.TestFailOnRegressionCLI::test_flag_set_no_regression_exits_0",
+          "tests.test_fail_on_regression.TestFailOnRegressionCLI::test_flag_unset_regression_warns_exit_0"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+          "tests.skillcheck.test_config_loader::test_find_config_stops_at_git_v2",
+          "tests.skillcheck.test_config_loader::test_load_config_type_errors"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+          "tests.skillcheck.test_config_loader::test_find_config_stops_at_git_v2",
+          "tests.skillcheck.test_config_loader::test_load_config_type_errors"
+        ],
+        "flaky": [],
+        "reruns": [
+          {
+            "id": "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          },
+          {
+            "id": "tests.skillcheck.test_config_loader::test_find_config_stops_at_git_v2",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          },
+          {
+            "id": "tests.skillcheck.test_config_loader::test_load_config_type_errors",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "c07554c91c8854e51fe2c90b7f3fc706324384e6e918a784ae1f269396e7c381",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 821,
+        "exitCode": 1,
+        "durationMs": 108848,
+        "outputSha256": "d6865b530844811fece1ef386bbe921d0414d7532b88222e3064aeab15d4736f"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/skillcheck/cli.py",
+      "category": "source"
+    },
+    {
+      "path": "src/skillcheck/config_loader.py",
+      "category": "source"
+    },
+    {
+      "path": "tests/skillcheck/test_config_loader.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "tests/skillcheck/test_config_loader.py"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "movedAndEdited": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+  },
+  "mutation": {
+    "status": "survived",
+    "path": "src/skillcheck/config_loader.py",
+    "line": 93,
+    "operator": "== to !=",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "16.0.2",
+    "model": "swarm-redesign-qwen36-32k:latest",
+    "promptSha256": "ed1701db173b319aba82580bd782cf4d2d6cafc0acf8483efe953de05a554753",
+    "ledgerSha256": "ef64c912976e3e25d74299c531138c9dbf38c42694db74264e827515e4e2bc4b",
+    "ledgerRecords": 141,
+    "reportSha256": "c64c81dfe2c3fd6688cf3c25c207459015640b09a5f3a7d96cf1da1a57fc2795",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "c07554c91c8854e51fe2c90b7f3fc706324384e6e918a784ae1f269396e7c381",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "8a92399723716874fbf8a71e44790c459a9e7c52d1a09c83e6412b37ebde9672",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "0768b4cc7e9e6b4c9f0f9fc80cf5d092fd5541cca87c6f0f6285560a5fe27777"
+      },
+      "treeSha256": "8a92399723716874fbf8a71e44790c459a9e7c52d1a09c83e6412b37ebde9672",
+      "note": "prepared from the lockfile and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none",
+    "reruns": 3
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "a804bc4716e3cf1c2c0878e2e638be2b8f49988611af099128d8018f548fc1fb"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.2"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "07e36940ff90bd9e6b6ed4bed959da93d4859941",
+    "patchSha256": "9835c36695d7e8e8fff68e57b4fb3e18a1a5375ad78a0ba81a364704919e448f",
+    "treeSha256": "149a9879609c75073e1ba2c1d1fbb6c7e5c5c4eb5221ae1c2f8f66d8539fbe69"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "cad1a4433003087870f6d16608a4b633abb1998edd939555dc46055afe0be2f2",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261104T051054-41553d/final/verification",
+    "bundle": "/Users/brad/.swarm/sessions/20261104T051054-41553d/final/verification/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261104T051054-41553d/final/verification/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261104T051054-41553d/final/verification/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261104T051054-41553d/final/verification/attestation.pub.pem"
+  },
+  "failureOutput": "$ python3 -m pytest -q\ne_fixes.py::test_template_detection_keeps_body_budget_rule - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='openaipublic.blob.core.windows.net', port=443): Max retries exceeded with url: /encodings/cl100k_base.tiktoken (Caused by NameResolutionError(\"HTTPSConnection(host='openaipublic.blob.core.windows.net', port=443): Failed to resolve 'openaipublic.blob.core.windows.net' ([Errno -3] Temporary failure in name resolution)\"))\nFAILED tests/test_v1_2_false_positive_fixes.py::test_non_template_placeholder_word_documents_false_positive - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='openaipublic.blob.core.windows.net', port=443): Max retries exceeded with url: /encodings/cl100k_base.tiktoken (Caused by NameResolutionError(\"HTTPSConnection(host='openaipublic.blob.core.windows.net', port=443): Failed to resolve 'openaipublic.blob.core.windows.net' ([Errno -3] Temporary failure in name resolution)\"))\nFAILED tests/test_v1_2_false_positive_fixes.py::test_claude_api_name_cli_exit_code_zero - assert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-pDhE7y/tree/.venv/bin/python3', '-m', 'skillcheck', '--sk...443): Failed to resolve \\'openaipublic.blob.core.windows.net\\' ([Errno -3] Temporary failure in name resolution)\"))\\n').returncode\nFAILED tests/test_v1_2_false_positive_fixes.py::test_canvas_design_pattern_cli_exit_code_zero - assert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-pDhE7y/tree/.venv/bin/python3', '-m', 'skillcheck', '--sk...443): Failed to resolve \\'openaipublic.blob.core.windows.net\\' ([Errno -3] Temporary failure in name resolution)\"))\\n').returncode\nFAILED tests/test_v1_architecture.py::test_validate_smoke_for_known_good_and_bad_fixtures - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='openaipublic.blob.core.windows.net', port=443): Max retries exceeded with url: /encodings/cl100k_base.tiktoken (Caused by NameResolutionError(\"HTTPSConnection(host='openaipublic.blob.core.windows.net', port=443): Failed to resolve 'openaipublic.blob.core.windows.net' ([Errno -3] Temporary failure in name resolution)\"))\nFAILED tests/test_v1_completion.py::test_format_md_outputs_markdown_report - assert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-pDhE7y/tree/.venv/bin/python3', '-m', 'skillcheck', '--sk...443): Failed to resolve \\'openaipublic.blob.core.windows.net\\' ([Errno -3] Temporary failure in name resolution)\"))\\n').returncode\nFAILED tests/test_v1_completion.py::test_format_agent_outputs_agent_report - assert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-pDhE7y/tree/.venv/bin/python3', '-m', 'skillcheck', '--sk...443): Failed to resolve \\'openaipublic.blob.core.windows.net\\' ([Errno -3] Temporary failure in name resolution)\"))\\n').returncode\nFAILED tests/test_v1_completion.py::test_semantic_enables_graph_analysis - assert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-pDhE7y/tree/.venv/bin/python3', '-m', 'skillcheck', '--sk...443): Failed to resolve \\'openaipublic.blob.core.windows.net\\' ([Errno -3] Temporary failure in name resolution)\"))\\n').returncode\nFAILED tests/test_v1_completion.py::test_skillcheck_toml_applies_defaults - assert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-pDhE7y/tree/.venv/bin/python3', '-m', 'skillcheck', '/tmp...443): Failed to resolve \\'openaipublic.blob.core.windows.net\\' ([Errno -3] Temporary failure in name resolution)\"))\\n').returncode\nFAILED tests/test_v1_completion.py::test_json_diagnostics_include_source_and_confidence - assert 1 == 0\n +  where 1 = CompletedProcess(args=['/Users/brad/.swarm/work/swarm-verify-pDhE7y/tree/.venv/bin/python3', '-m', 'skillcheck', '--sk...443): Failed to resolve \\'openaipublic.blob.core.windows.net\\' ([Errno -3] Temporary failure in name resolution)\"))\\n').returncode\n135 failed, 689 passed in 105.44s (0:01:45)\n"
+}
