@@ -229,6 +229,11 @@ the fixes (`e-dossier-16.0.4-candidate/`):
   same block five more times. It now quotes the path as read and shows how a fence names a file.
   On its own (attempt 2) that did not change qwen's fence; the form change did.
 
+**The released 16.0.4, installed** (`e-dossier-installed-16.0.4/`): `swarm --version` 16.0.4 with
+swarm-verify 2.0.3 inside it, `npm audit signatures` verifying four packages, and the dossier task
+through the installed CLI with `--model auto`: gemma4:31b chosen, complete in 17 turns (86,665 /
+1,083 tokens, 309 s, session 20261104T182902-d9321b), replay agreeing, no `sed -i`.
+
 ## Input tokens before and after context management
 
 The same task, model and context, before the loop kept its prompt bounded and after. The reruns
