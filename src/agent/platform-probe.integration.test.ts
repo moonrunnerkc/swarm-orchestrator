@@ -7,7 +7,7 @@ import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.
 import { toolFlavor } from "./platform-facts.ts";
 import { parseProbe, probePlatform, probeScript } from "./platform-probe.ts";
 
-/** The image swarm-verify 2.0.1 runs a node project's checks in (its verify/sandbox defaults). */
+/** The image swarm-verify 2.0.2 runs a node project's checks in (its verify/sandbox defaults). */
 const node24 = "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413";
 
 describe("the platform probe, run for real", () => {

@@ -3,6 +3,75 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
+## 16.0.2 - 2026-11-03
+
+A patch release. The model is now told what machine its commands run on, and it can change a file
+without the shell. Every run that macOS `sed` invalidated was run again. The release workflow
+published this version through npm trusted publishing, with provenance.
+
+### Fixed
+
+- **Shell edits failed on macOS, and the model was never told why.** The prompt did not name the
+  platform, so models wrote GNU `sed -i 's/a/b/' file`. BSD `sed` reads the script as the backup
+  suffix and the file as an unknown command, so every in-place edit in the dossier and t6 runs
+  failed that way. A run now probes the machine once at start, with the shell and environment its
+  commands get, and the prompt opens with what it found:
+  - the system, and what `/bin/sh` is;
+  - whether `sed`, `grep`, `find`, `awk` and `xargs` are GNU, BSD, BusyBox or mawk, read from the
+    tool's version line or from a behavior only one form has, never from the operating system alone;
+  - the programs and container runtimes on PATH;
+  - where the checks run, and the repository root.
+
+  The block has a size limit. It is recorded in the session-started ledger record and covered by
+  the attested prompt digest.
+- **A long diff lost the names of the files in it.** The diff each turn shows was cut from its
+  middle, which removed every file header between the two ends. The end of the last file's change
+  then read as part of the first file's. Each changed file now gets a share of the cap under its
+  own header, and an over-long diff opens with the list of changed files.
+- **A model flipping a change back and forth ran to the step budget.** Every turn changed the tree
+  and no turn repeated, so the repeated-command rule never fired. Three changes in a row that put
+  the tree back in a state it was already in now stop the run as no progress, with a warning the
+  turn before.
+- A reply with two whole blocks was told to use four backticks. It is now told to send one block
+  per reply.
+
+### Added
+
+- **Edit and write blocks.** Instead of a command, a reply can carry one of two blocks:
+  - an `edit` block: one file and one or more exact SEARCH and REPLACE parts. Each part must match
+    exactly once, or the file is left unchanged.
+  - a `write` block: one file's whole text.
+
+  Both go through the one chokepoint under the same path policy as a command. The ledger records
+  the request and the file's digests before and after. The prompt says the blocks are not shell
+  commands, and keeps bash for running programs, reading, moving and deleting.
+- **swarm-verify 2.0.2**, pinned exactly. It is 2.0.1's verifier, published with provenance.
+
+### Changed
+
+- The release workflow publishes through npm trusted publishing:
+  - no stored npm token; npm accepts the job's OIDC token;
+  - a check that npm is 11.5.1 or later;
+  - no dependency cache in the release build.
+
+### Corrected
+
+- 16.0.1 said of the cross-module refactor task (t6) that "the limitation stands, as a limit of
+  the models tried". That is withdrawn. Every t6 run up to then was decided by a defect in the
+  product: swarm-verify 2.0.0 refused the correct move, and macOS `sed` failed every in-place
+  edit. The first run with neither defect (session 20261103T231418-6662f6) is still incomplete.
+  Its shims use a star import, which does not re-export the underscore name the moved module
+  needs, and the model ran no test. docs/known-issues.md and the acceptance README say what each
+  run showed.
+- The reruns of the dossier task and of the two fix picks are in the acceptance README, under
+  "Reruns for 16.0.2":
+  - The dossier task completed.
+  - The depose fix's patch passes the sealed held-out test.
+  - The claimcheck fix's first attempt fails the sealed test. Its second attempt, after the
+    tree-cycle fix, passes it.
+  - Both fix picks are incomplete because their bases fail their own typecheck and build in the
+    container, so the fix category stays host-verified only.
+
 ## 16.0.1 - 2026-11-03
 
 A patch release: three agent-loop defects and the swarm-verify 2.0.1 pin, from the follow-ups
