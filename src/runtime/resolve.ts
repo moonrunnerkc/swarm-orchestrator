@@ -110,7 +110,7 @@ async function probed(
   identityOf: (model: InstalledModel) => ProbeIdentity,
   clientOf: (model: InstalledModel) => ModelClient,
   input: ResolveInput,
-  enough: (candidates: readonly Candidate[], next: InstalledModel | null) => boolean,
+  enough: (candidates: readonly Candidate[], rest: readonly InstalledModel[]) => boolean,
 ): Promise<Candidate[]> {
   const path = profilePath(input.home);
   let profile = await readProfile(path);
@@ -127,7 +127,13 @@ async function probed(
       await writeProfile(path, profile);
     }
     candidates.push({ eligibility: one, probe: result });
-    if (enough(candidates, listed[at + 1]?.model ?? null)) break;
+    if (
+      enough(
+        candidates,
+        listed.slice(at + 1).map((next) => next.model),
+      )
+    )
+      break;
   }
   return candidates;
 }
@@ -223,10 +229,10 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
   // A probe loads the model; unloading it at once keeps one model resident at a time.
   const probeClient = (model: InstalledModel) =>
     ollamaChat({ base, model: model.name, contextTokens: input.contextTokens, keepAlive: "0" });
-  // Strongest first, until a ready model is found and the next is smaller: models tied at the top
-  // are all probed, so the tie is settled by the policy rather than by listing order.
-  const candidates = await probed(installed, identityOf, probeClient, input, (found, next) =>
-    probedEnough(found, next, profile),
+  // Strongest first, until a ready model is found and every one left is smaller with no better
+  // record: models tied at the top are all probed, so the policy settles the tie, not the listing.
+  const candidates = await probed(installed, identityOf, probeClient, input, (found, rest) =>
+    probedEnough(found, rest, profile),
   );
   const choice = choose(candidates, profile, input.contextTokens);
   if (choice === null) {

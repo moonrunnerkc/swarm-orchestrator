@@ -105,17 +105,32 @@ describe("probing strongest first", () => {
   const next = model("small", 4e9);
 
   it("stops at the first ready model when the next is smaller and has no better record", () => {
-    expect(probedEnough([large], next, profile())).toBe(true);
-    expect(probedEnough([large], null, profile())).toBe(true);
-    expect(probedEnough([candidate("large", 3e10, false)], next, profile())).toBe(false);
+    expect(probedEnough([large], [next], profile())).toBe(true);
+    expect(probedEnough([large], [], profile())).toBe(true);
+    expect(probedEnough([candidate("large", 3e10, false)], [next], profile())).toBe(false);
   });
 
   it("goes on to a smaller model whose record is better than what was found", () => {
     expect(
-      probedEnough([large], next, profile({ "digest-large": { complete: 0, other: 3 } })),
+      probedEnough([large], [next], profile({ "digest-large": { complete: 0, other: 3 } })),
     ).toBe(false);
     expect(
-      probedEnough([large], next, profile({ "digest-small": { complete: 3, other: 0 } })),
+      probedEnough([large], [next], profile({ "digest-small": { complete: 3, other: 0 } })),
     ).toBe(false);
+  });
+
+  // The installed 16.0.3 run of 2026-11-04 (session 20261104T141857-20e7e3): qwen3.6:35b-a3b was
+  // ready with 2 of 5 tasks complete, the next model was smaller with 2 of 7, and probing stopped
+  // there, so gemma4:31b further down the list, with 7 of 9, was never a candidate.
+  it("goes on past a smaller model to one further down whose record is better", () => {
+    const records = profile({
+      "digest-qwen": { complete: 2, other: 3 },
+      "digest-greedy": { complete: 2, other: 5 },
+      "digest-gemma": { complete: 7, other: 2 },
+    });
+    const qwen = candidate("qwen", 3.5e10);
+    const rest = [model("greedy", 3.1e10), model("gemma", 3.1e10)];
+    expect(probedEnough([qwen], rest, records)).toBe(false);
+    expect(probedEnough([qwen], [model("greedy", 3.1e10)], records)).toBe(true);
   });
 });

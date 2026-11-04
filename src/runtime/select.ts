@@ -105,18 +105,20 @@ export function choose(
 }
 
 /**
- * Whether probing, strongest first, can stop: a model is ready, and the next is smaller with no
- * better expected record than the best ready one, so it could not be chosen over it.
+ * Whether probing, strongest first, can stop: a model is ready, and every model not yet probed
+ * is smaller with no better expected record than the best ready one, so none could be chosen
+ * over it. Only the next one was checked before, and a better model further down was never seen.
  */
 export function probedEnough(
   found: readonly Candidate[],
-  next: InstalledModel | null,
+  rest: readonly InstalledModel[],
   profile: Profile,
 ): boolean {
   const ready = found.filter((one) => one.probe.ready);
   if (ready.length === 0) return false;
-  if (next === null) return true;
   const largest = Math.max(...ready.map((one) => one.eligibility.model.parameters ?? 0));
   const best = Math.max(...ready.map((one) => expectedRate(profile, one.eligibility.model.digest)));
-  return (next.parameters ?? 0) < largest && expectedRate(profile, next.digest) <= best;
+  return rest.every(
+    (next) => (next.parameters ?? 0) < largest && expectedRate(profile, next.digest) <= best,
+  );
 }
