@@ -3,6 +3,24 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
+## 16.0.4 - 2026-11-04
+
+A patch release for three defects in the agent loop, found by 16.0.3's dossier run through the
+installed CLI. swarm-verify stays at 2.0.3.
+
+### Fixed
+
+- **Auto selection could skip the model with the best record.** Probing goes largest first, and
+  it stopped once the next model was smaller with no better record than the best ready one,
+  without looking further down the list. qwen3.6:35b-a3b (2 of 5 tasks complete) was chosen over
+  gemma4:31b (7 of 9). Probing now stops only when every model left is smaller with no better
+  record.
+- **The edit and write forms showed a placeholder a model read as a field.** The forms showed
+  `` ```edit path/to/file ``, and qwen3.6 wrote `` ```edit path=src/... ``, so every edit was
+  refused. The forms now name a file: `` ```edit src/app.ts ``.
+- **The missing-file refusal did not say how it read the path.** It now quotes the path as read
+  and shows how a fence line names a file.
+
 ## 16.0.3 - 2026-11-04
 
 A patch release for two verifier defects, found while resolving 16.0.2's open items.
