@@ -90,7 +90,8 @@ describe("escalating once to a stronger model", () => {
     );
     expect(ran.stop).toBe("complete");
     expect(ran.report.resources.escalations).toBe(1);
-    expect(strong.seen[0]?.at(-1)?.content).toContain(
+    // The handoff opens the new conversation, in the task's message.
+    expect(strong.seen[0]?.[1]?.content).toContain(
       "Another model worked on this task before you and stopped (unusable-replies",
     );
   });

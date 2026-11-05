@@ -14,6 +14,13 @@ import type { RequirementRecord } from "./requirement-record.ts";
 /** Turns kept in full at the end of the conversation; older ones are bounded excerpts. */
 export const windowTurns = 4;
 
+/**
+ * Turns shortened at once when the window moves: the conversation before the window is then the
+ * same bytes for this many turns, so a runtime's prompt cache holds it, instead of every turn
+ * rewriting the turn that just left the window.
+ */
+export const briefBlock = 4;
+
 /** Bytes of the current diff a turn carries; each file's change is shortened to fit (diff-view.ts). */
 export const diffCap = 6_000;
 
@@ -31,23 +38,26 @@ export interface CurrentState {
   readonly notice: string | null;
 }
 
-/** The stable front of the conversation: the task, then the record as the model last set it. */
-export function taskBlock(task: string, record: RequirementRecord): string {
+/** The stable front of the conversation: the task, byte for byte the same every turn. */
+export function taskBlock(task: string): string {
+  return ["Task:", task].join("\n");
+}
+
+/** The record as the model last set it, read at the end of every turn rather than the front. */
+export function recordBlock(record: RequirementRecord): string {
   const requirements = record.requirements.map((one) =>
     JSON.stringify(one.id === "R1" ? { ...one, text: "(the task above)" } : one),
   );
   return [
-    "Task:",
-    task,
-    "",
     "Requirements as recorded (a requirements block replaces them; R1 is the task above):",
     `[\n${requirements.join(",\n")}\n]`,
   ].join("\n");
 }
 
 /** The tree as it stands and what the verifier last said of it, for the end of the prompt. */
-export function stateBlock(state: CurrentState): string {
+export function stateBlock(state: CurrentState, record?: RequirementRecord): string {
   return [
+    ...(record === undefined ? [] : [recordBlock(record), ""]),
     "The working tree now.",
     "git status --short:",
     state.status.trim().length === 0 ? "(clean)" : state.status.trimEnd(),
@@ -96,17 +106,21 @@ export function createConversation(input: {
   let digest: string | null = null;
 
   const messages = (record: RequirementRecord, state: CurrentState): Message[] => {
-    const now = stateBlock(state);
+    const now = stateBlock(state, record);
     const kept = exchanges.slice(folded);
-    const first = [taskBlock(input.task, record), input.opening, digest]
+    const first = [taskBlock(input.task), input.opening, digest]
       .filter((part) => part !== null)
       .join("\n\n");
     const rendered: Message[] = [
       { role: "system", content: input.system },
-      { role: "user", content: kept.length === 0 ? `${first}\n\n${now}` : first },
+      { role: "user", content: first },
+      // Before any turn the state stands alone, so the task's message never changes after it.
+      ...(kept.length === 0 ? [{ role: "user" as const, content: now }] : []),
     ];
+    // The window moves a block at a time: from windowTurns to windowTurns + briefBlock - 1 whole.
+    const cut = Math.max(0, Math.floor((kept.length - windowTurns) / briefBlock) * briefBlock);
     kept.forEach((one, at) => {
-      const full = at >= kept.length - windowTurns;
+      const full = at >= cut;
       const result = full ? one.result : one.summary;
       rendered.push({ role: "assistant", content: full ? one.reply : one.brief });
       rendered.push({

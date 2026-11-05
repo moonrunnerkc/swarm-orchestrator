@@ -19,6 +19,8 @@ export interface Reply {
   readonly inferenceMs: number | null;
   /** Of that, the time spent generating output, where reported: the basis of a speed. */
   readonly outputMs?: number | null;
+  /** Of that, the time spent reading the prompt (what a prompt cache saves), where reported. */
+  readonly prefillMs?: number | null;
   /** Requests sent again after a transient failure before this reply came. */
   readonly retries: number;
   /** The endpoint stopped at the turn's completion cap. */

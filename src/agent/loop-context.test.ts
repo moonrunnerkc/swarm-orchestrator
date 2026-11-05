@@ -94,23 +94,25 @@ describe("the prompt over a long run", () => {
       const sent = ran.usage.perTurn.map((turn) => turn.inputTokens);
       expect(sent).toEqual(model.seen.map((turn) => estimateTokens(textOf(turn))));
       expect(ran.usage.perTurn.every((turn) => turn.inputCount === "estimated")).toBe(true);
-      expect(Math.max(...sent)).toBeLessThanOrEqual(16_000);
+      // Up to windowTurns + briefBlock - 1 turns whole: the window moves a block at a time.
+      expect(Math.max(...sent)).toBeLessThanOrEqual(20_000);
       expect(slopeOf(sent.slice(19))).toBeLessThanOrEqual(200);
       // Nothing pressed on the context, so nothing was compacted.
       expect(model.seen.some((turn) => textOf(turn).includes("were compacted"))).toBe(false);
     },
   );
 
-  it("keeps the instructions, the task and the record byte for byte at the front", async () => {
+  it("keeps the instructions and the task byte for byte at the front, and the record at the end", async () => {
     const replies = Array.from({ length: 12 }, (_, at) => bash(`cat src/module-${at}.ts`));
     const model = scripted(replies, { counts: "unreported" });
     await runLoop({ ...(await loopOptions(model, 65_536)), maxSteps: 12 });
     const [first, second, last] = [model.seen[0], model.seen[1], model.seen[11]];
     expect(last?.[0]).toEqual(first?.[0]);
     expect(last?.[1]).toEqual(second?.[1]);
-    expect(first?.[1]?.content.startsWith(second?.[1]?.content ?? "-")).toBe(true);
+    expect(first?.[1]).toEqual(second?.[1]);
     expect(second?.[1]?.content).toMatch(/^Task:\nMove the history modules/);
-    expect(second?.[1]?.content).toContain('"id":"R1"');
+    expect(second?.[1]?.content).not.toContain('"id":"R1"');
+    expect(last?.at(-1)?.content).toContain('"id":"R1"');
   });
 
   it("keeps the latest turns whole and older outputs as an excerpt naming the evidence and a readable copy", async () => {
@@ -120,7 +122,9 @@ describe("the prompt over a long run", () => {
     await runLoop({ ...options, maxSteps: 10 });
     const last = model.seen[9] ?? [];
     const whole = last.filter((one) => one.role === "user" && one.content.includes("line 60:"));
+    // Nine turns: the window last moved at eight, so the turns from the fifth on are whole.
     expect(whole.map((one) => one.content.split("\n")[1]?.split(" line")[0])).toEqual([
+      "cat src/module-4.ts",
       "cat src/module-5.ts",
       "cat src/module-6.ts",
       "cat src/module-7.ts",

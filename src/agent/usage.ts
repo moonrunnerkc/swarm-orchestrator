@@ -23,6 +23,8 @@ export function withTurn(usage: Usage, reply: Reply, prompt: number): Usage {
     outputTokens: reply.outputTokens ?? estimateTokens(reply.content),
     inputCount: reply.inputTokens === null ? "estimated" : "reported",
     outputCount: reply.outputTokens === null ? "estimated" : "reported",
+    ...(reply.prefillMs == null ? {} : { prefillMs: reply.prefillMs }),
+    ...(reply.outputMs == null ? {} : { generationMs: reply.outputMs }),
   };
   const estimated = turn.inputCount === "estimated" || turn.outputCount === "estimated";
   return {

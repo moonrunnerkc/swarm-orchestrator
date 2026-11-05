@@ -173,6 +173,7 @@ const chatSchema = z.object({
   eval_count: z.number().optional(),
   total_duration: z.number().optional(),
   eval_duration: z.number().optional(),
+  prompt_eval_duration: z.number().optional(),
 });
 
 /**
@@ -257,6 +258,10 @@ export function ollamaChat(options: {
         inferenceMs:
           reply.total_duration === undefined ? null : Math.round(reply.total_duration / 1e6),
         outputMs: reply.eval_duration === undefined ? null : Math.round(reply.eval_duration / 1e6),
+        prefillMs:
+          reply.prompt_eval_duration === undefined
+            ? null
+            : Math.round(reply.prompt_eval_duration / 1e6),
         retries,
         truncated: reply.done_reason === "length",
       };

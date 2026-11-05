@@ -37,7 +37,7 @@ describe("swarm run with one fresh-context review", () => {
     const model = scripted([exact, challenge, floor]);
     const ran = await (await fixture({}, task)).run(model, { review: true });
     expect(ran.report.review).toMatchObject({ outcome: "confirmed", exitCode: 1 });
-    expect(model.seen[2]?.at(-1)?.content).toContain("half(5) should be 2.");
+    expect(model.seen[2]?.[1]?.content).toContain("half(5) should be 2.");
     expect(ran.report.state).toBe("complete");
     expect(ran.report.resources.escalations).toBe(0);
     const markdown = await readFile(join(ran.sessionDirectory, "final", "report.md"), "utf8");

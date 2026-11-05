@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createConversation, stateBlock, taskBlock, windowTurns } from "./conversation.ts";
+import {
+  briefBlock,
+  createConversation,
+  recordBlock,
+  stateBlock,
+  taskBlock,
+  windowTurns,
+} from "./conversation.ts";
 import { commandExchange } from "./exchange.ts";
 import { initialRecord } from "./requirement-record.ts";
 
@@ -49,31 +56,54 @@ describe("the state a turn ends with", () => {
 });
 
 describe("the conversation a turn sends", () => {
-  it("opens with the task and the record, the task's own text standing for R1's", () => {
-    const text = taskBlock("Fix clamp.", initialRecord("Fix clamp."));
-    expect(text.startsWith("Task:\nFix clamp.\n")).toBe(true);
-    expect(text).toContain('"id":"R1","text":"(the task above)"');
-    expect(text.match(/Fix clamp\./g)).toHaveLength(1);
+  it("opens with the task alone, and ends with the record, the task's own text standing for R1's", () => {
+    expect(taskBlock("Fix clamp.")).toBe("Task:\nFix clamp.");
+    const record = recordBlock(initialRecord("Fix clamp."));
+    expect(record).toContain('"id":"R1","text":"(the task above)"');
+    expect(record).not.toContain("Fix clamp.");
+    expect(stateBlock(quiet, initialRecord("Fix clamp."))).toMatch(/^Requirements as recorded/);
+  });
+
+  // A runtime's prompt cache holds a prefix only while its bytes repeat. The window used to move
+  // one turn at a time, rewriting the turn that left it, so nothing after it was ever cached.
+  it("moves the window a block at a time, so the turns before it repeat byte for byte", () => {
+    const conversation = createConversation({ system: "s", task: "t", opening: "Begin." });
+    const output = `${"start\n"}${"middle\n".repeat(400)}end`;
+    const sent: string[][] = [];
+    for (let step = 1; step <= windowTurns + 2 * briefBlock; step += 1) {
+      conversation.add(exchange(step, output));
+      sent.push(conversation.messages(initialRecord("t"), quiet).map((one) => one.content));
+    }
+    // Between two moves of the window, every message but the last is the same as the turn before.
+    // sent[n - 1] holds n turns; the window stands still from windowTurns to that plus a block.
+    const first = windowTurns - 1;
+    const between = sent.slice(first, first + briefBlock - 1);
+    expect(between).toHaveLength(briefBlock - 1);
+    for (const [at, turn] of between.entries()) {
+      const next = sent[first + at + 1] ?? [];
+      expect(next.slice(0, turn.length - 1)).toEqual(turn.slice(0, -1));
+    }
   });
 
   it("sends the latest turns whole and the older ones as excerpts, with the state only at the end", () => {
     const conversation = createConversation({ system: "s", task: "t", opening: "Begin." });
     const output = `${"start\n"}${"middle\n".repeat(400)}end`;
-    for (let step = 1; step <= windowTurns + 2; step += 1) conversation.add(exchange(step, output));
+    const turns = windowTurns + briefBlock;
+    for (let step = 1; step <= turns; step += 1) conversation.add(exchange(step, output));
     const sent = conversation.messages(initialRecord("t"), { ...quiet, findings: "R1 failed" });
     expect(sent.map((one) => one.role)).toEqual([
       "system",
       "user",
-      ...Array.from({ length: windowTurns + 2 }, () => ["assistant", "user"]).flat(),
+      ...Array.from({ length: turns }, () => ["assistant", "user"]).flat(),
     ]);
     const results = sent.filter((one, at) => one.role === "user" && at > 1);
     expect(results[0]?.content).toContain("lines omitted");
     expect(results[0]?.content).toContain(
       "[evidence ccccccccccccccc1; whole output: .swarm/outputs/1.txt]",
     );
-    expect(results.slice(2).every((one) => one.content.includes("middle\n".repeat(400)))).toBe(
-      true,
-    );
+    expect(
+      results.slice(briefBlock).every((one) => one.content.includes("middle\n".repeat(400))),
+    ).toBe(true);
     expect(sent.filter((one) => one.content.includes("Latest verifier findings"))).toEqual([
       sent.at(-1),
     ]);

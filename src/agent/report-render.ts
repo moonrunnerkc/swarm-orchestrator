@@ -44,7 +44,11 @@ export function summaryLines(
 /** Inference time as measured: never a zero for turns whose runtime reported none. */
 function inferenceOf(resources: RunReportFile["resources"]): string {
   if (resources.inferenceTurns === 0) return "inference time not reported by the runtime";
-  const seconds = `${Math.round(resources.inferenceMs / 1000)} s of inference`;
+  const split =
+    resources.prefillMs === null || resources.generationMs === null
+      ? ""
+      : ` (${Math.round(resources.prefillMs / 1000)} s reading prompts, ${Math.round(resources.generationMs / 1000)} s writing replies)`;
+  const seconds = `${Math.round(resources.inferenceMs / 1000)} s of inference${split}`;
   return resources.inferenceTurns < resources.steps
     ? `${seconds} over the ${resources.inferenceTurns} of ${resources.steps} turn(s) that reported it`
     : seconds;

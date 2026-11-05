@@ -83,6 +83,9 @@ export type StopReason =
 export interface TurnUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
+  /** The runtime's time reading the prompt and writing the reply, where it reported them. */
+  readonly prefillMs?: number | null;
+  readonly generationMs?: number | null;
   readonly inputCount: "reported" | "estimated";
   readonly outputCount: "reported" | "estimated";
 }

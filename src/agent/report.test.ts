@@ -26,6 +26,8 @@ const report: RunReportFile = {
   resources: {
     steps: 1,
     author: { turns: 0, inputTokens: 0, outputTokens: 0 },
+    prefillMs: null,
+    generationMs: null,
     harnessChecks: 0,
     modelTestCommands: 0,
     turnsByRequirement: {},

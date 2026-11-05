@@ -86,6 +86,9 @@ export interface RunReportFile {
     readonly inferenceMs: number;
     /** Turns whose inference time the runtime reported. */
     readonly inferenceTurns: number;
+    /** Of the loop's inference, the time reading prompts and writing replies, where reported. */
+    readonly prefillMs: number | null;
+    readonly generationMs: number | null;
     readonly wallMs: number;
     readonly retries: number;
     readonly escalations: number;
@@ -205,6 +208,7 @@ export function assembleReport(input: {
       inferenceMs: sum((loop) => loop.usage.inferenceMs) + (review?.inferenceMs ?? 0),
       inferenceTurns:
         sum((loop) => loop.usage.inferenceTurns) + (review?.inferenceMs == null ? 0 : 1),
+      ...timings(loops),
       wallMs: Date.now() - input.startedAt,
       retries: sum((loop) => loop.usage.retries),
       escalations: input.escalated ? 1 : 0,
@@ -237,4 +241,20 @@ function turnsByRequirement(loops: readonly LoopResult[]): Record<string, number
     for (const [id, turns] of Object.entries(loop.turnsByRequirement))
       total[id] = (total[id] ?? 0) + turns;
   return total;
+}
+
+/** The loop turns' prefill and generation time, where every one of them reported it; else null. */
+function timings(loops: readonly LoopResult[]): {
+  prefillMs: number | null;
+  generationMs: number | null;
+} {
+  const turns = loops.flatMap((loop) => loop.usage.perTurn);
+  const total = (pick: (turn: (typeof turns)[number]) => number | null | undefined) =>
+    turns.length > 0 && turns.every((turn) => pick(turn) != null)
+      ? turns.reduce((sum, turn) => sum + (pick(turn) ?? 0), 0)
+      : null;
+  return {
+    prefillMs: total((turn) => turn.prefillMs),
+    generationMs: total((turn) => turn.generationMs),
+  };
 }
