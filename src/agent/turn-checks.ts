@@ -129,7 +129,10 @@ export function createTurnChecks(input: {
           requirement: requirement.id,
           status:
             parts.length === 0 ? "none" : parts.every((part) => part.ok) ? "passing" : "failing",
-          detail: parts.map((part) => part.line).join("\n"),
+          // What fails first: a stop names the first line, and the model reads it first.
+          detail: [...parts.filter((part) => !part.ok), ...parts.filter((part) => part.ok)]
+            .map((part) => part.line)
+            .join("\n"),
           evidence: parts.find((part) => part.evidence !== null)?.evidence ?? null,
         });
       }

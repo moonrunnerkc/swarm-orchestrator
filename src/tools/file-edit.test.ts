@@ -8,6 +8,7 @@ import {
   closestLines,
   readEditBlock,
   readWriteBlock,
+  whereItDiffers,
 } from "./file-edit.ts";
 
 const pair = (search: string, replace: string) =>
@@ -160,5 +161,21 @@ describe("a SEARCH part that matches nothing", () => {
       ].join("\n"),
     });
     expect(closestLines("nothing alike", "zzz")).toBe("");
+  });
+});
+
+describe("where a SEARCH part parts from the file", () => {
+  it("names its first differing line beside the file's, and advises parts for a long one", () => {
+    const file = ["a", "def f(", "    x,", "):", "    return x", "z"].join("\n");
+    const search = ["def f(", "    x,", ") -> int:", "    return x"].join("\n");
+    expect(whereItDiffers(file, search)).toBe(
+      '. Its first 2 line(s) match the file from line 2; its line 3 reads ") -> int:", where the file\'s line 4 reads "):".\n',
+    );
+    const long = Array.from({ length: 50 }, (_, at) => `line ${at}`);
+    const drifted = [...long.slice(0, 45), "  line 45", ...long.slice(46)].join("\n");
+    expect(whereItDiffers(long.join("\n"), drifted)).toMatch(
+      /its line 46 reads " {2}line 45", where the file's line 46 reads "line 45" \(they differ only in whitespace\)\. A SEARCH of 50 lines is hard to copy exactly/,
+    );
+    expect(whereItDiffers("q", "nothing here")).toBeNull();
   });
 });

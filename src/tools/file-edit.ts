@@ -110,7 +110,7 @@ export function applyReplacements(
     const which = pairs.length > 1 ? `SEARCH part ${index + 1}` : "the SEARCH part";
     if (found === 0) {
       return {
-        refused: `${which} matches nothing in the file; copy the lines exactly as the file has them, whitespace included${closestLines(next, pair.search)}`,
+        refused: `${which} matches nothing in the file; copy the lines exactly as the file has them, whitespace included${whereItDiffers(next, pair.search) ?? closestLines(next, pair.search)}`,
       };
     }
     if (found > 1) {
@@ -151,6 +151,38 @@ export function closestLines(text: string, search: string): string {
     .map((line, offset) => `${String(best.at + offset + 1).padStart(5)}  ${line}`)
     .join("\n");
   return `. The file's closest lines, numbered as in the file:\n${shown}\n`;
+}
+
+/** A SEARCH part longer than this is hard to copy exactly, and is better changed in parts. */
+const longSearch = 40;
+
+/**
+ * Where a SEARCH part that matched nothing parts from the file: its first lines aligned with the
+ * file where they match longest, then its first line that differs, beside the file's. ironroot
+ * (2026-11-05): a 147-line SEARCH was resent three times to a refusal that showed only a window
+ * of nearby lines, never which line was wrong. Null where no line of it starts a match.
+ */
+export function whereItDiffers(text: string, search: string): string | null {
+  const file = text.split("\n");
+  const wanted = search.split("\n");
+  let best = { at: -1, run: 0 };
+  for (let at = 0; at < file.length; at += 1) {
+    let run = 0;
+    while (run < wanted.length && file[at + run] === wanted[run]) run += 1;
+    if (run > best.run) best = { at, run };
+  }
+  if (best.run === 0) return null;
+  const mine = wanted[best.run] ?? "";
+  const theirs = file[best.at + best.run];
+  const spacing =
+    theirs !== undefined && theirs.trim() === mine.trim()
+      ? " (they differ only in whitespace)"
+      : "";
+  const advice =
+    wanted.length > longSearch
+      ? ` A SEARCH of ${wanted.length} lines is hard to copy exactly: change the block in smaller parts, or write the whole file with a write block.`
+      : "";
+  return `. Its first ${best.run} line(s) match the file from line ${best.at + 1}; its line ${best.run + 1} reads ${JSON.stringify(mine)}, where the file's line ${best.at + best.run + 1} reads ${theirs === undefined ? "nothing (the file ends)" : JSON.stringify(theirs)}${spacing}.${advice}\n`;
 }
 
 export type EditResult =

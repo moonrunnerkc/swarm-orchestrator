@@ -98,3 +98,29 @@ describe("a failing check in one line", () => {
     );
   });
 });
+
+// ironroot (2026-11-05, sealed-set run): the stop named "builtin_claims.py defines ...: holds",
+// a claim that held, because the failing ones came after it in the check's detail.
+describe("a refactor's claims after a change", () => {
+  it("lists the failing claims first, so a stop names one that fails", async () => {
+    // Both fail at the base; the copy makes the first hold and leaves the second failing.
+    const claims = [
+      { path: "lib/half.mjs", contains: "export const half" },
+      { path: "half.mjs", contains: "export const half", absent: true },
+    ];
+    const copy = bash(
+      "mkdir -p lib && printf 'export const half = (n) => n / 2;\\n' > lib/half.mjs",
+    );
+    const model = scripted([copy, bash("ls"), bash("pwd"), bash("ls -a")], {
+      author: [`kind: refactor\n\n\`\`\`claims\n${JSON.stringify(claims)}\n\`\`\`\n`],
+    });
+    const probe = await fixture(
+      { "half.mjs": "export const half = (n) => n / 2;\n" },
+      "Move half into lib/half.mjs.",
+    );
+    const ran = await probe.run(model, { maxSteps: 20 });
+    expect(ran.report.reason).toMatch(
+      /R1 still fails: half\.mjs lacks "export const half": the file still contains it$/,
+    );
+  });
+});
