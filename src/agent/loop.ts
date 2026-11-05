@@ -3,7 +3,7 @@ import { diffSections, estimateTokens, movedFiles, unresolvedOf } from "./contex
 import { createConversation } from "./conversation.ts";
 import { commandExchange, noteExchange } from "./exchange.ts";
 import { circlingNote } from "./findings.ts";
-import { checksNote, focusOf, type Measured, measureTree } from "./harness-turn.ts";
+import { checksNote, failureLine, focusOf, type Measured, measureTree } from "./harness-turn.ts";
 import { callModel } from "./loop-model.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage } from "./loop-types.ts";
 import { createVerifyStep } from "./loop-verify.ts";
@@ -26,7 +26,7 @@ function withOpen(
   const failing = measured?.checks.find((one) => one.status === "failing");
   if (failing !== undefined) {
     if (why?.includes(`${failing.requirement} still fails`)) return why;
-    const line = failing.detail.split("\n")[0] ?? "";
+    const line = failureLine(failing.detail);
     return `${why ?? "the turns ran out"}; ${failing.requirement} still fails: ${line}`;
   }
   if (measured === null && record.held !== undefined)
@@ -144,7 +144,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       const stuck = measured?.checks.find((one) => one.requirement === focus);
       return result(
         "no-progress",
-        `${quietStop} turns changed neither the tree nor any check's result; ${focus ?? "the task"} still fails${stuck === undefined ? "" : `: ${stuck.detail.split("\n")[0]}`}`,
+        `${quietStop} turns changed neither the tree nor any check's result; ${focus ?? "the task"} still fails${stuck === undefined ? "" : `: ${failureLine(stuck.detail)}`}`,
       );
     }
     const stalled =

@@ -53,6 +53,14 @@ export async function measureTree(
   return { checks: results, regression, ready, unchecked: checked.length === 0, key };
 }
 
+/** A check's failure in one line: its summary, with the first line of output that names what failed. */
+export function failureLine(detail: string): string {
+  const [first = "", ...rest] = detail.split("\n");
+  if (!first.endsWith(":")) return first;
+  const named = rest.find((line) => /FAILED|FAIL |Error|assert|expected|✗|×/.test(line))?.trim();
+  return named === undefined ? first.slice(0, -1) : `${first} ${named.slice(0, 240)}`;
+}
+
 /** The first requirement whose checks fail, which the next turns are spent on. */
 export function focusOf(measured: Measured | null): string | null {
   return measured?.checks.find((one) => one.status === "failing")?.requirement ?? null;

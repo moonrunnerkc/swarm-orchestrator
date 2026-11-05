@@ -1,10 +1,9 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
 import { type Requirement, type SealedFile, sealFiles, structureEvidence } from "swarm-verify";
 import { z } from "zod";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import { type AuthorKind, authorPrompt, authorRequest, parseAuthor } from "./author-prompt.ts";
+import { runAtBase } from "./authored-validation.ts";
 import { estimateTokens } from "./context.ts";
 import { type Message, type ModelClient, ModelError } from "./model.ts";
 import type { TestConventions } from "./test-conventions.ts";
@@ -22,6 +21,8 @@ export interface AuthoredTest {
 }
 
 /** What the check-authoring stage produced for one requirement, and why where it produced nothing. */
+export { raisedNotAsserted, removeLaid, unrelatedImport } from "./authored-validation.ts";
+
 export interface Authored {
   readonly requirement: string;
   readonly kind: AuthorKind | null;
@@ -45,74 +46,6 @@ const claimSchema = z.strictObject({
   contains: z.string().min(1).optional(),
   absent: z.boolean().optional(),
 });
-
-const excerpt = (text: string) => text.slice(-1500);
-const notCollected =
-  /No test files found|no tests ran|collected 0 items|file or directory not found|No tests found/i;
-// Node reports an export the base lacks as a SyntaxError too; that is the failure a feature's
-// check should have, not a check that does not parse.
-const unparsable = /(?:SyntaxError|IndentationError)(?!: The requested module)|Transform failed/;
-const missingModule =
-  /Failed to load url (\S+)|Cannot find module '([^']+)'|No module named '([^']+)'/g;
-
-/**
- * A module the check imports that the base lacks and the task does not name: it fails at the
- * base for a reason no correct change would remove. A module the task names (a new file it asks
- * for) is the change's to create.
- */
-export function unrelatedImport(output: string, task: string): string | null {
-  for (const match of output.matchAll(missingModule)) {
-    const spec = match[1] ?? match[2] ?? match[3] ?? "";
-    const stem =
-      spec
-        .split(/[/.]/)
-        .filter((part) => /^\w+$/.test(part) && part !== "js" && part !== "ts")
-        .at(-1) ?? spec;
-    if (stem.length > 0 && !task.includes(stem)) return spec;
-  }
-  return null;
-}
-
-/** Runs an authored test file at the base: laid in, run by the harness, taken out again. */
-async function runAtBase(
-  chokepoint: Chokepoint,
-  workspace: string,
-  test: Omit<AuthoredTest, "atBase">,
-  task: string,
-): Promise<{ readonly reasons: string[]; readonly output: string }> {
-  const absolute = join(workspace, test.path);
-  await mkdir(dirname(absolute), { recursive: true });
-  await writeFile(absolute, test.content);
-  const ran = await chokepoint
-    .check(test.command, `authored check for ${test.requirement}, at the base`)
-    .finally(() => removeLaid(workspace, test.path));
-  const output = excerpt(ran.output);
-  if (ran.decision !== "allowed") return { reasons: [`it could not run: ${output}`], output };
-  if (ran.exitCode === 0)
-    return { reasons: ["it passes at the base, so it cannot tell the change apart"], output };
-  if (notCollected.test(ran.output))
-    return { reasons: [`the runner did not collect it: ${output}`], output };
-  if (unparsable.test(ran.output) && ran.output.includes(basename(test.path)))
-    return { reasons: [`it does not parse: ${output}`], output };
-  const missing = unrelatedImport(ran.output, task);
-  if (missing !== null)
-    return {
-      reasons: [
-        `it imports ${missing}, which does not exist at the base and which the task does not ask for; import from the modules listed as defining the task's names`,
-      ],
-      output,
-    };
-  return { reasons: [], output };
-}
-
-/** Takes a laid check out of the tree, with any bytecode its run left beside it. */
-export async function removeLaid(workspace: string, path: string): Promise<void> {
-  await rm(join(workspace, path), { force: true });
-  const stem = basename(path).replace(/\.py$/, "");
-  const cache = join(workspace, dirname(path), "__pycache__");
-  const left = await readdir(cache).catch(() => [] as string[]);
-  for (const name of left) if (name.startsWith(`${stem}.`)) await rm(join(cache, name));
-}
 
 /** Claims that do not hold at the base tell the refactor apart; one that holds already does not. */
 async function claimsAtBase(
@@ -217,7 +150,13 @@ export async function authorChecks(input: {
       else if (parsed.test === null) reasons.push("the reply has no ```test block");
       else {
         const test = { requirement: requirement.id, path, command, content: parsed.test };
-        const ran = await runAtBase(input.chokepoint, input.workspace, test, requirement.text);
+        const ran = await runAtBase(
+          input.chokepoint,
+          input.workspace,
+          test,
+          requirement.text,
+          parsed.kind,
+        );
         reasons.push(...ran.reasons);
         if (ran.reasons.length === 0) accepted = { test: { ...test, atBase: ran.output } };
       }

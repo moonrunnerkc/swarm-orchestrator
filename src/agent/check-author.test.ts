@@ -8,7 +8,7 @@ import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import { createChokepoint } from "../tools/chokepoint.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
 import { parseAuthor } from "./author-prompt.ts";
-import { authorChecks, unrelatedImport } from "./check-author.ts";
+import { authorChecks, raisedNotAsserted, unrelatedImport } from "./check-author.ts";
 import { testConventions } from "./test-conventions.ts";
 import { authorTest, halfTest, scripted } from "./test-doubles.ts";
 
@@ -155,5 +155,30 @@ describe("an author's reply", () => {
       problem: "the reply has no `kind: <fix|feature|...>` line",
     });
     expect(parseAuthor("kind: refactor\n```claims\n[oops\n```").problem).toMatch(/not JSON/);
+  });
+});
+
+// tracemantle f69ad0c58 (replayed 2026-11-05): the author's check built ParsedSkill without its
+// frontmatter, so is_template raised AttributeError at the base, and would on every correct fix.
+describe("a fix's check that raises before it asserts", () => {
+  const pytest = [
+    "    def is_template(skill: ParsedSkill) -> bool:",
+    '>       if skill.frontmatter.get("template") is True:',
+    "E       AttributeError: 'ParsedSkill' object has no attribute 'frontmatter'",
+    "FAILED tests/test_swarm_r1_cli.py::test_x - AttributeError: 'ParsedSkill' object has no attribute 'frontmatter'",
+  ].join("\n");
+
+  it("is named, where the wording names no crash for the fix to remove", () => {
+    expect(raisedNotAsserted(pytest, "is_template reads a real skill as a template")).toBe(
+      "AttributeError: 'ParsedSkill' object has no attribute 'frontmatter'",
+    );
+  });
+
+  it("is not, where an assertion fails or the task is about the crash", () => {
+    expect(raisedNotAsserted(`${pytest}\nE       assert False`, "x")).toBeNull();
+    expect(raisedNotAsserted("AssertionError [ERR_ASSERTION]: 4 !== 2", "x")).toBeNull();
+    expect(
+      raisedNotAsserted(pytest, "is_template raises AttributeError on a skill with no frontmatter"),
+    ).toBeNull();
   });
 });

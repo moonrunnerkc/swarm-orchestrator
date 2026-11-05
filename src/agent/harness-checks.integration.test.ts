@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { testsTouched } from "./harness-turn.ts";
+import { failureLine, testsTouched } from "./harness-turn.ts";
 import { asksForTests } from "./requirement-record.ts";
 import { bash, fixture, scripted, write } from "./test-doubles.ts";
 
@@ -72,5 +72,16 @@ describe("reading the wording and the diff", () => {
       "+++ b/.swarm/scratch/x.test.ts",
     ].join("\n");
     expect(testsTouched(diff)).toEqual(["test/cli.test.ts", "tests/unit/test_promote.py"]);
+  });
+});
+
+describe("a failing check in one line", () => {
+  it("joins its summary to the first output line that names what failed", () => {
+    expect(
+      failureLine("its authored test fails:\n\n   x\nFAILED tests/a.py::t - assert 4 == 2\nmore"),
+    ).toBe("its authored test fails: FAILED tests/a.py::t - assert 4 == 2");
+    expect(failureLine("src/a.py lacks x: the file still contains it")).toBe(
+      "src/a.py lacks x: the file still contains it",
+    );
   });
 });
