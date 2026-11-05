@@ -1,0 +1,462 @@
+diff --git a/src/ironroot/verification/builtin_claims.py b/src/ironroot/verification/builtin_claims.py
+new file mode 100644
+index 0000000..aa393e5
+--- /dev/null
++++ b/src/ironroot/verification/builtin_claims.py
+@@ -0,0 +1,209 @@
++# Author: Bradley R. Kinnard
++"""Built-in falsifiable claims seeded into the claim registry.
++
++The three claims mirror the integrity invariants the chain itself depends
++on; see ``ironroot.verification.falsification`` for the claim types, the
++registry and the gate entry point. ``get_claim_registry`` registers
++``_BUILTIN_CLAIMS`` in tuple order, so the order here is the order the
++gate runs them in.
++"""
++
++from __future__ import annotations
++
++from typing import TYPE_CHECKING
++
++from sqlalchemy import select
++
++from ironroot.storage.artifact_service import get_artifact_service
++from ironroot.storage.models import ArtifactRecord, BeliefRecord
++from ironroot.verification.falsification import (
++    FalsifiableClaim,
++    FalsificationAttempt,
++    FalsificationEvidence,
++)
++
++if TYPE_CHECKING:
++    from sqlalchemy.ext.asyncio import AsyncSession
++
++# ---------------------------------------------------------------------------
++# Built-in falsifiers
++# ---------------------------------------------------------------------------
++
++
++async def _falsify_chain_seq_monotonic(session: AsyncSession, run_id: str) -> FalsificationAttempt:
++    """seq is strictly 1, 2, 3, … with no gaps / duplicates / re-orderings.
++
++    The UNIQUE(run_id, seq) constraint catches duplicates at write time;
++    this falsifier catches gaps (a row was deleted) and verifies the
++    chain has not been split across runs.
++    """
++    result = await session.execute(
++        select(BeliefRecord.id, BeliefRecord.seq)
++        .where(BeliefRecord.run_id == run_id)
++        .order_by(BeliefRecord.seq.asc())
++    )
++    rows = list(result.all())
++
++    expected = 1
++    for row in rows:
++        if row.seq != expected:
++            return FalsificationAttempt(
++                claim_name="chain_seq_monotonic",
++                falsified=True,
++                evidence=FalsificationEvidence(
++                    offending_belief_ids=(row.id,),
++                    details=(
++                        f"row id={row.id} has seq={row.seq}, expected "
++                        f"seq={expected}; chain is non-contiguous"
++                    ),
++                ),
++                method="ORDER BY seq ASC + contiguity check",
++                rows_examined=len(rows),
++            )
++        expected += 1
++
++    return FalsificationAttempt(
++        claim_name="chain_seq_monotonic",
++        falsified=False,
++        evidence=None,
++        method="ORDER BY seq ASC + contiguity check",
++        rows_examined=len(rows),
++    )
++
++
++async def _falsify_parent_hash_linkage(session: AsyncSession, run_id: str) -> FalsificationAttempt:
++    """parent_hash == previous row's content_hash; root has parent_hash NULL.
++
++    Catches: (a) a row whose parent_hash was rewritten to point elsewhere,
++    (b) the root row gaining a non-NULL parent_hash, (c) a non-root row
++    set to NULL.
++    """
++    result = await session.execute(
++        select(
++            BeliefRecord.id,
++            BeliefRecord.seq,
++            BeliefRecord.content_hash,
++            BeliefRecord.parent_hash,
++        )
++        .where(BeliefRecord.run_id == run_id)
++        .order_by(BeliefRecord.seq.asc())
++    )
++    rows = list(result.all())
++
++    previous_hash: str | None = None
++    for index, row in enumerate(rows):
++        if index == 0:
++            if row.parent_hash is not None:
++                return FalsificationAttempt(
++                    claim_name="parent_hash_linkage",
++                    falsified=True,
++                    evidence=FalsificationEvidence(
++                        offending_belief_ids=(row.id,),
++                        details=(
++                            f"root row id={row.id} has non-NULL "
++                            f"parent_hash={row.parent_hash!r}"
++                        ),
++                    ),
++                    method="seq-ordered scan + parent_hash check",
++                    rows_examined=len(rows),
++                )
++        elif row.parent_hash != previous_hash:
++            return FalsificationAttempt(
++                claim_name="parent_hash_linkage",
++                falsified=True,
++                evidence=FalsificationEvidence(
++                    offending_belief_ids=(row.id,),
++                    details=(
++                        f"row id={row.id} seq={row.seq} has "
++                        f"parent_hash={row.parent_hash!r}; expected "
++                        f"previous content_hash={previous_hash!r}"
++                    ),
++                ),
++                method="seq-ordered scan + parent_hash check",
++                rows_examined=len(rows),
++            )
++        previous_hash = row.content_hash
++
++    return FalsificationAttempt(
++        claim_name="parent_hash_linkage",
++        falsified=False,
++        evidence=None,
++        method="seq-ordered scan + parent_hash check",
++        rows_examined=len(rows),
++    )
++
++
++async def _falsify_artifact_hash_stability(
++    session: AsyncSession, run_id: str
++) -> FalsificationAttempt:
++    """every artifact's stored bytes hash to its declared content_hash.
++
++    Calls ``ArtifactStore.verify`` (sha256 of the bytes on disk) for each
++    ``ArtifactRecord.content_hash`` belonging to ``run_id`` and flags
++    any mismatch. The verify call also catches a missing artifact
++    (returns False). Size-mismatch is implied (any byte change changes
++    the hash), so we do not need a separate size check.
++    """
++    result = await session.execute(select(ArtifactRecord).where(ArtifactRecord.run_id == run_id))
++    artifacts = list(result.scalars().all())
++
++    artifact_service = get_artifact_service()
++
++    for artifact in artifacts:
++        if not artifact_service.verify_integrity(artifact.content_hash):
++            return FalsificationAttempt(
++                claim_name="artifact_hash_stability",
++                falsified=True,
++                evidence=FalsificationEvidence(
++                    offending_artifact_ids=(artifact.id,),
++                    details=(
++                        f"artifact id={artifact.id} "
++                        f"content_hash={artifact.content_hash} failed "
++                        "verify(): bytes on disk are missing or hash to a "
++                        "different value"
++                    ),
++                ),
++                method="ArtifactStore.verify per artifact",
++                rows_examined=len(artifacts),
++            )
++
++    return FalsificationAttempt(
++        claim_name="artifact_hash_stability",
++        falsified=False,
++        evidence=None,
++        method="ArtifactStore.verify per artifact",
++        rows_examined=len(artifacts),
++    )
++
++
++# ---------------------------------------------------------------------------
++# The three core claims, in registration order.
++# ---------------------------------------------------------------------------
++
++
++_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (
++    FalsifiableClaim(
++        name="chain_seq_monotonic",
++        description=(
++            "Every belief row's seq is contiguous, starting at 1, with "
++            "no gaps and no duplicates."
++        ),
++        falsifier=_falsify_chain_seq_monotonic,
++    ),
++    FalsifiableClaim(
++        name="parent_hash_linkage",
++        description=(
++            "Each row's parent_hash equals the previous row's content_hash; "
++            "the seq=1 root row has parent_hash IS NULL."
++        ),
++        falsifier=_falsify_parent_hash_linkage,
++    ),
++    FalsifiableClaim(
++        name="artifact_hash_stability",
++        description=(
++            "Every artifact's stored bytes hash to its declared "
++            "content_hash and the stored size_bytes matches the on-disk size."
++        ),
++        falsifier=_falsify_artifact_hash_stability,
++    ),
++)
+diff --git a/src/ironroot/verification/falsification.py b/src/ironroot/verification/falsification.py
+index cfa6bef..c3334ad 100644
+--- a/src/ironroot/verification/falsification.py
++++ b/src/ironroot/verification/falsification.py
+@@ -16,7 +16,8 @@ typed ``GATE_RESULT`` belief (Phase 2a.4) so the falsification result
+ is itself part of the chain.
+ 
+ Three real claims ship with the registry, mirroring the integrity
+-invariants the chain itself depends on:
++invariants the chain itself depends on. Their falsifiers live in
++``ironroot.verification.builtin_claims``:
+ 
+ 1. ``chain_seq_monotonic``    — for every belief row beyond the root,
+                                 ``seq`` is one greater than the previous
+@@ -39,12 +40,8 @@ from collections.abc import Awaitable, Callable
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+-from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+-from ironroot.storage.artifact_service import get_artifact_service
+-from ironroot.storage.models import ArtifactRecord, BeliefRecord
+-
+ # ---------------------------------------------------------------------------
+ # Public types
+ # ---------------------------------------------------------------------------
+@@ -147,189 +144,11 @@ class FalsifiableClaimRegistry:
+ 
+ 
+ # ---------------------------------------------------------------------------
+-# Built-in falsifiers
+-# ---------------------------------------------------------------------------
+-
+-
+-async def _falsify_chain_seq_monotonic(session: AsyncSession, run_id: str) -> FalsificationAttempt:
+-    """seq is strictly 1, 2, 3, … with no gaps / duplicates / re-orderings.
+-
+-    The UNIQUE(run_id, seq) constraint catches duplicates at write time;
+-    this falsifier catches gaps (a row was deleted) and verifies the
+-    chain has not been split across runs.
+-    """
+-    result = await session.execute(
+-        select(BeliefRecord.id, BeliefRecord.seq)
+-        .where(BeliefRecord.run_id == run_id)
+-        .order_by(BeliefRecord.seq.asc())
+-    )
+-    rows = list(result.all())
+-
+-    expected = 1
+-    for row in rows:
+-        if row.seq != expected:
+-            return FalsificationAttempt(
+-                claim_name="chain_seq_monotonic",
+-                falsified=True,
+-                evidence=FalsificationEvidence(
+-                    offending_belief_ids=(row.id,),
+-                    details=(
+-                        f"row id={row.id} has seq={row.seq}, expected "
+-                        f"seq={expected}; chain is non-contiguous"
+-                    ),
+-                ),
+-                method="ORDER BY seq ASC + contiguity check",
+-                rows_examined=len(rows),
+-            )
+-        expected += 1
+-
+-    return FalsificationAttempt(
+-        claim_name="chain_seq_monotonic",
+-        falsified=False,
+-        evidence=None,
+-        method="ORDER BY seq ASC + contiguity check",
+-        rows_examined=len(rows),
+-    )
+-
+-
+-async def _falsify_parent_hash_linkage(session: AsyncSession, run_id: str) -> FalsificationAttempt:
+-    """parent_hash == previous row's content_hash; root has parent_hash NULL.
+-
+-    Catches: (a) a row whose parent_hash was rewritten to point elsewhere,
+-    (b) the root row gaining a non-NULL parent_hash, (c) a non-root row
+-    set to NULL.
+-    """
+-    result = await session.execute(
+-        select(
+-            BeliefRecord.id,
+-            BeliefRecord.seq,
+-            BeliefRecord.content_hash,
+-            BeliefRecord.parent_hash,
+-        )
+-        .where(BeliefRecord.run_id == run_id)
+-        .order_by(BeliefRecord.seq.asc())
+-    )
+-    rows = list(result.all())
+-
+-    previous_hash: str | None = None
+-    for index, row in enumerate(rows):
+-        if index == 0:
+-            if row.parent_hash is not None:
+-                return FalsificationAttempt(
+-                    claim_name="parent_hash_linkage",
+-                    falsified=True,
+-                    evidence=FalsificationEvidence(
+-                        offending_belief_ids=(row.id,),
+-                        details=(
+-                            f"root row id={row.id} has non-NULL "
+-                            f"parent_hash={row.parent_hash!r}"
+-                        ),
+-                    ),
+-                    method="seq-ordered scan + parent_hash check",
+-                    rows_examined=len(rows),
+-                )
+-        elif row.parent_hash != previous_hash:
+-            return FalsificationAttempt(
+-                claim_name="parent_hash_linkage",
+-                falsified=True,
+-                evidence=FalsificationEvidence(
+-                    offending_belief_ids=(row.id,),
+-                    details=(
+-                        f"row id={row.id} seq={row.seq} has "
+-                        f"parent_hash={row.parent_hash!r}; expected "
+-                        f"previous content_hash={previous_hash!r}"
+-                    ),
+-                ),
+-                method="seq-ordered scan + parent_hash check",
+-                rows_examined=len(rows),
+-            )
+-        previous_hash = row.content_hash
+-
+-    return FalsificationAttempt(
+-        claim_name="parent_hash_linkage",
+-        falsified=False,
+-        evidence=None,
+-        method="seq-ordered scan + parent_hash check",
+-        rows_examined=len(rows),
+-    )
+-
+-
+-async def _falsify_artifact_hash_stability(
+-    session: AsyncSession, run_id: str
+-) -> FalsificationAttempt:
+-    """every artifact's stored bytes hash to its declared content_hash.
+-
+-    Calls ``ArtifactStore.verify`` (sha256 of the bytes on disk) for each
+-    ``ArtifactRecord.content_hash`` belonging to ``run_id`` and flags
+-    any mismatch. The verify call also catches a missing artifact
+-    (returns False). Size-mismatch is implied — any byte change changes
+-    the hash — so we do not need a separate size check.
+-    """
+-    result = await session.execute(select(ArtifactRecord).where(ArtifactRecord.run_id == run_id))
+-    artifacts = list(result.scalars().all())
+-
+-    artifact_service = get_artifact_service()
+-
+-    for artifact in artifacts:
+-        if not artifact_service.verify_integrity(artifact.content_hash):
+-            return FalsificationAttempt(
+-                claim_name="artifact_hash_stability",
+-                falsified=True,
+-                evidence=FalsificationEvidence(
+-                    offending_artifact_ids=(artifact.id,),
+-                    details=(
+-                        f"artifact id={artifact.id} "
+-                        f"content_hash={artifact.content_hash} failed "
+-                        "verify(): bytes on disk are missing or hash to a "
+-                        "different value"
+-                    ),
+-                ),
+-                method="ArtifactStore.verify per artifact",
+-                rows_examined=len(artifacts),
+-            )
+-
+-    return FalsificationAttempt(
+-        claim_name="artifact_hash_stability",
+-        falsified=False,
+-        evidence=None,
+-        method="ArtifactStore.verify per artifact",
+-        rows_examined=len(artifacts),
+-    )
+-
+-
+-# ---------------------------------------------------------------------------
+-# Singleton registry, pre-populated with the three core claims.
++# Singleton registry, pre-populated with the three core claims from
++# ``builtin_claims``.
+ # ---------------------------------------------------------------------------
+ 
+ 
+-_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (
+-    FalsifiableClaim(
+-        name="chain_seq_monotonic",
+-        description=(
+-            "Every belief row's seq is contiguous, starting at 1, with "
+-            "no gaps and no duplicates."
+-        ),
+-        falsifier=_falsify_chain_seq_monotonic,
+-    ),
+-    FalsifiableClaim(
+-        name="parent_hash_linkage",
+-        description=(
+-            "Each row's parent_hash equals the previous row's content_hash; "
+-            "the seq=1 root row has parent_hash IS NULL."
+-        ),
+-        falsifier=_falsify_parent_hash_linkage,
+-    ),
+-    FalsifiableClaim(
+-        name="artifact_hash_stability",
+-        description=(
+-            "Every artifact's stored bytes hash to its declared "
+-            "content_hash and the stored size_bytes matches the on-disk size."
+-        ),
+-        falsifier=_falsify_artifact_hash_stability,
+-    ),
+-)
+-
+-
+ _registry: FalsifiableClaimRegistry | None = None
+ 
+ 
+@@ -337,12 +156,27 @@ def get_claim_registry() -> FalsifiableClaimRegistry:
+     """returns the process-global claim registry, populated with builtins."""
+     global _registry
+     if _registry is None:
++        # deferred: builtin_claims imports the claim types from this module
++        from ironroot.verification.builtin_claims import _BUILTIN_CLAIMS
++
+         _registry = FalsifiableClaimRegistry()
+         for claim in _BUILTIN_CLAIMS:
+             _registry.register(claim)
+     return _registry
+ 
+ 
++def __getattr__(name: str) -> tuple[FalsifiableClaim, ...]:
++    """keeps ``from ironroot.verification.falsification import _BUILTIN_CLAIMS``
++    working now that the tuple lives in ``builtin_claims``. Resolved lazily
++    so either module can be imported first without a circular-import error.
++    """
++    if name == "_BUILTIN_CLAIMS":
++        from ironroot.verification.builtin_claims import _BUILTIN_CLAIMS
++
++        return _BUILTIN_CLAIMS
++    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
++
++
+ def reset_claim_registry_for_testing() -> None:
+     """test helper — forces the next ``get_claim_registry`` to re-init."""
+     global _registry

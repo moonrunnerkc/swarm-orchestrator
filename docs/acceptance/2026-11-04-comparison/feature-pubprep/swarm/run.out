@@ -1,0 +1,16 @@
+task         Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.
+model        gemma4:31b (the best record here: 86% of its finished tasks complete, needs 25.3 GiB at a 65536-token context, 24.1 tok/s in its probe)
+state        complete
+stop         complete
+R1           asked    Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.
+             read as  feature: tests parseArgs > parses --reviewers, parseArgs > rejects --reviewers without a value, parseArgs > rejects empty --reviewers value, parseArgs > rejects invalid reviewer names; checks typecheck, build
+             status   satisfied
+changed      3 file(s)
+regression   none
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared
+patch        /Users/brad/.swarm/sessions/20261105T075907-93df60/final/delivered.patch (sha256 c0c3b1e8047d4d423a1ed0ae5c325cdc2948b947555cbb45cf71bf8fce625b27)
+applied      yes
+report       /Users/brad/.swarm/sessions/20261105T075907-93df60/final/report.md
+evidence     /Users/brad/.swarm/sessions/20261105T075907-93df60
+attestation  /Users/brad/.swarm/sessions/20261105T075907-93df60/verifications/2/attestation.sigstore.json
+exit 0

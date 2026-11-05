@@ -1,0 +1,20 @@
+(node:45322) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+state        incomplete
+requirement  R1 unverified: no mapped test fails before the change and passes after it (claimcheck blocks a change that deletes a whole test. compareTestFile in src/checks/test-weakening.ts reports assertion-removed whenever a test file's expect() count drops, so deleting an obsolete test or splitting a file reads as stripping an assertion, and the decision BLOCKs. Deleting a test is ambiguous, not the strip-an-assertion cheat. When the expect() count drops and the file also has fewer test cases (it/test calls, including variants such as it.skip, it.only, test.each and xit), report a new test-weakening kind, test-removed, which the decision only WARNs on, like expected-value-changed. A drop in expect() calls with the test count unchanged is still assertion-removed and still blocks. Fix it, with a test.)
+regression   none
+base         d381bec7f8c860672e334ae91d54db842d1c4f7c
+change       9 file(s) from the patch
+check        test: pass (npm run test, pre-existing)
+check        typecheck: pass (npm run typecheck, pre-existing)
+check        build: pass (npm run build, pre-existing)
+baseline     3 of 3 check(s) pass at the base commit
+held-out     visible 100%, held-out 100%, gap 0%, judged in 5 process(es)
+test files   6 added
+coverage     unmeasured: the V8 offsets for src/core/decision.ts run past the file, so a transform ran first
+mutation     killed: number plus one at src/checks/test-weakening.ts:57
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; dependencies prepared from the lockfile and digested
+environment  sha256:220ec6e5fb65b7261f2daa35d890ae94a3c29c87afc8113543710dad707729b0
+attestation  /Users/brad/projects/recovery-2026-10-31/comparison/fix-claimcheck/swarm/attempt-1/judged/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/comparison/fix-claimcheck/swarm/attempt-1/judged/verdict/attestation.pub.pem
+exit 4

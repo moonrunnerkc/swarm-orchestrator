@@ -1,0 +1,1761 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "tree",
+      "digest": {
+        "sha256": "aa449556b212651ce60cac739d759d31de541fe5e6fef74991817eef2c6613ca"
+      }
+    },
+    {
+      "name": "change.patch",
+      "digest": {
+        "sha256": "8cc2f0ee46e38094f3130597e09488f17c66ac0e3b868458a1c68b7d76b56d99"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/moonrunnerkc/swarm-verify/result/v1",
+  "predicate": {
+    "state": "incomplete",
+    "scope": "requirements",
+    "reasons": [],
+    "base": {
+      "commit": "d381bec7f8c860672e334ae91d54db842d1c4f7c"
+    },
+    "change": {
+      "source": "patch",
+      "applied": true,
+      "files": [
+        {
+          "path": "src/checks/test-weakening.ts",
+          "status": "modified"
+        },
+        {
+          "path": "src/core/decision.ts",
+          "status": "modified"
+        },
+        {
+          "path": "src/core/evidence-record.ts",
+          "status": "modified"
+        },
+        {
+          "path": "test/unit/test-weakening-r3-fail-base.test.ts",
+          "status": "added"
+        },
+        {
+          "path": "test/unit/test-weakening-r3-regression-final.test.ts",
+          "status": "added"
+        },
+        {
+          "path": "test/unit/test-weakening-r3-regression.test.ts",
+          "status": "added"
+        },
+        {
+          "path": "test/unit/test-weakening-r3.test.ts",
+          "status": "added"
+        },
+        {
+          "path": "test/unit/test-weakening-regression.test.ts",
+          "status": "added"
+        },
+        {
+          "path": "test/unit/test-weakening.test.ts",
+          "status": "added"
+        }
+      ]
+    },
+    "requirements": [
+      {
+        "id": "R1",
+        "text": "claimcheck blocks a change that deletes a whole test. compareTestFile in src/checks/test-weakening.ts reports assertion-removed whenever a test file's expect() count drops, so deleting an obsolete test or splitting a file reads as stripping an assertion, and the decision BLOCKs. Deleting a test is ambiguous, not the strip-an-assertion cheat. When the expect() count drops and the file also has fewer test cases (it/test calls, including variants such as it.skip, it.only, test.each and xit), report a new test-weakening kind, test-removed, which the decision only WARNs on, like expected-value-changed. A drop in expect() calls with the test count unchanged is still assertion-removed and still blocks. Fix it, with a test.",
+        "source": "user",
+        "kind": "fix",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [
+            {
+              "name": "src::"
+            }
+          ],
+          "checks": [
+            "test",
+            "typecheck",
+            "build"
+          ],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "status": "unverified",
+        "evidence": [
+          {
+            "kind": "test",
+            "ref": "src/analysis/instrument.test.ts::instrumentSource > wraps a return expression on a covered changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/instrument.test.ts::instrumentSource > leaves returns on uncovered lines untouched",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/instrument.test.ts::instrumentSource > does not wrap a bare return with no value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/instrument.test.ts::instrumentTest > wraps the first argument of expect",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/instrument.test.ts::instrumentTest > leaves non-expect calls untouched",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/instrument.test.ts::instrumentTest > preserves the line on which the assertion sits",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/mutant-equivalence.test.ts::classifyMutants > marks no-coverage mutants as unreachable",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/mutant-equivalence.test.ts::classifyMutants > marks a mutant whose replacement equals the original as trivially equivalent",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/mutant-equivalence.test.ts::classifyMutants > leaves a genuinely altering mutant as none",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/mutant-equivalence.test.ts::classifyMutants > does not classify when the source is unavailable",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/nondeterminism-scan.test.ts::scanNondeterminism > flags the wall clock and marks it controllable",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/nondeterminism-scan.test.ts::scanNondeterminism > flags new Date() with no args but not new Date(ms)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/nondeterminism-scan.test.ts::scanNondeterminism > flags Math.random as controllable unseeded randomness",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/nondeterminism-scan.test.ts::scanNondeterminism > flags fetch and network imports as uncontrollable",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/nondeterminism-scan.test.ts::scanNondeterminism > flags setTimeout as a controllable timer source",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/analysis/nondeterminism-scan.test.ts::scanNondeterminism > returns nothing for deterministic code",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > passes when active tests ran and none failed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > never passes a run that failed to load, even with an empty outcome set",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > never passes when there were no active test files",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > never passes when the runner found no test files",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > does not pass when a non-quarantined test failed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > ignores a failure from a quarantined (flaky) test",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > an empty-but-loaded run with active tests is a pass (no failures to find)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/head-run.test.ts::headRunPasses > treats any non-zero exit with no outcomes as not-passing across the board",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/install-strategy.test.ts::chooseInstallStrategy > symlinks when the repo declares no dependencies",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/install-strategy.test.ts::chooseInstallStrategy > uses npm ci when a lockfile is present",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/install-strategy.test.ts::chooseInstallStrategy > falls back to npm install when deps are declared but no npm lockfile exists",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/install-strategy.test.ts::inspectRepoInstall > reports a dependency-free package as symlink-eligible",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/install-strategy.test.ts::inspectRepoInstall > detects declared devDependencies and an npm lockfile",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/install-strategy.test.ts::inspectRepoInstall > treats a non-npm lockfile (pnpm) as npm-install",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/install-strategy.test.ts::inspectRepoInstall > handles a missing package.json as nothing to install",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/vitest-run.test.ts::runVitest > reports a passing run with outcomes",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/adapters/vitest-run.test.ts::runVitest > flags a suite that cannot load as failedToRun, not as an empty pass",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/bundle/verdict-bundle.test.ts::buildBundle > derives the verdict from the record and uses the record hash as the bundle hash",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/bundle/verdict-bundle.test.ts::buildBundle > serializes identically regardless of collection insertion order",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/bundle/verdict-bundle.test.ts::writeBundle / readBundle > round-trips a bundle through disk",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/bundle/verdict-bundle.test.ts::replayBundle > reproduces the recorded verdict from the record alone",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/bundle/verdict-bundle.test.ts::replayBundle > detects a tampered record whose facts no longer match the recorded verdict",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cache/analysis-cache.test.ts::contentKey > is stable for the same inputs and order",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cache/analysis-cache.test.ts::contentKey > changes when an input changes",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cache/analysis-cache.test.ts::contentKey > is order-sensitive so distinct inputs do not collide",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cache/analysis-cache.test.ts::AnalysisCache > returns null on a miss and the stored value on a hit",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanCoverageThreshold > flags a lowered global line threshold in package.json",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanCoverageThreshold > does not flag an unchanged or raised threshold",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanCiMatrix > flags a workflow that drops node versions from the matrix",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanCiMatrix > counts block-list matrix entries and flags their reduction",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanCiMatrix > does not flag an unchanged or widened matrix",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanDroppedAsync > flags a removed await",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanDroppedAsync > does not flag added or unchanged awaits",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanToleranceLoosening > flags a lowered toBeCloseTo precision",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanToleranceLoosening > treats an omitted precision as the default of 2",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanToleranceLoosening > does not flag a tightened tolerance",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanDiffTail dispatch > routes by filename and runs only applicable scanners",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/diff-tail.test.ts::scanDiffTail dispatch > is deterministic across runs",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/error-suppression.test.ts::scanErrorSuppression > flags an empty catch on a changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/error-suppression.test.ts::scanErrorSuppression > flags a catch that returns a success value on the error path",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/error-suppression.test.ts::scanErrorSuppression > does not flag a catch that rethrows",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/error-suppression.test.ts::scanErrorSuppression > ignores catch clauses outside the changed lines",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > flags an istanbul ignore marker added on a changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > recognizes c8, v8, and node:coverage ignore spellings",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > flags @ts-ignore and @ts-expect-error suppression on a changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > flags an 'as any' cast introduced on a changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > flags an explicit ': any' annotation on a changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > ignores markers and casts outside the changed lines",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > returns nothing for a clean changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/static-tail.test.ts::scanStaticTail > is deterministic: same inputs, identical findings",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/test-weakening.test.ts::compareTestFile > flags a strict matcher loosened to a weak one",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/test-weakening.test.ts::compareTestFile > flags a changed expected value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/test-weakening.test.ts::compareTestFile > flags a removed assertion",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/test-weakening.test.ts::compareTestFile > flags a test marked skipped in head",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/test-weakening.test.ts::compareTestFile > reports nothing when the assertions are unchanged",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > flags mock-the-sut and resolves it to the changed source file",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > records mock-the-sut without a changed file when mocking an unrelated module",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > does not treat a bare package mock as targeting a local source",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > flags snapshot acceptance over changed output",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > flags a self-referential tautology expect(x).toBe(x)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > flags expect(true).toBe(true)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > does not flag a real assertion",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/checks/vacuous-assertion.test.ts::scanVacuousAssertions > is deterministic across runs",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::buildAnnotations > maps a static-tail finding to a warning annotation at its line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::buildAnnotations > inherits the BLOCK tier when a check blocks",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::buildAnnotations > drops findings whose check passed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::renderGithubAnnotations > emits ::error for block and ::warning for warn with file and line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::renderGithubAnnotations > escapes newlines and commas in the command payload",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::renderGithubAnnotations > emits a location-free command for a regressed test",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::renderAnnotationList > anchors each finding at file:line with its tier and check",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/annotations.test.ts::renderAnnotationList > is deterministic across runs",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/args.test.ts::parseArgs > separates the command, positionals, and options",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/args.test.ts::parseArgs > treats a trailing flag without a value as boolean true",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/args.test.ts::parseArgs > collects positionals after the command",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/args.test.ts::requireOption > throws naming the flag when missing",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/args.test.ts::requireOption > throws when the flag was given without a value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/args.test.ts::requireOption > returns the value when present",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/format.test.ts::formatVerdict > shows the overall tier and each check",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/format.test.ts::formatVerdict > always states the scope so the tool never overclaims",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/run.integration.test.ts::CLI run and replay > exits 2 on a blocked case and writes a bundle that replays",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/cli/run.integration.test.ts::CLI run and replay > reproduces the bundle hash from cache on a second identical run",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > passes an honest fix where tests constrain the change",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks when a no-op mutant survives on a covered changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks when every live mutant on a covered changed line survives",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > only warns when a single non-no-op mutant survives and the test failed on parent",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > escalates to block when the test passes on parent AND a real mutant survives on the fix line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > does not escalate when the surviving mutant is off the covered changed lines",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > does not escalate when fails-on-parent is only indeterminate",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks a vacuous test where a changed value never reaches an assertion",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns, not blocks, when taint says unreachable but the kill-check shows the change is constrained",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > still blocks a cleanly vacuous test when no mutation contradicts taint",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > downgrades a taint-vs-kill contradiction to warn instead of resolving it",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks on a regression of a stable parent test",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns, never blocks, when the new test passes on the parent",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns when the new test cannot run on the parent",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns when no changed line is covered by the new tests",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns when the new tests do not pass on head",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks when an existing assertion is loosened",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > only warns when an expected value changed, since the behavior may have changed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns on an error-suppression pattern, never blocks on it alone",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns on a coverage-ignore marker on a changed line, never blocks alone",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks a coverage-ignore that taint confirms reaches no assertion",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns on a type-suppression even when taint is unreachable (no conjunction for it)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns on a mock-the-sut when a changed line is still covered",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks mock-the-sut of the changed module when no changed line is covered",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > does not block mock-the-sut when coverage collection failed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns when a passing run collected no coverage at all",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > passes coverage-reliability when coverage was collected",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns, never blocks, on a tautology or snapshot acceptance",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > abstains (passes) on assertion-reachability when no taint was collected",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > is a pure function: identical records yield identical verdicts and hashes",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > emits no oracle check when no oracle produced a finding",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > blocks when an oracle is violated on head",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > warns when an oracle could not be evaluated deterministically",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > keeps the verdict a pass when the only oracle is satisfied",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/decision.test.ts::decide > never lets a satisfied oracle lower an existing block",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::canonicalizeRecord > sorts collections so insertion order cannot change the serialization",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::canonicalizeRecord > orders changed ranges by file then start line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::hashRecord > is identical across reruns for structurally equal records",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::hashRecord > is invariant to insertion order of collections",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::hashRecord > changes when an observed fact changes",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::hashRecord > is prefixed with the algorithm name",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::hashRecord > is unchanged by an empty oracleFindings field versus an absent one",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/evidence-record.test.ts::hashRecord > changes when an oracle finding is recorded",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > passes an honest fix whose test pins the changed value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > blocks a vacuous fix whose test never checks the value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > catches both vacuous fixes by assertion-reachability alone",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > does not let taint false-flag the honest or equivalent-mutant fix",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > blocks the other vacuous fix via the coverage-but-no-assertion path",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > does not block an honest fix that leaves an equivalent mutant",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > passes a flaky-clock fix once the sandbox pins the wall clock",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > quarantines a test that needs uncontrollable network and warns",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > warns on a correct fix that carries a @ts-ignore on the changed line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > blocks a test that mocks the changed module so the fix never runs",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/pipeline.integration.test.ts::runPipeline against the corpus > reproduces an identical bundle hash across reruns",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/verdict.test.ts::worstTier > returns pass for an empty set",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/verdict.test.ts::worstTier > lets block win over warn and pass",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/verdict.test.ts::worstTier > lets warn win over pass",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/verdict.test.ts::worstTier > returns pass when everything passed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/core/verdict.test.ts::exitCodeForTier > maps pass to 0, warn to 1, block to 2",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/coverage/collect.integration.test.ts::collectCoverage against a real worktree > reports the changed fix line as covered by the new test",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/flake-fallback.test.ts::findFlips > flags a test that passed once and failed once",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/flake-fallback.test.ts::findFlips > ignores tests that were stable across runs",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/flake-fallback.test.ts::findFlips > ignores skipped statuses",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/flake-fallback.test.ts::findFlips > returns flips sorted for a stable record",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/sandbox.test.ts::sandbox crypto pins > makes crypto.randomUUID deterministic across separate processes",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/sandbox.test.ts::sandbox crypto pins > returns distinct UUIDs within a run but a fixed, valid shape",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/sandbox.test.ts::nondeterminism scan recognizes the pinned crypto globals > marks crypto.randomUUID and getRandomValues as controlled",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/vitest-config.test.ts::detectRepoVitestConfig > finds a repo vitest.config.ts",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/vitest-config.test.ts::detectRepoVitestConfig > falls back to vite.config and supports .mts",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/vitest-config.test.ts::detectRepoVitestConfig > never mistakes ClaimCheck's own generated config for the repo's",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/vitest-config.test.ts::composeVitestConfig > emits the standalone config when the repo has none",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/determinism/vitest-config.test.ts::composeVitestConfig > extends the repo's config when present, preserving it via mergeConfig",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::isTestFile / isSourceFile > recognizes test files by suffix and directory",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::isTestFile / isSourceFile > treats non-test JS/TS as source and excludes test files",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::parseUnifiedDiff > extracts head-side ranges from unified=0 hunk headers",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::parseUnifiedDiff > ignores pure deletions, which have no head-side lines",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::parseUnifiedDiff > treats a hunk header without a count as a single line",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::mergeRanges > merges overlapping and adjacent ranges",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::mergeRanges > returns an empty list for no input",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/git/diff.test.ts::analyzeDiff > separates source ranges from test files",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/mutation/concurrency.test.ts::defaultConcurrency > uses a single worker on a one-core or unknown host",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/mutation/concurrency.test.ts::defaultConcurrency > leaves a core free for the host",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/mutation/concurrency.test.ts::defaultConcurrency > caps the pool so a large runner does not spawn unbounded workers",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/mutation/stryker-runner.integration.test.ts::runStryker against the corpus > kills every block-worthy mutant when the test pins the value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/mutation/stryker-runner.integration.test.ts::runStryker against the corpus > leaves the fix line fully unconstrained when the test never checks the value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/graceful-degradation.test.ts::oracle-layer graceful degradation > leaves the bundle hash byte-for-byte unchanged when the oracle field is absent versus empty",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/graceful-degradation.test.ts::oracle-layer graceful degradation > contributes no findings when the full registered oracle set runs with no repro input",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/graceful-degradation.test.ts::oracle-layer graceful degradation > produces a bundle identical to a pre-oracle run when the oracle set abstains",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/graceful-degradation.test.ts::oracle-layer graceful degradation > does change the bundle hash once a real finding is recorded, so the guard is not vacuous",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::extractRepro > takes a supplied repro as runnable verbatim",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::extractRepro > pulls a fenced JS block carrying an executable assertion",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::extractRepro > recognizes a node assert repro as runnable",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::extractRepro > declines a fenced block with no executable assertion as not-extractable",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::extractRepro > abstains when the issue has no code block at all",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::extractRepro > ignores non-JS fenced blocks (a stack trace is not a repro)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::extractRepro > does not treat a shell fence as a JS repro",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::toRunnableTest > leaves a complete vitest test intact when it already imports vitest",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::toRunnableTest > adds a vitest import to a test wrapper that lacks one",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::toRunnableTest > hoists imports and wraps a bare assertion script in a test",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/issue-repro.test.ts::toRunnableTest > adds a node:assert import for a bare assert script",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::didNotRunReason > names a ReferenceError as a did-not-run failure",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::didNotRunReason > treats a bare 'is not defined' message as a did-not-run failure",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::didNotRunReason > names a module-resolution failure",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::didNotRunReason > names a syntax error",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::didNotRunReason > returns null for a genuine assertion failure",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::didNotRunReason > returns null when there is no failure message",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::classifyRun > reads a thrown ReferenceError as errored, never as a failed assertion",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::classifyRun > reads an assertion that ran and failed as fail",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::classifyRun > reads a passing run as pass",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::classifyRun > treats a run that failed to load as errored",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::classifyRun > treats a run that found no tests as errored",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::classifyRun > treats an empty outcome set as errored, never a pass",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/repro-run.test.ts::classifyRun > errors the whole run when any outcome threw, even alongside a pass",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/stubs.test.ts::registered no-op oracles > each returns null (not configured) and contributes nothing",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/stubs.test.ts::registered no-op oracles > exposes all three under stable ids in the registry",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "src/oracle/stubs.test.ts::registered no-op oracles > ignores even a present repro input: these seams are not wired",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "check",
+            "ref": "test",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "check",
+            "ref": "typecheck",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "check",
+            "ref": "build",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          }
+        ],
+        "limitation": "no mapped test fails before the change and passes after it",
+        "nextAction": "add a test that fails against the base and passes with the change"
+      }
+    ],
+    "regression": {
+      "status": "none",
+      "newFailures": [],
+      "inherited": [],
+      "removed": [],
+      "unresolved": [],
+      "flaky": []
+    },
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 236,
+        "exitCode": 0,
+        "durationMs": 52206,
+        "outputSha256": "273d374aca1ddb7589e0e8a62c2bdd932408aaa3e4785120f83978927685d78a",
+        "tests": {
+          "runner": "vitest",
+          "collected": {
+            "base": 224,
+            "candidate": 236
+          },
+          "counts": {
+            "preserved": 224,
+            "renamed": 0,
+            "fixed": 0,
+            "newFailures": 0,
+            "inherited": 0,
+            "removed": 0,
+            "superseded": 0,
+            "expectationChanges": 0,
+            "added": 12,
+            "addedFailing": 0,
+            "witnesses": 7,
+            "skipped": 0,
+            "flaky": 0
+          },
+          "fixed": [],
+          "newFailures": [],
+          "inherited": [],
+          "removed": [],
+          "renamed": [],
+          "superseded": [],
+          "expectationChanges": [],
+          "added": [
+            "test/unit/test-weakening-r3-fail-base.test.ts::R3: test-removed vs assertion-removed > should not block when a test is removed (this would have blocked on base)",
+            "test/unit/test-weakening-r3-regression-final.test.ts::R3 Regression: test-removed vs assertion-removed > should not block when a test is removed (this would have blocked on base)",
+            "test/unit/test-weakening-r3-regression-final.test.ts::R3 Regression: test-removed vs assertion-removed > should still block when only an assertion is removed",
+            "test/unit/test-weakening-r3-regression.test.ts::R3 Regression: test-removed should not block > should report test-removed and WARN when a test is deleted (would have BLOCKED on base)",
+            "test/unit/test-weakening-r3-regression.test.ts::R3 Regression: test-removed should not block > should still report assertion-removed and BLOCK when only expect count drops",
+            "test/unit/test-weakening-r3.test.ts::R3: test-removed vs assertion-removed > should report assertion-removed and BLOCK when only expect count drops",
+            "test/unit/test-weakening-r3.test.ts::R3: test-removed vs assertion-removed > should report test-removed and WARN when both expect and test counts drop",
+            "test/unit/test-weakening-regression.test.ts::test-weakening regression > should not block when a test is removed (was a bug in base)",
+            "test/unit/test-weakening.test.ts::test-weakening > assertion-removed blocks the verdict",
+            "test/unit/test-weakening.test.ts::test-weakening > reports assertion-removed when expect count drops but test count is same",
+            "test/unit/test-weakening.test.ts::test-weakening > reports test-removed when expect count drops and test count drops",
+            "test/unit/test-weakening.test.ts::test-weakening > test-removed only warns the verdict"
+          ],
+          "addedFailing": [],
+          "witnesses": [
+            "test/unit/test-weakening-r3-fail-base.test.ts::R3: test-removed vs assertion-removed > should not block when a test is removed (this would have blocked on base)",
+            "test/unit/test-weakening-r3-regression-final.test.ts::R3 Regression: test-removed vs assertion-removed > should not block when a test is removed (this would have blocked on base)",
+            "test/unit/test-weakening-r3-regression.test.ts::R3 Regression: test-removed should not block > should report test-removed and WARN when a test is deleted (would have BLOCKED on base)",
+            "test/unit/test-weakening-r3.test.ts::R3: test-removed vs assertion-removed > should report test-removed and WARN when both expect and test counts drop",
+            "test/unit/test-weakening-regression.test.ts::test-weakening regression > should not block when a test is removed (was a bug in base)",
+            "test/unit/test-weakening.test.ts::test-weakening > reports test-removed when expect count drops and test count drops",
+            "test/unit/test-weakening.test.ts::test-weakening > test-removed only warns the verdict"
+          ],
+          "flaky": [],
+          "reruns": [
+            {
+              "id": "test/unit/test-weakening-r3-fail-base.test.ts::R3: test-removed vs assertion-removed > should not block when a test is removed (this would have blocked on base)",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/unit/test-weakening-r3-regression-final.test.ts::R3 Regression: test-removed vs assertion-removed > should not block when a test is removed (this would have blocked on base)",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/unit/test-weakening-r3-regression.test.ts::R3 Regression: test-removed should not block > should report test-removed and WARN when a test is deleted (would have BLOCKED on base)",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/unit/test-weakening-r3.test.ts::R3: test-removed vs assertion-removed > should report test-removed and WARN when both expect and test counts drop",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/unit/test-weakening-regression.test.ts::test-weakening regression > should not block when a test is removed (was a bug in base)",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/unit/test-weakening.test.ts::test-weakening > reports test-removed when expect count drops and test count drops",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/unit/test-weakening.test.ts::test-weakening > test-removed only warns the verdict",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2325,
+        "outputSha256": "28850626576dca21c76fd83dae60c410d678519bb93637e12db5dda00e684872"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2236,
+        "outputSha256": "26a0eb467e7b4f3a89b891ed6314db88b35de1b9fef3047faee8ae16cf77e351"
+      }
+    ],
+    "baseline": {
+      "status": "measured",
+      "cached": false,
+      "environmentSha256": "220ec6e5fb65b7261f2daa35d890ae94a3c29c87afc8113543710dad707729b0",
+      "checks": [
+        {
+          "name": "test",
+          "command": "npm run test",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": 224,
+          "exitCode": 0,
+          "durationMs": 47934,
+          "outputSha256": "5246d8a195dc35f9a950a84e836f8915e6dcd55410be07c2eabe9415775eb21f"
+        },
+        {
+          "name": "typecheck",
+          "command": "npm run typecheck",
+          "kind": "other",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2314,
+          "outputSha256": "28850626576dca21c76fd83dae60c410d678519bb93637e12db5dda00e684872"
+        },
+        {
+          "name": "build",
+          "command": "npm run build",
+          "kind": "other",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2258,
+          "outputSha256": "26a0eb467e7b4f3a89b891ed6314db88b35de1b9fef3047faee8ae16cf77e351"
+        }
+      ],
+      "heldOut": [
+        {
+          "name": "held-out",
+          "command": "npx vitest run src/checks/test-removed.held-out.test.ts src/core/test-removed-decision.held-out.test.ts",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "fail",
+          "collected": null,
+          "exitCode": 1,
+          "durationMs": 2390,
+          "outputSha256": "54d105368116175232ec8b7b5777e4a2a1444cab90a89952dd98a319b46dd637"
+        }
+      ]
+    },
+    "heldOut": {
+      "status": "measured",
+      "checks": [
+        {
+          "name": "held-out",
+          "command": "npx vitest run src/checks/test-removed.held-out.test.ts src/core/test-removed-decision.held-out.test.ts",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2257,
+          "outputSha256": "fea8181d19946b0c000d350b075d67800fe58e81dd421a3ab89d6df0bb1032e5"
+        }
+      ],
+      "visiblePassRate": 1,
+      "heldOutPassRate": 1,
+      "gap": 0,
+      "judge": {
+        "processes": 5,
+        "assertionCalls": 0
+      }
+    },
+    "artifacts": [
+      {
+        "path": "src/checks/test-weakening.ts",
+        "category": "source"
+      },
+      {
+        "path": "src/core/decision.ts",
+        "category": "source"
+      },
+      {
+        "path": "src/core/evidence-record.ts",
+        "category": "source"
+      },
+      {
+        "path": "test/unit/test-weakening-r3-fail-base.test.ts",
+        "category": "tests"
+      },
+      {
+        "path": "test/unit/test-weakening-r3-regression-final.test.ts",
+        "category": "tests"
+      },
+      {
+        "path": "test/unit/test-weakening-r3-regression.test.ts",
+        "category": "tests"
+      },
+      {
+        "path": "test/unit/test-weakening-r3.test.ts",
+        "category": "tests"
+      },
+      {
+        "path": "test/unit/test-weakening-regression.test.ts",
+        "category": "tests"
+      },
+      {
+        "path": "test/unit/test-weakening.test.ts",
+        "category": "tests"
+      }
+    ],
+    "testFiles": {
+      "added": [
+        "test/unit/test-weakening-r3-fail-base.test.ts",
+        "test/unit/test-weakening-r3-regression-final.test.ts",
+        "test/unit/test-weakening-r3-regression.test.ts",
+        "test/unit/test-weakening-r3.test.ts",
+        "test/unit/test-weakening-regression.test.ts",
+        "test/unit/test-weakening.test.ts"
+      ],
+      "modified": [],
+      "deleted": [],
+      "moved": [],
+      "movedAndEdited": [],
+      "relocated": []
+    },
+    "coverage": {
+      "status": "unmeasured",
+      "reason": "the V8 offsets for src/core/decision.ts run past the file, so a transform ran first"
+    },
+    "mutation": {
+      "status": "killed",
+      "path": "src/checks/test-weakening.ts",
+      "line": 57,
+      "operator": "number plus one",
+      "syntax": "valid",
+      "rejected": 0
+    },
+    "producer": {
+      "instructions": []
+    },
+    "environment": {
+      "sha256": "220ec6e5fb65b7261f2daa35d890ae94a3c29c87afc8113543710dad707729b0",
+      "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+      "platform": "linux-arm64",
+      "git": "2.54.0 (Apple Git-157)",
+      "dependencies": "prepared",
+      "dependencyTreeSha256": "c087de57a56451bb557d4120b183767e0d562d3d80e8942ad5c84d8b4475fb6c",
+      "reproducible": true
+    },
+    "execution": {
+      "mode": "isolated",
+      "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+      "network": "closed",
+      "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+      "dependencies": {
+        "mode": "prepared",
+        "reproducible": true,
+        "lockfiles": {
+          "package-lock.json": "0120c1032a1a1952183d7b36ce338f411169889b84ea60d80dcefd906b52e390"
+        },
+        "treeSha256": "c087de57a56451bb557d4120b183767e0d562d3d80e8942ad5c84d8b4475fb6c",
+        "note": "prepared from the lockfile and digested"
+      },
+      "policyMet": true,
+      "problems": []
+    },
+    "policy": {
+      "behaviorChange": "none",
+      "reruns": 3
+    },
+    "unmeasured": [
+      "coverage: the V8 offsets for src/core/decision.ts run past the file, so a transform ran first"
+    ],
+    "logs": [
+      {
+        "name": "logs/test.txt",
+        "sha256": "273d374aca1ddb7589e0e8a62c2bdd932408aaa3e4785120f83978927685d78a"
+      },
+      {
+        "name": "logs/typecheck.txt",
+        "sha256": "28850626576dca21c76fd83dae60c410d678519bb93637e12db5dda00e684872"
+      },
+      {
+        "name": "logs/build.txt",
+        "sha256": "26a0eb467e7b4f3a89b891ed6314db88b35de1b9fef3047faee8ae16cf77e351"
+      }
+    ],
+    "verifier": {
+      "name": "swarm-verify",
+      "version": "2.0.3"
+    }
+  }
+}

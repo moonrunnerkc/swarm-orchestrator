@@ -1,0 +1,16 @@
+state        incomplete
+reason       a held-out check failed
+requirement  R1 satisfied (In ironroot, move the three built-in falsifiers out of src/ironroot/verification/falsification.py into a new module, src/ironroot/verification/builtin_claims.py: _falsify_chain_seq_monotonic, _falsify_parent_hash_linkage, _falsify_artifact_hash_stability, and the _BUILTIN_CLAIMS tuple that registers them. falsification.py keeps the claim types, the registry, get_claim_registry, reset_claim_registry_for_testing and run_falsification, and no longer defines the falsifiers or the tuple. This is a pure move: behavior doesn't change, the registry still seeds the same three claims in the same order, existing imports keep working (the tests import _BUILTIN_CLAIMS from ironroot.verification.falsification), and the tests stay as they are.)
+regression   none
+base         1d325c297757e83f048be593b59cfda7681a5448
+change       1 file(s) from the patch
+check        test: pass (python3 -m pytest -q, pre-existing)
+baseline     1 of 1 check(s) pass at the base commit
+held-out     visible 100%, held-out 0%, gap 100%, judged in 1 process(es)
+coverage     unmeasured: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break
+mutation     survived: == to != at src/ironroot/verification/builtin_claims.py:34
+execution    isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared; dependencies prepared from a uv.lock resolved during preparation, kept with the evidence under lockfiles/, and digested
+environment  sha256:a4cc325b1ea160373073d940702ace6fce5df1c20f4965747c1375b6a49c2e24
+attestation  /Users/brad/projects/recovery-2026-10-31/comparison/refactor-ironroot/swarm/attempt-1/judged/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/comparison/refactor-ironroot/swarm/attempt-1/judged/verdict/attestation.pub.pem
+exit 1

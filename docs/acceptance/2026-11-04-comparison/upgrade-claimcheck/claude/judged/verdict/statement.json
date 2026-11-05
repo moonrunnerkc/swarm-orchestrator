@@ -1,0 +1,454 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "tree",
+      "digest": {
+        "sha256": "39125ca3ffbfe76a49d46c931871067e74b8e97319da1a111bbe9c2d4367a944"
+      }
+    },
+    {
+      "name": "change.patch",
+      "digest": {
+        "sha256": "467e5debaac31d60dbd56e02be8607fa81d329b6434230a37709e1ef53d229db"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/moonrunnerkc/swarm-verify/result/v1",
+  "predicate": {
+    "state": "complete",
+    "scope": "requirements",
+    "reasons": [],
+    "base": {
+      "commit": "d93aea51ed2e13148f93ea63ce410c4feabe9a5a"
+    },
+    "change": {
+      "source": "patch",
+      "applied": true,
+      "files": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "status": "modified"
+        },
+        {
+          "path": "README.md",
+          "status": "modified"
+        },
+        {
+          "path": "package-lock.json",
+          "status": "modified"
+        },
+        {
+          "path": "package.json",
+          "status": "modified"
+        },
+        {
+          "path": "src/adapters/worktree-toolchain.ts",
+          "status": "modified"
+        }
+      ]
+    },
+    "requirements": [
+      {
+        "id": "R1",
+        "text": "Upgrade claimcheck to vitest 5: vitest and @vitest/coverage-v8 to ^5, with package-lock.json updated. Stryker's 9.x vitest runner can't drive vitest 5, so move @stryker-mutator/core and @stryker-mutator/vitest-runner to ^10 as well, and move the Stryker version claimcheck installs into the repos it checks (src/adapters/worktree-toolchain.ts) to 10.x for repos on vitest 2 and later; repos on vitest 1 keep 8.7.1. Typecheck, build and the test suite must stay green.",
+        "source": "user",
+        "kind": "upgrade",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [
+            "test",
+            "typecheck",
+            "build"
+          ],
+          "structure": [],
+          "packages": [
+            {
+              "name": "vitest",
+              "ecosystem": "npm",
+              "version": "5.x"
+            },
+            {
+              "name": "@vitest/coverage-v8",
+              "ecosystem": "npm",
+              "version": "5.x"
+            },
+            {
+              "name": "@stryker-mutator/core",
+              "ecosystem": "npm",
+              "version": "10.x"
+            },
+            {
+              "name": "@stryker-mutator/vitest-runner",
+              "ecosystem": "npm",
+              "version": "10.x"
+            }
+          ]
+        },
+        "versions": [
+          {
+            "name": "vitest",
+            "ecosystem": "npm",
+            "range": "^5",
+            "latest": false,
+            "wording": "vitest and @vitest/coverage-v8 to ^5"
+          },
+          {
+            "name": "@vitest/coverage-v8",
+            "ecosystem": "npm",
+            "range": "^5",
+            "latest": false,
+            "wording": "vitest and @vitest/coverage-v8 to ^5"
+          },
+          {
+            "name": "@stryker-mutator/core",
+            "ecosystem": "npm",
+            "range": "^10",
+            "latest": false,
+            "wording": "@stryker-mutator/core and @stryker-mutator/vitest-runner to ^10"
+          },
+          {
+            "name": "@stryker-mutator/vitest-runner",
+            "ecosystem": "npm",
+            "range": "^10",
+            "latest": false,
+            "wording": "@stryker-mutator/core and @stryker-mutator/vitest-runner to ^10"
+          }
+        ],
+        "status": "satisfied",
+        "evidence": [
+          {
+            "kind": "check",
+            "ref": "test",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "check",
+            "ref": "typecheck",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "check",
+            "ref": "build",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "package",
+            "ref": "npm:vitest",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "resolved 4.1.8 at the base and 5.1.0 in the candidate"
+          },
+          {
+            "kind": "package",
+            "ref": "npm:@vitest/coverage-v8",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "resolved 4.1.8 at the base and 5.1.0 in the candidate"
+          },
+          {
+            "kind": "package",
+            "ref": "npm:@stryker-mutator/core",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "resolved 9.6.1 at the base and 10.1.1 in the candidate"
+          },
+          {
+            "kind": "package",
+            "ref": "npm:@stryker-mutator/vitest-runner",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "resolved 9.6.1 at the base and 10.1.1 in the candidate"
+          },
+          {
+            "kind": "package",
+            "ref": "npm:vitest within ^5",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "the candidate resolves 5.1.0; from the task's wording \"vitest and @vitest/coverage-v8 to ^5\""
+          },
+          {
+            "kind": "package",
+            "ref": "npm:@vitest/coverage-v8 within ^5",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "the candidate resolves 5.1.0; from the task's wording \"vitest and @vitest/coverage-v8 to ^5\""
+          },
+          {
+            "kind": "package",
+            "ref": "npm:@stryker-mutator/core within ^10",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "the candidate resolves 10.1.1; from the task's wording \"@stryker-mutator/core and @stryker-mutator/vitest-runner to ^10\""
+          },
+          {
+            "kind": "package",
+            "ref": "npm:@stryker-mutator/vitest-runner within ^10",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "the candidate resolves 10.1.1; from the task's wording \"@stryker-mutator/core and @stryker-mutator/vitest-runner to ^10\""
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      }
+    ],
+    "regression": {
+      "status": "none",
+      "newFailures": [],
+      "inherited": [],
+      "removed": [],
+      "unresolved": [],
+      "flaky": []
+    },
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 243,
+        "exitCode": 0,
+        "durationMs": 43682,
+        "outputSha256": "c303e348b94b3c0387eb5699445a539c233f82b7ac798c021621ba0b16661c60",
+        "tests": {
+          "runner": "vitest",
+          "collected": {
+            "base": 243,
+            "candidate": 243
+          },
+          "counts": {
+            "preserved": 243,
+            "renamed": 0,
+            "fixed": 0,
+            "newFailures": 0,
+            "inherited": 0,
+            "removed": 0,
+            "superseded": 0,
+            "expectationChanges": 0,
+            "added": 0,
+            "addedFailing": 0,
+            "witnesses": 0,
+            "skipped": 0,
+            "flaky": 0
+          },
+          "fixed": [],
+          "newFailures": [],
+          "inherited": [],
+          "removed": [],
+          "renamed": [],
+          "superseded": [],
+          "expectationChanges": [],
+          "added": [],
+          "addedFailing": [],
+          "witnesses": [],
+          "flaky": [],
+          "reruns": []
+        }
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2315,
+        "outputSha256": "28850626576dca21c76fd83dae60c410d678519bb93637e12db5dda00e684872"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2261,
+        "outputSha256": "26a0eb467e7b4f3a89b891ed6314db88b35de1b9fef3047faee8ae16cf77e351"
+      }
+    ],
+    "baseline": {
+      "status": "measured",
+      "cached": false,
+      "environmentSha256": "220ec6e5fb65b7261f2daa35d890ae94a3c29c87afc8113543710dad707729b0",
+      "checks": [
+        {
+          "name": "test",
+          "command": "npm run test",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": 243,
+          "exitCode": 0,
+          "durationMs": 49948,
+          "outputSha256": "829a58409995df1f393a64293e3728573ae36f3f7632838be3f65d83129fda67"
+        },
+        {
+          "name": "typecheck",
+          "command": "npm run typecheck",
+          "kind": "other",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2371,
+          "outputSha256": "28850626576dca21c76fd83dae60c410d678519bb93637e12db5dda00e684872"
+        },
+        {
+          "name": "build",
+          "command": "npm run build",
+          "kind": "other",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2305,
+          "outputSha256": "26a0eb467e7b4f3a89b891ed6314db88b35de1b9fef3047faee8ae16cf77e351"
+        }
+      ],
+      "heldOut": [
+        {
+          "name": "held-out",
+          "command": "npx vitest run src/adapters/stryker-overlay.held-out.test.ts",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "fail",
+          "collected": null,
+          "exitCode": 1,
+          "durationMs": 2205,
+          "outputSha256": "281b03200cd19bbd9b8552100e55ffe5daae30745f18a55c7bdd7a9a8edf7578"
+        }
+      ]
+    },
+    "heldOut": {
+      "status": "measured",
+      "checks": [
+        {
+          "name": "held-out",
+          "command": "npx vitest run src/adapters/stryker-overlay.held-out.test.ts",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2123,
+          "outputSha256": "620108990eab78af8691db65a61135cfc3cba6d2a8bf62180a426b9d0fcb4d75"
+        }
+      ],
+      "visiblePassRate": 1,
+      "heldOutPassRate": 1,
+      "gap": 0,
+      "judge": {
+        "processes": 4,
+        "assertionCalls": 0
+      }
+    },
+    "artifacts": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "category": "ci"
+      },
+      {
+        "path": "README.md",
+        "category": "source"
+      },
+      {
+        "path": "package-lock.json",
+        "category": "lockfiles"
+      },
+      {
+        "path": "package.json",
+        "category": "manifests"
+      },
+      {
+        "path": "src/adapters/worktree-toolchain.ts",
+        "category": "source"
+      }
+    ],
+    "testFiles": {
+      "added": [],
+      "modified": [],
+      "deleted": [],
+      "moved": [],
+      "movedAndEdited": [],
+      "relocated": []
+    },
+    "coverage": {
+      "status": "unmeasured",
+      "reason": "the change spans languages, and coverage is measured for one at a time"
+    },
+    "mutation": {
+      "status": "survived",
+      "path": "src/adapters/worktree-toolchain.ts",
+      "line": 47,
+      "operator": "!== to ===",
+      "syntax": "valid",
+      "rejected": 0
+    },
+    "producer": {
+      "instructions": []
+    },
+    "environment": {
+      "sha256": "8bcee4b53f9f37dd375b34d230fd4c23e88f8bf1d3b6a37ec34fdb0494407f10",
+      "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+      "platform": "linux-arm64",
+      "git": "2.54.0 (Apple Git-157)",
+      "dependencies": "prepared",
+      "dependencyTreeSha256": "76827e1efa58d729e39f0e4c33b5204f1f8e164ade7c4ab879de830284ae1ded",
+      "reproducible": true
+    },
+    "execution": {
+      "mode": "isolated",
+      "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+      "network": "closed",
+      "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+      "dependencies": {
+        "mode": "prepared",
+        "reproducible": true,
+        "lockfiles": {
+          "package-lock.json": "df01cc219fd4e6596eb3c3f76b2711a2147db59bc52d2d29fc371e8d194d4b02"
+        },
+        "treeSha256": "76827e1efa58d729e39f0e4c33b5204f1f8e164ade7c4ab879de830284ae1ded",
+        "note": "prepared from the lockfile and digested"
+      },
+      "policyMet": true,
+      "problems": []
+    },
+    "policy": {
+      "behaviorChange": "none",
+      "reruns": 3
+    },
+    "unmeasured": [
+      "coverage: the change spans languages, and coverage is measured for one at a time"
+    ],
+    "logs": [
+      {
+        "name": "logs/test.txt",
+        "sha256": "c303e348b94b3c0387eb5699445a539c233f82b7ac798c021621ba0b16661c60"
+      },
+      {
+        "name": "logs/typecheck.txt",
+        "sha256": "28850626576dca21c76fd83dae60c410d678519bb93637e12db5dda00e684872"
+      },
+      {
+        "name": "logs/build.txt",
+        "sha256": "26a0eb467e7b4f3a89b891ed6314db88b35de1b9fef3047faee8ae16cf77e351"
+      }
+    ],
+    "verifier": {
+      "name": "swarm-verify",
+      "version": "2.0.3"
+    }
+  }
+}

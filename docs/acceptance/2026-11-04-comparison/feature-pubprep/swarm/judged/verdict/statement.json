@@ -1,0 +1,1020 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "tree",
+      "digest": {
+        "sha256": "35a53cef66c1442c9ef0a881d95bb862eab986b91a7093839344e29c030f6c46"
+      }
+    },
+    {
+      "name": "change.patch",
+      "digest": {
+        "sha256": "c0c3b1e8047d4d423a1ed0ae5c325cdc2948b947555cbb45cf71bf8fce625b27"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/moonrunnerkc/swarm-verify/result/v1",
+  "predicate": {
+    "state": "incomplete",
+    "scope": "requirements",
+    "reasons": [
+      "a held-out check failed"
+    ],
+    "base": {
+      "commit": "99d8d054753b4e8979431eb58792895c754fbdc9"
+    },
+    "change": {
+      "source": "patch",
+      "applied": true,
+      "files": [
+        {
+          "path": "src/cli.ts",
+          "status": "modified"
+        },
+        {
+          "path": "src/orchestrate.ts",
+          "status": "modified"
+        },
+        {
+          "path": "test/cli.test.ts",
+          "status": "modified"
+        }
+      ]
+    },
+    "requirements": [
+      {
+        "id": "R1",
+        "text": "Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.",
+        "source": "user",
+        "kind": "feature",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [
+            {
+              "name": "test::"
+            }
+          ],
+          "checks": [
+            "test",
+            "typecheck",
+            "build"
+          ],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "status": "satisfied",
+        "evidence": [
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > prints USAGE and exits 0 on --help",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > prints the version and exits 0 on --version",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > rejects an unknown flag with exit 1",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > returns 1 when neither claude binary nor ANTHROPIC_API_KEY is available",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > returns 1 when ANTHROPIC_API_KEY is set to a placeholder (no claude binary)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > runs orchestrate in subscription mode and clears ANTHROPIC_API_KEY",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > runs orchestrate in API-key mode and passes parallelReviewers=true",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > forwards --dry-run to orchestrate",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > returns 1 when the working tree is dirty without --allow-dirty",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > proceeds on a dirty tree when --allow-dirty is passed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > returns 1 when not inside a git repository",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > returns 2 when orchestrate reports reviewer_failure",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > returns 2 and writes a stderr message when orchestrate throws",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > forwards --no-publish-gate to orchestrate",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > prints publish-ready and a push hint on success when the PR phase did not run",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > prints the PR URL on success when openPullRequest opened a new PR",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > prints the existing PR URL when the branch already has one",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > prints a skip reason and manual hint when PR-open was skipped (e.g. gh missing)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > forwards --no-open-pr to orchestrate",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli-main.test.ts::main() > prints publish-ready: NO and the failure detail when the gate fails",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > defaults to a non-dry, non-allow-dirty run with the default budget cap, publish gate on, and PR-open on",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses --no-publish-gate",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses --no-open-pr",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses --max-budget-usd <n>",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses --no-max-budget-usd as null",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > rejects --max-budget-usd without a value",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > rejects non-numeric or negative --max-budget-usd values",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses --dry-run",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses --allow-dirty",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses combined flags in any order",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > supports -h / --help and -v / --version",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > throws on unknown flags",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::CLI constants > USAGE mentions every supported flag",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::CLI constants > VERSION matches package.json semver shape",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::requireApiKey > throws MissingApiKeyError when the variable is unset",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::requireApiKey > throws MissingApiKeyError when the variable is blank",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::requireApiKey > throws InvalidApiKeyError when the prefix is wrong",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::requireApiKey > throws InvalidApiKeyError when the key is too short to be real",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::requireApiKey > returns the trimmed key when long enough to be a real Anthropic key",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::loadEnv > loads ANTHROPIC_API_KEY from a project-root .env",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::loadEnv > is a no-op when neither .env nor ~/.pubprep/.env exists",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::loadEnv > does not overwrite a value already set in the environment",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::loadEnv > falls back to ~/.pubprep/.env when no project .env exists",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::loadEnv > project .env takes precedence over ~/.pubprep/.env",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/env.test.ts::userEnvPath > resolves to <home>/.pubprep/.env",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > runs all four agents, writes outputs, combined review, and a complete manifest",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > passes the right SDK options on every call",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > restricts reviewer agents to read-only tools and gives convergence a disallowed list",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > --dry-run skips convergence and exits success",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > aborts before convergence and writes manifest when a reviewer fails",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > runs reviewers sequentially when parallelReviewers is false",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > returns convergence_failure when convergence errors out",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > returns not_publish_ready when convergence leaves the tree dirty",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > publishGate=false short-circuits the gate and keeps success when tree is dirty",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > runs the PR phase after a passing publish gate and records the result in manifest.pull_request",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > skips the PR phase when the publish gate fails",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > openPr=false skips the PR phase even when the gate passes",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > records a failure (but keeps exit_reason success) when the PR phase fails",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/orchestrate.test.ts::orchestrate > uses the silently-skipping prExec when no gh is available and still succeeds",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::agent name constants > exposes the four agents in a stable order",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::agent name constants > reviewers do not include convergence",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::formatRunTimestamp > returns an ISO-8601 UTC stamp with no millis and no colons",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::formatRunTimestamp > sorts lexically in chronological order",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::run directory layout > anchors everything under <project>/.pubprep",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::run directory layout > produces the file names the build guide promises",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::agent definition resolution > resolves the agents dir to a real on-disk location",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/paths.test.ts::agent definition resolution > resolves every bundled agent .md file",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkInGitRepo > returns ok inside a git repo",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkInGitRepo > returns an error outside a git repo",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkWorkingTreeClean > returns ok when the tree is clean",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkWorkingTreeClean > returns an error when the tree is dirty and allowDirty is false",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkWorkingTreeClean > returns ok when the tree is dirty but allowDirty is true",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkGitignoreCovers > warns when no .gitignore exists at all",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkGitignoreCovers > matches a bare directory pattern",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkGitignoreCovers > matches a pattern with a leading slash",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkGitignoreCovers > matches when the gitignore has the slash-suffix variant",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkGitignoreCovers > ignores comments and blank lines",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkGitignoreCovers > warns when the pattern is not present",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkEnvFilePresentAndIgnored > returns ok when no .env exists (nothing to leak)",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkEnvFilePresentAndIgnored > returns ok when .env exists and is gitignored",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/prereqs.test.ts::checkEnvFilePresentAndIgnored > warns when .env exists and is not gitignored",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-gate.test.ts::verifyPublishReadiness > passes on a clean repo with no scripts and skips typecheck/tests",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-gate.test.ts::verifyPublishReadiness > fails clean_tree when the working tree has uncommitted changes",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-gate.test.ts::verifyPublishReadiness > runs typecheck and tests when defined, passes when they succeed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-gate.test.ts::verifyPublishReadiness > reports a typecheck failure with output detail",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-gate.test.ts::verifyPublishReadiness > reports a test failure",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-gate.test.ts::verifyPublishReadiness > aggregates multiple failures",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-gate.test.ts::skippedPublishGate > returns a non-run result that counts as passed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > returns a skip when gh is not installed",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > returns a skip when gh is not authenticated",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > returns a skip when origin is not a GitHub URL",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > returns a skip when the branch IS the default branch",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > returns a failure when git push fails",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > returns the existing PR URL when one is already open for the branch",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > creates the PR via gh pr create --fill --head <branch> and captures the URL",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > returns a failure when gh pr create exits non-zero",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::openPullRequest > falls back to git symbolic-ref when gh repo view does not return a default branch",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/publish-pr.test.ts::skippedPublishPr > returns a non-run result with no url",
+            "authority": "pre-existing",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > parses --reviewers",
+            "authority": "implementation-authored",
+            "outcome": "witness",
+            "detail": "fails against the base's source"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > rejects --reviewers without a value",
+            "authority": "implementation-authored",
+            "outcome": "witness",
+            "detail": "fails against the base's source"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > rejects empty --reviewers value",
+            "authority": "implementation-authored",
+            "outcome": "witness",
+            "detail": "fails against the base's source"
+          },
+          {
+            "kind": "test",
+            "ref": "test/cli.test.ts::parseArgs > rejects invalid reviewer names",
+            "authority": "implementation-authored",
+            "outcome": "witness",
+            "detail": "fails against the base's source"
+          },
+          {
+            "kind": "check",
+            "ref": "test",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "check",
+            "ref": "typecheck",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "check",
+            "ref": "build",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      }
+    ],
+    "regression": {
+      "status": "none",
+      "newFailures": [],
+      "inherited": [],
+      "removed": [],
+      "unresolved": [],
+      "flaky": []
+    },
+    "checks": [
+      {
+        "name": "test",
+        "command": "npm run test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 98,
+        "exitCode": 0,
+        "durationMs": 3297,
+        "outputSha256": "7b064de187a44b58d6e087e4c5dc688d9e3fe8f5858ec350907cbda844996ee0",
+        "tests": {
+          "runner": "vitest",
+          "collected": {
+            "base": 98,
+            "candidate": 102
+          },
+          "counts": {
+            "preserved": 98,
+            "renamed": 0,
+            "fixed": 0,
+            "newFailures": 0,
+            "inherited": 0,
+            "removed": 0,
+            "superseded": 0,
+            "expectationChanges": 0,
+            "added": 4,
+            "addedFailing": 0,
+            "witnesses": 4,
+            "skipped": 0,
+            "flaky": 0
+          },
+          "fixed": [],
+          "newFailures": [],
+          "inherited": [],
+          "removed": [],
+          "renamed": [],
+          "superseded": [],
+          "expectationChanges": [],
+          "added": [
+            "test/cli.test.ts::parseArgs > parses --reviewers",
+            "test/cli.test.ts::parseArgs > rejects --reviewers without a value",
+            "test/cli.test.ts::parseArgs > rejects empty --reviewers value",
+            "test/cli.test.ts::parseArgs > rejects invalid reviewer names"
+          ],
+          "addedFailing": [],
+          "witnesses": [
+            "test/cli.test.ts::parseArgs > parses --reviewers",
+            "test/cli.test.ts::parseArgs > rejects --reviewers without a value",
+            "test/cli.test.ts::parseArgs > rejects empty --reviewers value",
+            "test/cli.test.ts::parseArgs > rejects invalid reviewer names"
+          ],
+          "flaky": [],
+          "reruns": [
+            {
+              "id": "test/cli.test.ts::parseArgs > parses --reviewers",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/cli.test.ts::parseArgs > rejects --reviewers without a value",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/cli.test.ts::parseArgs > rejects empty --reviewers value",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            },
+            {
+              "id": "test/cli.test.ts::parseArgs > rejects invalid reviewer names",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "name": "typecheck",
+        "command": "npm run typecheck",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2010,
+        "outputSha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+      },
+      {
+        "name": "build",
+        "command": "npm run build",
+        "kind": "other",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": null,
+        "exitCode": 0,
+        "durationMs": 2070,
+        "outputSha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+      }
+    ],
+    "baseline": {
+      "status": "measured",
+      "cached": false,
+      "environmentSha256": "c02b38fa9528fba62aac82392ef588fcd0409e2cdd8df657c93cb2037567b48e",
+      "checks": [
+        {
+          "name": "test",
+          "command": "npm run test",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": 98,
+          "exitCode": 0,
+          "durationMs": 3176,
+          "outputSha256": "46899aee477987af82aa7b429899cb776c48dc5e3cc9cae298cbe85b65f92498"
+        },
+        {
+          "name": "typecheck",
+          "command": "npm run typecheck",
+          "kind": "other",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2046,
+          "outputSha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+        },
+        {
+          "name": "build",
+          "command": "npm run build",
+          "kind": "other",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": null,
+          "exitCode": 0,
+          "durationMs": 2098,
+          "outputSha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+        }
+      ],
+      "heldOut": [
+        {
+          "name": "held-out",
+          "command": "npx vitest run test/reviewers.held-out.test.ts",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "fail",
+          "collected": null,
+          "exitCode": 1,
+          "durationMs": 2328,
+          "outputSha256": "04147dad06e3d29fc3111c23ee51fdcaa89ad25189bf304b68bb154f3156edcc"
+        }
+      ]
+    },
+    "heldOut": {
+      "status": "measured",
+      "checks": [
+        {
+          "name": "held-out",
+          "command": "npx vitest run test/reviewers.held-out.test.ts",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "fail",
+          "collected": null,
+          "exitCode": 1,
+          "durationMs": 2320,
+          "outputSha256": "3ef05778709e62b097fedc4938a98cdd6222a3434837d53644b118e16c0a0874"
+        }
+      ],
+      "visiblePassRate": 1,
+      "heldOutPassRate": 0,
+      "gap": 1,
+      "judge": {
+        "processes": 3,
+        "assertionCalls": 0
+      }
+    },
+    "artifacts": [
+      {
+        "path": "src/cli.ts",
+        "category": "source"
+      },
+      {
+        "path": "src/orchestrate.ts",
+        "category": "source"
+      },
+      {
+        "path": "test/cli.test.ts",
+        "category": "tests"
+      }
+    ],
+    "testFiles": {
+      "added": [],
+      "modified": [
+        "test/cli.test.ts"
+      ],
+      "deleted": [],
+      "moved": [],
+      "movedAndEdited": [],
+      "relocated": []
+    },
+    "coverage": {
+      "status": "unmeasured",
+      "reason": "the V8 offsets for src/cli.ts run past the file, so a transform ran first"
+    },
+    "mutation": {
+      "status": "killed",
+      "path": "src/cli.ts",
+      "line": 87,
+      "operator": "+ to -",
+      "syntax": "valid",
+      "rejected": 0
+    },
+    "producer": {
+      "instructions": []
+    },
+    "environment": {
+      "sha256": "c02b38fa9528fba62aac82392ef588fcd0409e2cdd8df657c93cb2037567b48e",
+      "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+      "platform": "linux-arm64",
+      "git": "2.54.0 (Apple Git-157)",
+      "dependencies": "prepared",
+      "dependencyTreeSha256": "463290721f5522f7c1dfa5d2749ccfe9756d16c10420e544f8d338ba6bd921af",
+      "reproducible": true
+    },
+    "execution": {
+      "mode": "isolated",
+      "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+      "network": "closed",
+      "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+      "dependencies": {
+        "mode": "prepared",
+        "reproducible": true,
+        "lockfiles": {
+          "package-lock.json": "42aaee4eb1e81dd26bb63d1abd96ca4018759bfff3bc8b6c72cf6573ce83e3b3"
+        },
+        "treeSha256": "463290721f5522f7c1dfa5d2749ccfe9756d16c10420e544f8d338ba6bd921af",
+        "note": "prepared from the lockfile and digested"
+      },
+      "policyMet": true,
+      "problems": []
+    },
+    "policy": {
+      "behaviorChange": "none",
+      "reruns": 3
+    },
+    "unmeasured": [
+      "held-out check held-out: 3 worker thread(s) its runner terminated were not checked by the judge",
+      "coverage: the V8 offsets for src/cli.ts run past the file, so a transform ran first"
+    ],
+    "logs": [
+      {
+        "name": "logs/test.txt",
+        "sha256": "8356bf9273c6205d5f48bdcd189b1009b00651d8c8ccd9105d032da61913d7a8"
+      },
+      {
+        "name": "logs/test.base-tests.txt",
+        "sha256": "7b064de187a44b58d6e087e4c5dc688d9e3fe8f5858ec350907cbda844996ee0"
+      },
+      {
+        "name": "logs/typecheck.txt",
+        "sha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+      },
+      {
+        "name": "logs/typecheck.base-tests.txt",
+        "sha256": "b6652eb70d76698652f8b1a399f51d25ecd0298f54db900b7b0ae7f8a459a2b8"
+      },
+      {
+        "name": "logs/build.txt",
+        "sha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+      },
+      {
+        "name": "logs/build.base-tests.txt",
+        "sha256": "8d04e5c3aa7f22ed93fae0bd7f93cfa65fba4e9aaaaeb76b6e03e59c7420f6fb"
+      }
+    ],
+    "verifier": {
+      "name": "swarm-verify",
+      "version": "2.0.3"
+    }
+  }
+}

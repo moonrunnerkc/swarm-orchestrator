@@ -1,0 +1,396 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.",
+  "model": {
+    "name": "gemma4:31b, then escalated",
+    "reason": "the best record here: 86% of its finished tasks complete, needs 25.3 GiB at a 65536-token context, 24.1 tok/s in its probe"
+  },
+  "stop": "complete",
+  "reason": null,
+  "state": "complete",
+  "snapshot": {
+    "base": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "patchSha256": "c0c3b1e8047d4d423a1ed0ae5c325cdc2948b947555cbb45cf71bf8fce625b27",
+    "patch": "/Users/brad/.swarm/sessions/20261105T075907-93df60/final/delivered.patch",
+    "treeSha256": "35a53cef66c1442c9ef0a881d95bb862eab986b91a7093839344e29c030f6c46"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "src/cli.ts",
+      "status": "modified"
+    },
+    {
+      "path": "src/orchestrate.ts",
+      "status": "modified"
+    },
+    {
+      "path": "test/cli.test.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "parseArgs > parses --reviewers"
+          },
+          {
+            "name": "parseArgs > rejects --reviewers without a value"
+          },
+          {
+            "name": "parseArgs > rejects empty --reviewers value"
+          },
+          {
+            "name": "parseArgs > rejects invalid reviewer names"
+          }
+        ],
+        "checks": [
+          "typecheck",
+          "build"
+        ],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > parses --reviewers",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > rejects --reviewers without a value",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > rejects empty --reviewers value",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cli.test.ts::parseArgs > rejects invalid reviewer names",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "check",
+          "ref": "typecheck",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        },
+        {
+          "kind": "check",
+          "ref": "build",
+          "authority": "pre-existing",
+          "outcome": "pass",
+          "detail": "pass"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": "none",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared",
+  "attestation": "/Users/brad/.swarm/sessions/20261105T075907-93df60/verifications/2/attestation.sigstore.json",
+  "startingState": {
+    "head": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "base": "99d8d054753b4e8979431eb58792895c754fbdc9",
+    "edits": [],
+    "python": null
+  },
+  "delivery": {
+    "applied": true
+  },
+  "instructions": [],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 42,
+    "inputTokens": 315549,
+    "outputTokens": 9980,
+    "estimatedTurns": 0,
+    "inferenceMs": 859604,
+    "inferenceTurns": 42,
+    "wallMs": 955354,
+    "retries": 0,
+    "escalations": 1,
+    "verifications": 2,
+    "cost": "none (local runtime)",
+    "turns": [
+      {
+        "inputTokens": 1661,
+        "outputTokens": 344,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 2061,
+        "outputTokens": 11,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 2142,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 5200,
+        "outputTokens": 13,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8112,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8441,
+        "outputTokens": 269,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8768,
+        "outputTokens": 1410,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8487,
+        "outputTokens": 1473,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7967,
+        "outputTokens": 9,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7578,
+        "outputTokens": 14,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8296,
+        "outputTokens": 202,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7163,
+        "outputTokens": 14,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6676,
+        "outputTokens": 670,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7520,
+        "outputTokens": 15,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7124,
+        "outputTokens": 7,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7580,
+        "outputTokens": 10,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7062,
+        "outputTokens": 496,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6970,
+        "outputTokens": 210,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7025,
+        "outputTokens": 13,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9928,
+        "outputTokens": 392,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 10257,
+        "outputTokens": 496,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 10337,
+        "outputTokens": 496,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 10828,
+        "outputTokens": 392,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8544,
+        "outputTokens": 392,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8750,
+        "outputTokens": 392,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 4098,
+        "outputTokens": 35,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6930,
+        "outputTokens": 35,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7944,
+        "outputTokens": 31,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 8589,
+        "outputTokens": 28,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 11497,
+        "outputTokens": 99,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 10162,
+        "outputTokens": 157,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9736,
+        "outputTokens": 175,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 9651,
+        "outputTokens": 181,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7337,
+        "outputTokens": 327,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6640,
+        "outputTokens": 211,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6708,
+        "outputTokens": 40,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6611,
+        "outputTokens": 14,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6487,
+        "outputTokens": 28,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6269,
+        "outputTokens": 31,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 6956,
+        "outputTokens": 51,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7541,
+        "outputTokens": 197,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      },
+      {
+        "inputTokens": 7916,
+        "outputTokens": 576,
+        "inputCount": "reported",
+        "outputCount": "reported"
+      }
+    ]
+  }
+}

@@ -1,0 +1,439 @@
+diff --git a/src/checks/test-weakening.ts b/src/checks/test-weakening.ts
+index e1e8b9f..fa46a03 100644
+--- a/src/checks/test-weakening.ts
++++ b/src/checks/test-weakening.ts
+@@ -30,6 +30,7 @@ const SKIP_IDENTIFIERS = new Set(["xit", "xtest", "xdescribe"]);
+ 
+ interface Extract {
+   expectCount: number;
++  testCount: number;
+   strict: number;
+   loose: number;
+   /** Literal expected values from strict matchers, as a sorted multiset. */
+@@ -53,6 +54,7 @@ function extract(file: string, content: string): Extract {
+   const sf = parse(file, content);
+   const result: Extract = {
+     expectCount: 0,
++    testCount: 0,
+     strict: 0,
+     loose: 0,
+     strictLiterals: [],
+@@ -66,6 +68,19 @@ function extract(file: string, content: string): Extract {
+       if (ts.isIdentifier(callee) && callee.text === "expect") {
+         result.expectCount++;
+       }
++      if (
++        (ts.isIdentifier(callee) && (callee.text === "it" ||
++          callee.text === "test" ||
++          SKIP_IDENTIFIERS.has(callee.text))) ||
++        (ts.isPropertyAccessExpression(callee) &&
++          ts.isIdentifier(callee.expression) &&
++          (callee.expression.text === "it" ||
++            callee.expression.text === "test" ||
++            callee.expression.text === "describe") &&
++          (SKIP_MARKERS.has(callee.name.text) || callee.name.text === "each"))
++      ) {
++        result.testCount++;
++      }
+       if (ts.isPropertyAccessExpression(callee)) {
+         const name = callee.name.text;
+         if (STRICT_MATCHERS.has(name)) {
+@@ -133,11 +148,14 @@ export function compareTestFile(
+   }
+ 
+   if (after.expectCount < before.expectCount) {
++    const kind = after.testCount < before.testCount ? "test-removed" : "assertion-removed";
+     findings.push({
+       file,
+       line: 1,
+-      kind: "assertion-removed",
+-      detail: `expect() calls dropped from ${before.expectCount} to ${after.expectCount}`,
++      kind,
++      detail: `expect() calls dropped from ${before.expectCount} to ${after.expectCount}${
++        kind === "test-removed" ? ` (tests dropped from ${before.testCount} to ${after.testCount})` : ""
++      }`,
+     });
+   }
+ 
+diff --git a/src/core/decision.ts b/src/core/decision.ts
+index b5ae9fe..e979b52 100644
+--- a/src/core/decision.ts
++++ b/src/core/decision.ts
+@@ -558,7 +558,7 @@ function checkTestWeakening(record: EvidenceRecord): CheckResult {
+     };
+   }
+   const blocking = record.testWeakenings.filter(
+-    (w) => w.kind !== "expected-value-changed",
++    (w) => w.kind !== "expected-value-changed" && w.kind !== "test-removed",
+   );
+   if (blocking.length > 0) {
+     return {
+diff --git a/src/core/evidence-record.ts b/src/core/evidence-record.ts
+index 97d5bed..d407ab7 100644
+--- a/src/core/evidence-record.ts
++++ b/src/core/evidence-record.ts
+@@ -245,6 +245,7 @@ export interface TestWeakening {
+   readonly line: number;
+   readonly kind:
+     | "assertion-removed"
++    | "test-removed"
+     | "assertion-loosened"
+     | "expected-value-changed"
+     | "test-skipped"
+diff --git a/test/unit/test-weakening-r3-fail-base.test.ts b/test/unit/test-weakening-r3-fail-base.test.ts
+new file mode 100644
+index 0000000..bf7e3d6
+--- /dev/null
++++ b/test/unit/test-weakening-r3-fail-base.test.ts
+@@ -0,0 +1,39 @@
++import { describe, it, expect } from "vitest";
++import { compareTestFile } from "../../src/checks/test-weakening.js";
++import { decide } from "../../src/core/decision.js";
++import type { EvidenceRecord } from "../../src/core/evidence-record.js";
++
++describe("R3: test-removed vs assertion-removed", () => {
++  const baseRecord: Partial<EvidenceRecord> = {
++    baseSha: "base", headSha: "head", changedRanges: [], coveredChangedLines: [],
++    headTestsPass: true, failsOnParent: "failed", coverageCollected: true,
++    staticTail: [], vacuousAssertions: [], quarantined: [],
++    taint: [], mutants: [],
++    regressions: [],
++    errorSuppressions: [],
++    nondeterminism: [],
++    testWeakenings: [],
++  };
++
++  it("should not block when a test is removed (this would have blocked on base)", () => {
++    const before = "it('t1', () => { expect(1).toBe(1); }); it('t2', () => { expect(2).toBe(2); });";
++    const after = "it('t1', () => { expect(1).toBe(1); });";
++    
++    const findings = compareTestFile("test.ts", before, after);
++    
++    // On base, this would be 'assertion-removed'
++    // Now it should be 'test-removed'
++    expect(findings.some(f => f.kind === "test-removed")).toBe(true);
++    expect(findings.some(f => f.kind === "assertion-removed")).toBe(false);
++
++    const record = {
++      ...baseRecord,
++      testWeakenings: findings,
++    } as EvidenceRecord;
++    
++    const result = decide(record);
++    // On base, this would be 'block'. Now it must be 'warn'.
++    expect(result.tier).toBe("warn");
++    expect(result.tier).not.toBe("block");
++  });
++});
+diff --git a/test/unit/test-weakening-r3-regression-final.test.ts b/test/unit/test-weakening-r3-regression-final.test.ts
+new file mode 100644
+index 0000000..64fb819
+--- /dev/null
++++ b/test/unit/test-weakening-r3-regression-final.test.ts
+@@ -0,0 +1,63 @@
++import { describe, it, expect } from "vitest";
++import { compareTestFile } from "../../src/checks/test-weakening.js";
++import { decide } from "../../src/core/decision.js";
++import type { EvidenceRecord } from "../../src/core/evidence-record.js";
++
++describe("R3 Regression: test-removed vs assertion-removed", () => {
++  const baseRecord: Partial<EvidenceRecord> = {
++    baseSha: "base", headSha: "head", changedRanges: [], coveredChangedLines: [],
++    headTestsPass: true, failsOnParent: "failed", coverageCollected: true,
++    staticTail: [], vacuousAssertions: [], quarantined: [],
++    taint: [], mutants: [],
++    regressions: [],
++    errorSuppressions: [],
++    nondeterminism: [],
++    testWeakenings: [],
++  };
++
++  it("should not block when a test is removed (this would have blocked on base)", () => {
++    // Scenario: Deleting a whole test case.
++    // Base behavior: expectCount drops -> assertion-removed -> BLOCK.
++    // New behavior: expectCount drops AND testCount drops -> test-removed -> WARN.
++    const before = "it('t1', () => { expect(1).toBe(1); }); it('t2', () => { expect(2).toBe(2); });";
++    const after = "it('t1', () => { expect(1).toBe(1); });";
++    
++    const findings = compareTestFile("test.ts", before, after);
++    
++    // On base, this would be 'assertion-removed'
++    const testRemoved = findings.find(f => f.kind === "test-removed");
++    const assertionRemoved = findings.find(f => f.kind === "assertion-removed");
++    
++    expect(testRemoved, "Should be identified as test-removed").toBeDefined();
++    expect(assertionRemoved, "Should NOT be identified as assertion-removed").toBeUndefined();
++
++    const record = {
++      ...baseRecord,
++      testWeakenings: findings,
++    } as EvidenceRecord;
++    
++    const result = decide(record);
++    
++    // This is the core of R3: it must be WARN, not BLOCK.
++    expect(result.tier, "Deleting a test should result in WARN, not BLOCK").toBe("warn");
++    expect(result.tier).not.toBe("block");
++  });
++
++  it("should still block when only an assertion is removed", () => {
++    const before = "it('t1', () => { expect(1).toBe(1); expect(2).toBe(2); });";
++    const after = "it('t1', () => { expect(1).toBe(1); });";
++    
++    const findings = compareTestFile("test.ts", before, after);
++    const assertionRemoved = findings.find(f => f.kind === "assertion-removed");
++    
++    expect(assertionRemoved, "Should be identified as assertion-removed").toBeDefined();
++
++    const record = {
++      ...baseRecord,
++      testWeakenings: findings,
++    } as EvidenceRecord;
++    
++    const result = decide(record);
++    expect(result.tier, "Removing an assertion should still result in BLOCK").toBe("block");
++  });
++});
+diff --git a/test/unit/test-weakening-r3-regression.test.ts b/test/unit/test-weakening-r3-regression.test.ts
+new file mode 100644
+index 0000000..6e8441b
+--- /dev/null
++++ b/test/unit/test-weakening-r3-regression.test.ts
+@@ -0,0 +1,65 @@
++import { describe, it, expect } from "vitest";
++import { compareTestFile } from "../../src/checks/test-weakening.js";
++import { decide } from "../../src/core/decision.js";
++import type { EvidenceRecord } from "../../src/core/evidence-record.js";
++
++describe("R3 Regression: test-removed should not block", () => {
++  const baseRecord: Partial<EvidenceRecord> = {
++    baseSha: "base", headSha: "head", changedRanges: [], coveredChangedLines: [],
++    headTestsPass: true, failsOnParent: "failed", coverageCollected: true,
++    staticTail: [], vacuousAssertions: [], quarantined: [],
++    taint: [], mutants: [],
++    regressions: [],
++    errorSuppressions: [],
++    nondeterminism: [],
++    testWeakenings: [],
++  };
++
++  it("should report test-removed and WARN when a test is deleted (would have BLOCKED on base)", () => {
++    // Scenario: Deleting a whole test case.
++    // Base behavior: expectCount drops -> assertion-removed -> BLOCK.
++    // New behavior: expectCount drops AND testCount drops -> test-removed -> WARN.
++    const before = "it('t1', () => { expect(1).toBe(1); }); it('t2', () => { expect(2).toBe(2); });";
++    const after = "it('t1', () => { expect(1).toBe(1); });";
++    
++    const findings = compareTestFile("test.ts", before, after);
++    
++    // Verify it is identified as test-removed, not assertion-removed
++    const testRemoved = findings.find(f => f.kind === "test-removed");
++    const assertionRemoved = findings.find(f => f.kind === "assertion-removed");
++    
++    expect(testRemoved, "Should be identified as test-removed").toBeDefined();
++    expect(assertionRemoved, "Should NOT be identified as assertion-removed").toBeUndefined();
++
++    const record = {
++      ...baseRecord,
++      testWeakenings: findings,
++    } as EvidenceRecord;
++    
++    const result = decide(record);
++    
++    // This is the core of R3: it must be WARN, not BLOCK.
++    expect(result.tier, "Deleting a test should result in WARN, not BLOCK").toBe("warn");
++    expect(result.tier).not.toBe("block");
++  });
++
++  it("should still report assertion-removed and BLOCK when only expect count drops", () => {
++    // Scenario: Removing an assertion from an existing test.
++    // This should still BLOCK.
++    const before = "it('t1', () => { expect(1).toBe(1); expect(2).toBe(2); });";
++    const after = "it('t1', () => { expect(1).toBe(1); });";
++    
++    const findings = compareTestFile("test.ts", before, after);
++    
++    const assertionRemoved = findings.find(f => f.kind === "assertion-removed");
++    expect(assertionRemoved, "Should be identified as assertion-removed").toBeDefined();
++
++    const record = {
++      ...baseRecord,
++      testWeakenings: findings,
++    } as EvidenceRecord;
++    
++    const result = decide(record);
++    expect(result.tier, "Removing an assertion should still result in BLOCK").toBe("block");
++  });
++});
+diff --git a/test/unit/test-weakening-r3.test.ts b/test/unit/test-weakening-r3.test.ts
+new file mode 100644
+index 0000000..20e0aab
+--- /dev/null
++++ b/test/unit/test-weakening-r3.test.ts
+@@ -0,0 +1,55 @@
++import { describe, it, expect } from "vitest";
++import { compareTestFile } from "../../src/checks/test-weakening.js";
++import { decide } from "../../src/core/decision.js";
++import type { EvidenceRecord } from "../../src/core/evidence-record.js";
++
++describe("R3: test-removed vs assertion-removed", () => {
++  const baseRecord: Partial<EvidenceRecord> = {
++    baseSha: "base", headSha: "head", changedRanges: [], coveredChangedLines: [],
++    headTestsPass: true, failsOnParent: "failed", coverageCollected: true,
++    staticTail: [], vacuousAssertions: [], quarantined: [],
++    taint: [], mutants: [],
++    regressions: [],
++    errorSuppressions: [],
++    nondeterminism: [],
++    testWeakenings: [],
++  };
++
++  it("should report test-removed and WARN when both expect and test counts drop", () => {
++    const before = "it('t1', () => { expect(1).toBe(1); }); it('t2', () => { expect(2).toBe(2); });";
++    const after = "it('t1', () => { expect(1).toBe(1); });";
++    
++    const findings = compareTestFile("test.ts", before, after);
++    const testRemovedFinding = findings.find(f => f.kind === "test-removed");
++    
++    expect(testRemovedFinding).toBeDefined();
++    expect(findings.find(f => f.kind === "assertion-removed")).toBeUndefined();
++
++    const record = {
++      ...baseRecord,
++      testWeakenings: findings,
++    } as EvidenceRecord;
++    
++    const result = decide(record);
++    expect(result.tier).toBe("warn");
++  });
++
++  it("should report assertion-removed and BLOCK when only expect count drops", () => {
++    const before = "it('t1', () => { expect(1).toBe(1); expect(2).toBe(2); });";
++    const after = "it('t1', () => { expect(1).toBe(1); });";
++    
++    const findings = compareTestFile("test.ts", before, after);
++    const assertionRemovedFinding = findings.find(f => f.kind === "assertion-removed");
++    
++    expect(assertionRemovedFinding).toBeDefined();
++    expect(findings.find(f => f.kind === "test-removed")).toBeUndefined();
++
++    const record = {
++      ...baseRecord,
++      testWeakenings: findings,
++    } as EvidenceRecord;
++    
++    const result = decide(record);
++    expect(result.tier).toBe("block");
++  });
++});
+diff --git a/test/unit/test-weakening-regression.test.ts b/test/unit/test-weakening-regression.test.ts
+new file mode 100644
+index 0000000..15d79a4
+--- /dev/null
++++ b/test/unit/test-weakening-regression.test.ts
+@@ -0,0 +1,30 @@
++import { describe, it, expect } from "vitest";
++import { decide } from "../../src/core/decision.js";
++import type { EvidenceRecord } from "../../src/core/evidence-record.js";
++
++describe("test-weakening regression", () => {
++  const baseRecord: Partial<EvidenceRecord> = {
++    baseSha: "base", headSha: "head", changedRanges: [], coveredChangedLines: [],
++    headTestsPass: true, failsOnParent: "failed", coverageCollected: true,
++    staticTail: [], vacuousAssertions: [], quarantined: [],
++    taint: [], mutants: [],
++    regressions: [],
++    errorSuppressions: [],
++    nondeterminism: [],
++    testWeakenings: [],
++  };
++
++  it("should not block when a test is removed (was a bug in base)", () => {
++    const record: EvidenceRecord = {
++      ...baseRecord,
++      testWeakenings: [
++        { file: "test.ts", line: 1, kind: "test-removed", detail: "..." },
++      ],
++    } as EvidenceRecord;
++    const result = decide(record);
++    // On base commit, this would have been 'block' because 'test-removed' didn't exist
++    // and it would have been reported as 'assertion-removed'.
++    expect(result.tier).not.toBe("block");
++    expect(result.tier).toBe("warn");
++  });
++});
+diff --git a/test/unit/test-weakening.test.ts b/test/unit/test-weakening.test.ts
+new file mode 100644
+index 0000000..f1035cd
+--- /dev/null
++++ b/test/unit/test-weakening.test.ts
+@@ -0,0 +1,69 @@
++import { describe, it, expect } from "vitest";
++import { compareTestFile } from "../../src/checks/test-weakening.js";
++import { decide } from "../../src/core/decision.js";
++import type { EvidenceRecord } from "../../src/core/evidence-record.js";
++
++describe("test-weakening", () => {
++  it("reports assertion-removed when expect count drops but test count is same", () => {
++    const before = "it('test', () => { expect(1).toBe(1); expect(2).toBe(2); })";
++    const after = "it('test', () => { expect(1).toBe(1); })";
++    const findings = compareTestFile("test.ts", before, after);
++    
++    expect(findings).toEqual([
++      {
++        file: "test.ts",
++        line: 1,
++        kind: "assertion-removed",
++        detail: "expect() calls dropped from 2 to 1",
++      },
++    ]);
++  });
++
++  it("reports test-removed when expect count drops and test count drops", () => {
++    const before = "it('t1', () => { expect(1).toBe(1); }); it('t2', () => { expect(2).toBe(2); })";
++    const after = "it('t1', () => { expect(1).toBe(1); })";
++    const findings = compareTestFile("test.ts", before, after);
++    
++    expect(findings).toEqual([
++      {
++        file: "test.ts",
++        line: 1,
++        kind: "test-removed",
++        detail: "expect() calls dropped from 2 to 1 (tests dropped from 2 to 1)",
++      },
++    ]);
++  });
++
++  const baseRecord: Partial<EvidenceRecord> = {
++    baseSha: "base", headSha: "head", changedRanges: [], coveredChangedLines: [],
++    headTestsPass: true, failsOnParent: "failed", coverageCollected: true,
++    staticTail: [], vacuousAssertions: [], quarantined: [],
++    taint: [], mutants: [],
++    regressions: [],
++    errorSuppressions: [],
++    nondeterminism: [],
++    testWeakenings: [],
++  };
++
++  it("assertion-removed blocks the verdict", () => {
++    const record: EvidenceRecord = {
++      ...baseRecord,
++      testWeakenings: [
++        { file: "test.ts", line: 1, kind: "assertion-removed", detail: "..." },
++      ],
++    } as EvidenceRecord;
++    const result = decide(record);
++    expect(result.tier).toBe("block");
++  });
++
++  it("test-removed only warns the verdict", () => {
++    const record: EvidenceRecord = {
++      ...baseRecord,
++      testWeakenings: [
++        { file: "test.ts", line: 1, kind: "test-removed", detail: "..." },
++      ],
++    } as EvidenceRecord;
++    const result = decide(record);
++    expect(result.tier).toBe("warn");
++  });
++});

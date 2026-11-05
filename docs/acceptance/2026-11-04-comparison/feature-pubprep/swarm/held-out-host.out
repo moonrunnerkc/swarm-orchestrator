@@ -1,0 +1,44 @@
+
+ RUN  v1.6.1 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/a2275dbd-9c11-4018-a2be-159acf1015fc/scratchpad/pubprep-swarm
+
+ ✓ test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > leaves reviewers unset without the flag
+ × test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > maps short names to agent names in canonical order
+   → expected [ 'security-reviewer', …(1) ] to deeply equal [ 'tech-debt-reviewer', …(1) ]
+ ✓ test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > keeps a repeated name once
+ ✓ test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > rejects an empty list, naming the valid short names
+ ✓ test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > rejects an unknown name, naming it and the valid short names
+ ✓ test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > rejects the flag without a value
+ ✓ test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > documents the flag in --help
+ ✓ test/reviewers.held-out.test.ts > orchestrate reviewers, held out > runs only the chosen reviewers (parallel)
+ ✓ test/reviewers.held-out.test.ts > orchestrate reviewers, held out > runs only the chosen reviewers (sequential)
+ ✓ test/reviewers.held-out.test.ts > orchestrate reviewers, held out > runs all three when no reviewers are given
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/reviewers.held-out.test.ts > parseArgs --reviewers, held out > maps short names to agent names in canonical order
+AssertionError: expected [ 'security-reviewer', …(1) ] to deeply equal [ 'tech-debt-reviewer', …(1) ]
+
+- Expected
++ Received
+
+  Array [
+-   "tech-debt-reviewer",
+    "security-reviewer",
++   "tech-debt-reviewer",
+  ]
+
+ ❯ test/reviewers.held-out.test.ts:29:72
+     27| 
+     28|   it("maps short names to agent names in canonical order", () => {
+     29|     expect(parseArgs(["--reviewers", "security,tech-debt"]).reviewers)…
+       |                                                                        ^
+     30|       "tech-debt-reviewer",
+     31|       "security-reviewer",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 passed (10)
+   Start at  01:17:56
+   Duration  456ms (transform 39ms, setup 0ms, collect 58ms, tests 299ms, environment 0ms, prepare 26ms)
+

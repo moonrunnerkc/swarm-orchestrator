@@ -1,0 +1,299 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "tree",
+      "digest": {
+        "sha256": "3bfb69af6ad6e6a610d482900cd4634aa22181b1bfc3613ad90083c350554e0f"
+      }
+    },
+    {
+      "name": "change.patch",
+      "digest": {
+        "sha256": "6b42d28b5be6428020a7b09acd7bbcc2aad4d68b5ac9cd51c3177fdc3f1ee715"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/moonrunnerkc/swarm-verify/result/v1",
+  "predicate": {
+    "state": "incomplete",
+    "scope": "requirements",
+    "reasons": [
+      "a held-out check failed"
+    ],
+    "base": {
+      "commit": "1d325c297757e83f048be593b59cfda7681a5448"
+    },
+    "change": {
+      "source": "patch",
+      "applied": true,
+      "files": [
+        {
+          "path": "src/ironroot/verification/builtin_claims.py",
+          "status": "added"
+        }
+      ]
+    },
+    "requirements": [
+      {
+        "id": "R1",
+        "text": "In ironroot, move the three built-in falsifiers out of src/ironroot/verification/falsification.py into a new module, src/ironroot/verification/builtin_claims.py: _falsify_chain_seq_monotonic, _falsify_parent_hash_linkage, _falsify_artifact_hash_stability, and the _BUILTIN_CLAIMS tuple that registers them. falsification.py keeps the claim types, the registry, get_claim_registry, reset_claim_registry_for_testing and run_falsification, and no longer defines the falsifiers or the tuple. This is a pure move: behavior doesn't change, the registry still seeds the same three claims in the same order, existing imports keep working (the tests import _BUILTIN_CLAIMS from ironroot.verification.falsification), and the tests stay as they are.",
+        "source": "user",
+        "kind": "refactor",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [
+            "test"
+          ],
+          "structure": [
+            {
+              "path": "src/ironroot/verification/builtin_claims.py",
+              "contains": "async def _falsify_chain_seq_monotonic"
+            },
+            {
+              "path": "src/ironroot/verification/builtin_claims.py",
+              "contains": "async def _falsify_parent_hash_linkage"
+            },
+            {
+              "path": "src/ironroot/verification/builtin_claims.py",
+              "contains": "async def _falsify_artifact_hash_stability"
+            },
+            {
+              "path": "src/ironroot/verification/builtin_claims.py",
+              "contains": "_BUILTIN_CLAIMS"
+            }
+          ],
+          "packages": []
+        },
+        "versions": [],
+        "status": "satisfied",
+        "evidence": [
+          {
+            "kind": "check",
+            "ref": "test",
+            "authority": "pre-existing",
+            "outcome": "pass",
+            "detail": "pass"
+          },
+          {
+            "kind": "structure",
+            "ref": "src/ironroot/verification/builtin_claims.py contains \"async def _falsify_chain_seq_monotonic\"",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "expected contains"
+          },
+          {
+            "kind": "structure",
+            "ref": "src/ironroot/verification/builtin_claims.py contains \"async def _falsify_parent_hash_linkage\"",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "expected contains"
+          },
+          {
+            "kind": "structure",
+            "ref": "src/ironroot/verification/builtin_claims.py contains \"async def _falsify_artifact_hash_stability\"",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "expected contains"
+          },
+          {
+            "kind": "structure",
+            "ref": "src/ironroot/verification/builtin_claims.py contains \"_BUILTIN_CLAIMS\"",
+            "authority": "pre-existing",
+            "outcome": "observed",
+            "detail": "expected contains"
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      }
+    ],
+    "regression": {
+      "status": "none",
+      "newFailures": [],
+      "inherited": [],
+      "removed": [],
+      "unresolved": [],
+      "flaky": []
+    },
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 331,
+        "exitCode": 0,
+        "durationMs": 39574,
+        "outputSha256": "a63afdfb797b345c71adc7fdf3284159a3b9c1f00f8390423c7fc24e8def96cd",
+        "tests": {
+          "runner": "pytest",
+          "collected": {
+            "base": 331,
+            "candidate": 331
+          },
+          "counts": {
+            "preserved": 331,
+            "renamed": 0,
+            "fixed": 0,
+            "newFailures": 0,
+            "inherited": 0,
+            "removed": 0,
+            "superseded": 0,
+            "expectationChanges": 0,
+            "added": 0,
+            "addedFailing": 0,
+            "witnesses": 0,
+            "skipped": 0,
+            "flaky": 0
+          },
+          "fixed": [],
+          "newFailures": [],
+          "inherited": [],
+          "removed": [],
+          "renamed": [],
+          "superseded": [],
+          "expectationChanges": [],
+          "added": [],
+          "addedFailing": [],
+          "witnesses": [],
+          "flaky": [],
+          "reruns": []
+        }
+      }
+    ],
+    "baseline": {
+      "status": "measured",
+      "cached": false,
+      "environmentSha256": "a4cc325b1ea160373073d940702ace6fce5df1c20f4965747c1375b6a49c2e24",
+      "checks": [
+        {
+          "name": "test",
+          "command": "python3 -m pytest -q",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": 331,
+          "exitCode": 0,
+          "durationMs": 38987,
+          "outputSha256": "b92c43de23c0d18de698cbf8c29897516117dfdb5b21335d7ea867ca5c5b1b0a"
+        }
+      ],
+      "heldOut": [
+        {
+          "name": "held-out",
+          "command": "python3 -m pytest -q --no-cov -p no:cacheprovider tests/integrity/test_builtin_claims_held_out.py",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "fail",
+          "collected": 3,
+          "exitCode": 1,
+          "durationMs": 3012,
+          "outputSha256": "cf3ad44da0470353a9e321a64a5eb3063a2d3224d81b59a0e52d7cb0754df6a6"
+        }
+      ]
+    },
+    "heldOut": {
+      "status": "measured",
+      "checks": [
+        {
+          "name": "held-out",
+          "command": "python3 -m pytest -q --no-cov -p no:cacheprovider tests/integrity/test_builtin_claims_held_out.py",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "fail",
+          "collected": 3,
+          "exitCode": 1,
+          "durationMs": 2997,
+          "outputSha256": "adae8954e7c432372785d1139c550dfc4a662d7e01a22dc5cb953d159b41a9fc"
+        }
+      ],
+      "visiblePassRate": 1,
+      "heldOutPassRate": 0,
+      "gap": 1,
+      "judge": {
+        "processes": 1,
+        "assertionCalls": 0
+      }
+    },
+    "artifacts": [
+      {
+        "path": "src/ironroot/verification/builtin_claims.py",
+        "category": "source"
+      }
+    ],
+    "testFiles": {
+      "added": [],
+      "modified": [],
+      "deleted": [],
+      "moved": [],
+      "movedAndEdited": [],
+      "relocated": []
+    },
+    "coverage": {
+      "status": "unmeasured",
+      "reason": "the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+    },
+    "mutation": {
+      "status": "survived",
+      "path": "src/ironroot/verification/builtin_claims.py",
+      "line": 34,
+      "operator": "== to !=",
+      "syntax": "valid",
+      "rejected": 0
+    },
+    "producer": {
+      "instructions": []
+    },
+    "environment": {
+      "sha256": "a4cc325b1ea160373073d940702ace6fce5df1c20f4965747c1375b6a49c2e24",
+      "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+      "platform": "linux-arm64",
+      "git": "2.54.0 (Apple Git-157)",
+      "dependencies": "prepared",
+      "dependencyTreeSha256": "3fd4d3756f24632827fadd0abf5dfc405feedfb8cf8eeaa973860244fce10f95",
+      "reproducible": true
+    },
+    "execution": {
+      "mode": "isolated",
+      "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+      "network": "closed",
+      "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+      "dependencies": {
+        "mode": "prepared",
+        "reproducible": true,
+        "lockfiles": {
+          "uv.lock": "0e3c1bbc687c6455c50f933d4130a49777782f21b96eecbffdc4b1429d6e3ed4"
+        },
+        "treeSha256": "3fd4d3756f24632827fadd0abf5dfc405feedfb8cf8eeaa973860244fce10f95",
+        "note": "prepared from a uv.lock resolved during preparation, kept with the evidence under lockfiles/, and digested"
+      },
+      "policyMet": true,
+      "problems": []
+    },
+    "policy": {
+      "behaviorChange": "none",
+      "reruns": 3
+    },
+    "unmeasured": [
+      "coverage: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+    ],
+    "logs": [
+      {
+        "name": "logs/test.txt",
+        "sha256": "a63afdfb797b345c71adc7fdf3284159a3b9c1f00f8390423c7fc24e8def96cd"
+      },
+      {
+        "name": "lockfiles/base/uv.lock",
+        "sha256": "0e3c1bbc687c6455c50f933d4130a49777782f21b96eecbffdc4b1429d6e3ed4"
+      }
+    ],
+    "verifier": {
+      "name": "swarm-verify",
+      "version": "2.0.3"
+    }
+  }
+}

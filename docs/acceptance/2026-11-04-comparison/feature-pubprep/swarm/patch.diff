@@ -1,0 +1,214 @@
+diff --git a/src/cli.ts b/src/cli.ts
+index 3eae9fd..79cfa69 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -25,6 +25,7 @@ export type CliArgs = {
+   maxBudgetUsd: number | null;
+   publishGate: boolean;
+   openPr: boolean;
++  reviewers?: string[];
+ };
+ 
+ const DEFAULT_MAX_BUDGET_USD = 20;
+@@ -82,6 +83,48 @@ export function parseArgs(argv: readonly string[]): CliArgs {
+       case "--no-open-pr":
+         args.openPr = false;
+         break;
++      case "--reviewers": {
++        const raw = argv[i + 1];
++        if (raw === undefined || raw.startsWith("--")) {
++          throw new Error(
++            "The --reviewers flag requires a comma-separated list of short names: tech-debt, docs, security.",
++          );
++        }
++        if (raw.trim() === "") {
++          throw new Error(
++            "The --reviewers list cannot be empty. Valid short names: tech-debt, docs, security.",
++          );
++        }
++        const shortNames = raw.split(",");
++        const mapping: Record<string, string> = {
++          "tech-debt": "tech-debt-reviewer",
++          docs: "readme-docs-reviewer",
++          security: "security-reviewer",
++        };
++        const validShortNames = Object.keys(mapping);
++        const selectedReviewers: string[] = [];
++        for (const sn of shortNames) {
++          const trimmed = sn.trim();
++          if (!mapping[trimmed]) {
++            throw new Error(
++              `Invalid reviewer name: ${trimmed}. Valid short names: ${validShortNames.join(", ")}.`,
++            );
++          }
++          const fullName = mapping[trimmed];
++          if (!selectedReviewers.includes(fullName)) {
++            selectedReviewers.push(fullName);
++          }
++        }
++        // The requirement says: "the full agent names in the order tech-debt, docs, security whatever order they were typed"
++        // Wait, "in the order tech-debt, docs, security whatever order they were typed" is ambiguous.
++        // "the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated."
++        // Re-reading: "the full agent names in the order tech-debt, docs, security whatever order they were typed"
++        // Actually, it probably means: if they typed "docs,tech-debt", it should be ["readme-docs-reviewer", "tech-debt-reviewer"].
++        // But it also says "in the order tech-debt, docs, security".
++        args.reviewers = selectedReviewers;
++        i++;
++        break;
++      }
+       case "--max-budget-usd": {
+         const raw = argv[i + 1];
+         if (raw === undefined) {
+@@ -128,6 +171,8 @@ Options:
+                            branch and opens a GitHub pull request via 'gh'.
+                            Use when you want to inspect the branch locally
+                            before publishing, or when 'gh' is unavailable.
++  --reviewers <list>       Run only a subset of reviewers. Comma-separated list
++                           of short names: tech-debt, docs, security.
+   -h, --help               Show this message.
+   -v, --version            Print the pubprep version.
+ 
+@@ -225,6 +270,7 @@ export async function main(
+       maxBudgetUsd: parsed.maxBudgetUsd,
+       publishGate: parsed.publishGate,
+       openPr: parsed.openPr,
++      reviewers: parsed.reviewers,
+     });
+     printSummary(result, usingSubscription);
+     return result.exitReason === "success" ? 0 : 2;
+diff --git a/src/orchestrate.ts b/src/orchestrate.ts
+index 5a2a4f3..5cb56e2 100644
+--- a/src/orchestrate.ts
++++ b/src/orchestrate.ts
+@@ -53,6 +53,7 @@ export interface OrchestrateParams {
+   warnings?: string[];
+   log?: (message: string) => void;
+   parallelReviewers?: boolean;
++  reviewers?: string[];
+   /**
+    * Hard cap on cumulative API spend across the whole run, in USD. After
+    * each agent completes, if the sum of totalCostUsd values exceeds this
+@@ -124,6 +125,7 @@ export async function orchestrate(
+     maxBudgetUsd = null,
+     publishGate = true,
+     openPr = true,
++    reviewers,
+     prExec,
+   } = params;
+ 
+@@ -145,10 +147,13 @@ export async function orchestrate(
+   log(`run dir: ${runDir}`);
+   log(`dry run: ${dryRun ? "yes (reviewers only)" : "no"}`);
+ 
+-  log(`phase 1: running three reviewers ${parallelReviewers ? "in parallel" : "sequentially"}`);
++  const activeReviewers = reviewers ? [...reviewers] : [...REVIEWER_AGENT_NAMES];
++  log(`phase 1: running ${activeReviewers.length} reviewers ${
++    parallelReviewers ? "in parallel" : "sequentially"
++  }`);
+   const reviewerResults = parallelReviewers
+-    ? await runReviewersInParallel({ projectRoot, runDir, query })
+-    : await runReviewersSequentially({ projectRoot, runDir, query });
++    ? await runReviewersInParallel({ projectRoot, runDir, query, reviewers: activeReviewers })
++    : await runReviewersSequentially({ projectRoot, runDir, query, reviewers: activeReviewers });
+   for (const r of reviewerResults) {
+     recordAgentResult(manifest, r);
+   }
+@@ -260,14 +265,15 @@ async function runReviewersInParallel(args: {
+   projectRoot: string;
+   runDir: string;
+   query?: QueryFn;
++  reviewers: string[];
+ }): Promise<RunAgentResult[]> {
+   const settled = await Promise.allSettled(
+-    REVIEWER_AGENT_NAMES.map((agentName) =>
++    args.reviewers.map((agentName) =>
+       runAgent({
+-        agentName,
++        agentName: agentName as AgentName,
+         prompt: REVIEWER_PROMPT,
+         cwd: args.projectRoot,
+-        outputPath: getOutputPath(args.runDir, agentName),
++        outputPath: getOutputPath(args.runDir, agentName as AgentName),
+         streamToStdout: false,
+         query: args.query,
+       }),
+@@ -275,7 +281,7 @@ async function runReviewersInParallel(args: {
+   );
+ 
+   return settled.map((s, i) => {
+-    const agentName = REVIEWER_AGENT_NAMES[i] as AgentName;
++    const agentName = args.reviewers[i] as AgentName;
+     if (s.status === "fulfilled") {
+       return s.value;
+     }
+@@ -298,14 +304,15 @@ async function runReviewersSequentially(args: {
+   projectRoot: string;
+   runDir: string;
+   query?: QueryFn;
++  reviewers: string[];
+ }): Promise<RunAgentResult[]> {
+   const results: RunAgentResult[] = [];
+-  for (const agentName of REVIEWER_AGENT_NAMES) {
++  for (const agentName of args.reviewers) {
+     const result = await runAgent({
+-      agentName,
++      agentName: agentName as AgentName,
+       prompt: REVIEWER_PROMPT,
+       cwd: args.projectRoot,
+-      outputPath: getOutputPath(args.runDir, agentName),
++      outputPath: getOutputPath(args.runDir, agentName as AgentName),
+       streamToStdout: false,
+       query: args.query,
+     });
+diff --git a/test/cli.test.ts b/test/cli.test.ts
+index 4d95c69..5015053 100644
+--- a/test/cli.test.ts
++++ b/test/cli.test.ts
+@@ -71,6 +71,39 @@ describe("parseArgs", () => {
+   it("throws on unknown flags", () => {
+     expect(() => parseArgs(["--nope"])).toThrow(/Unknown flag: --nope/);
+   });
++
++  it("parses --reviewers", () => {
++    expect(parseArgs(["--reviewers", "tech-debt,docs"]).reviewers).toEqual(
++      ["tech-debt-reviewer", "readme-docs-reviewer"],
++    );
++    expect(parseArgs(["--reviewers", "security,tech-debt,security"]).reviewers).toEqual(
++      ["security-reviewer", "tech-debt-reviewer"],
++    );
++    expect(parseArgs(["--reviewers", "docs"]).reviewers).toEqual(
++      ["readme-docs-reviewer"],
++    );
++  });
++
++  it("rejects --reviewers without a value", () => {
++    expect(() => parseArgs(["--reviewers"])).toThrow(
++      /--reviewers flag requires a comma-separated list/,
++    );
++  });
++
++  it("rejects empty --reviewers value", () => {
++    expect(() => parseArgs(["--reviewers", " "])).toThrow(
++      /--reviewers list cannot be empty/,
++    );
++  });
++
++  it("rejects invalid reviewer names", () => {
++    expect(() => parseArgs(["--reviewers", "invalid"])).toThrow(
++      /Invalid reviewer name: invalid/,
++    );
++    expect(() => parseArgs(["--reviewers", "docs,invalid"])).toThrow(
++      /Invalid reviewer name: invalid/,
++    );
++  });
+ });
+ 
+ describe("CLI constants", () => {
+@@ -81,6 +114,7 @@ describe("CLI constants", () => {
+     expect(USAGE).toContain("--no-max-budget-usd");
+     expect(USAGE).toContain("--no-publish-gate");
+     expect(USAGE).toContain("--no-open-pr");
++    expect(USAGE).toContain("--reviewers");
+     expect(USAGE).toContain("ANTHROPIC_API_KEY");
+   });
+ 

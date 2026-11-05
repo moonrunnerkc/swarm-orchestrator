@@ -1,0 +1,253 @@
+diff --git a/src/checks/test-weakening.test.ts b/src/checks/test-weakening.test.ts
+index 9b1d71a..cac0c3e 100644
+--- a/src/checks/test-weakening.test.ts
++++ b/src/checks/test-weakening.test.ts
+@@ -32,6 +32,48 @@ describe("compareTestFile", () => {
+     expect(findings.some((w) => w.kind === "assertion-removed")).toBe(true);
+   });
+ 
++  it("calls a removed assertion assertion-removed, not test-removed, when every test remains", () => {
++    const parent = 'it("a", () => { expect(f()).toBe(5); expect(g()).toBe(1); });\nit("b", () => { expect(h()).toBe(2); });\n';
++    const head = 'it("a", () => { expect(f()).toBe(5); });\nit("b", () => { expect(h()).toBe(2); });\n';
++    const kinds = compareTestFile("t.test.ts", parent, head).map((w) => w.kind);
++    expect(kinds).toEqual(["assertion-removed"]);
++  });
++
++  it("reports test-removed instead of assertion-removed when a whole test is deleted", () => {
++    const parent = 'it("a", () => { expect(f()).toBe(5); });\nit("obsolete", () => { expect(g()).toBe(1); });\n';
++    const head = 'it("a", () => { expect(f()).toBe(5); });\n';
++    const findings = compareTestFile("t.test.ts", parent, head);
++    expect(findings).toEqual([
++      {
++        file: "t.test.ts",
++        line: 1,
++        kind: "test-removed",
++        detail: "expect() calls dropped from 2 to 1, test cases dropped from 2 to 1",
++      },
++    ]);
++  });
++
++  it.each([
++    ["it.skip", 'it.skip("old", () => { expect(g()).toBe(1); });'],
++    ["it.only", 'it.only("old", () => { expect(g()).toBe(1); });'],
++    ["xit", 'xit("old", () => { expect(g()).toBe(1); });'],
++    ["test.each", 'test.each([[1], [2]])("old %i", (n) => { expect(g(n)).toBe(n); });'],
++    ["tagged test.each", 'test.each`\n  n\n  ${1}\n`("old $n", ({ n }) => { expect(g(n)).toBe(n); });'],
++  ])("counts a deleted %s case as a removed test", (_variant, removed) => {
++    const kept = 'test("kept", () => { expect(f()).toBe(5); });\n';
++    const kinds = compareTestFile("t.test.ts", `${kept}${removed}\n`, kept).map((w) => w.kind);
++    expect(kinds).toEqual(["test-removed"]);
++  });
++
++  it("does not count a test.each table as an extra test case", () => {
++    // One table row's assertion is stripped; the declaration count is unchanged.
++    const parent = 'test.each([[1]])("n %i", (n) => { expect(g(n)).toBe(n); expect(n).toBe(1); });\n';
++    const head = 'test.each([[1]])("n %i", (n) => { expect(g(n)).toBe(n); });\n';
++    const kinds = compareTestFile("t.test.ts", parent, head).map((w) => w.kind);
++    expect(kinds).toContain("assertion-removed");
++    expect(kinds).not.toContain("test-removed");
++  });
++
+   it("flags a test marked skipped in head", () => {
+     const parent = 'it("t", () => { expect(f()).toBe(1); });\n';
+     const head = 'it.skip("t", () => { expect(f()).toBe(1); });\n';
+diff --git a/src/checks/test-weakening.ts b/src/checks/test-weakening.ts
+index e1e8b9f..15b233b 100644
+--- a/src/checks/test-weakening.ts
++++ b/src/checks/test-weakening.ts
+@@ -27,9 +27,14 @@ const LOOSE_MATCHERS = new Set([
+ ]);
+ const SKIP_MARKERS = new Set(["skip", "todo"]);
+ const SKIP_IDENTIFIERS = new Set(["xit", "xtest", "xdescribe"]);
++const TEST_CASE_IDENTIFIERS = new Set(["it", "test", "xit", "xtest", "fit"]);
++// Members that return a test function rather than registering a test, as in
++// test.each(table)("name", fn) or test.skipIf(cond)("name", fn).
++const TEST_CASE_FACTORIES = new Set(["each", "for", "skipIf", "runIf"]);
+ 
+ interface Extract {
+   expectCount: number;
++  testCount: number;
+   strict: number;
+   loose: number;
+   /** Literal expected values from strict matchers, as a sorted multiset. */
+@@ -48,11 +53,50 @@ function parse(file: string, content: string): ts.SourceFile {
+   );
+ }
+ 
+-/** Extract the assertion and skip shape of a test file. */
++/**
++ * Resolve an `it`, `it.only.skip` style callee to its root identifier and last
++ * member, or null when it is not a plain identifier/member chain.
++ */
++function calleeChain(expr: ts.Expression): { root: string; last: string | null } | null {
++  let last: string | null = null;
++  let current = expr;
++  while (ts.isPropertyAccessExpression(current)) {
++    last ??= current.name.text;
++    current = current.expression;
++  }
++  return ts.isIdentifier(current) ? { root: current.text, last } : null;
++}
++
++/**
++ * Whether a call registers one test case: it(...), test.only(...), xit(...),
++ * or the second call of test.each(table)(...) and its tagged-template form.
++ * Each declaration counts once, however many rows a table holds.
++ */
++function isTestCase(node: ts.CallExpression): boolean {
++  const callee = node.expression;
++  if (ts.isCallExpression(callee) || ts.isTaggedTemplateExpression(callee)) {
++    const factory = calleeChain(ts.isCallExpression(callee) ? callee.expression : callee.tag);
++    return (
++      factory !== null &&
++      TEST_CASE_IDENTIFIERS.has(factory.root) &&
++      factory.last !== null &&
++      TEST_CASE_FACTORIES.has(factory.last)
++    );
++  }
++  const chain = calleeChain(callee);
++  return (
++    chain !== null &&
++    TEST_CASE_IDENTIFIERS.has(chain.root) &&
++    (chain.last === null || !TEST_CASE_FACTORIES.has(chain.last))
++  );
++}
++
++/** Extract the assertion, test-case, and skip shape of a test file. */
+ function extract(file: string, content: string): Extract {
+   const sf = parse(file, content);
+   const result: Extract = {
+     expectCount: 0,
++    testCount: 0,
+     strict: 0,
+     loose: 0,
+     strictLiterals: [],
+@@ -66,6 +110,7 @@ function extract(file: string, content: string): Extract {
+       if (ts.isIdentifier(callee) && callee.text === "expect") {
+         result.expectCount++;
+       }
++      if (isTestCase(node)) result.testCount++;
+       if (ts.isPropertyAccessExpression(callee)) {
+         const name = callee.name.text;
+         if (STRICT_MATCHERS.has(name)) {
+@@ -132,13 +177,21 @@ export function compareTestFile(
+     });
+   }
+ 
++  // Fewer expect() calls alongside fewer test cases reads as deleting a test
++  // (obsolete, or moved by a file split), which is ambiguous. Fewer expect()
++  // calls with the same tests is the strip-an-assertion cheat.
+   if (after.expectCount < before.expectCount) {
+-    findings.push({
+-      file,
+-      line: 1,
+-      kind: "assertion-removed",
+-      detail: `expect() calls dropped from ${before.expectCount} to ${after.expectCount}`,
+-    });
++    const dropped = `expect() calls dropped from ${before.expectCount} to ${after.expectCount}`;
++    if (after.testCount < before.testCount) {
++      findings.push({
++        file,
++        line: 1,
++        kind: "test-removed",
++        detail: `${dropped}, test cases dropped from ${before.testCount} to ${after.testCount}`,
++      });
++    } else {
++      findings.push({ file, line: 1, kind: "assertion-removed", detail: dropped });
++    }
+   }
+ 
+   // A strict matcher was traded for a loose one: the assertion got weaker.
+diff --git a/src/core/decision.test.ts b/src/core/decision.test.ts
+index c1241c2..a90aa55 100644
+--- a/src/core/decision.test.ts
++++ b/src/core/decision.test.ts
+@@ -297,6 +297,42 @@ describe("decide", () => {
+     expect(check.tier).toBe("warn");
+   });
+ 
++  it("only warns when a whole test was removed, since deleting a test is ambiguous", () => {
++    const { verdict, check } = findCheck(
++      honestRecord({
++        testWeakenings: [
++          {
++            file: "test/calc.test.ts",
++            line: 1,
++            kind: "test-removed",
++            detail: "expect() calls dropped from 2 to 1, test cases dropped from 2 to 1",
++          },
++        ],
++      }),
++      "test-weakening",
++    );
++    expect(check.tier).toBe("warn");
++    expect(verdict.tier).toBe("warn");
++  });
++
++  it("blocks when an assertion is removed with every test still present", () => {
++    const { verdict, check } = findCheck(
++      honestRecord({
++        testWeakenings: [
++          {
++            file: "test/calc.test.ts",
++            line: 1,
++            kind: "assertion-removed",
++            detail: "expect() calls dropped from 2 to 1",
++          },
++        ],
++      }),
++      "test-weakening",
++    );
++    expect(check.tier).toBe("block");
++    expect(verdict.tier).toBe("block");
++  });
++
+   it("warns on an error-suppression pattern, never blocks on it alone", () => {
+     const { verdict, check } = findCheck(
+       honestRecord({
+diff --git a/src/core/decision.ts b/src/core/decision.ts
+index b5ae9fe..20e3e58 100644
+--- a/src/core/decision.ts
++++ b/src/core/decision.ts
+@@ -545,7 +545,8 @@ function checkVacuousAssertion(record: EvidenceRecord): CheckResult {
+ /**
+  * test-weakening. Removing or loosening an existing assertion, skipping a test,
+  * or marking it todo to fit the changed code is a BLOCK. Changing an expected
+- * value is ambiguous (the behavior may legitimately have changed), so it is
++ * value is ambiguous (the behavior may legitimately have changed), and so is
++ * deleting whole test cases (an obsolete test, or a file split), so both are
+  * WARN.
+  */
+ function checkTestWeakening(record: EvidenceRecord): CheckResult {
+@@ -558,7 +559,7 @@ function checkTestWeakening(record: EvidenceRecord): CheckResult {
+     };
+   }
+   const blocking = record.testWeakenings.filter(
+-    (w) => w.kind !== "expected-value-changed",
++    (w) => w.kind !== "expected-value-changed" && w.kind !== "test-removed",
+   );
+   if (blocking.length > 0) {
+     return {
+@@ -573,7 +574,7 @@ function checkTestWeakening(record: EvidenceRecord): CheckResult {
+     id: "test-weakening",
+     tier: "warn",
+     summary:
+-      "An existing test's expected value changed; confirm the behavior change is intended.",
++      "An existing test's expected value changed or a test was removed; confirm the change is intended.",
+     evidence: record.testWeakenings.map(
+       (w) => `${w.file}:${w.line} ${w.kind}: ${w.detail}`,
+     ),
+diff --git a/src/core/evidence-record.ts b/src/core/evidence-record.ts
+index 97d5bed..b34fca0 100644
+--- a/src/core/evidence-record.ts
++++ b/src/core/evidence-record.ts
+@@ -248,7 +248,8 @@ export interface TestWeakening {
+     | "assertion-loosened"
+     | "expected-value-changed"
+     | "test-skipped"
+-    | "test-todo";
++    | "test-todo"
++    | "test-removed";
+   readonly detail: string;
+ }
+ 

@@ -1,0 +1,197 @@
+diff --git a/src/checks/test-weakening.test.ts b/src/checks/test-weakening.test.ts
+index 9b1d71a..f2061a8 100644
+--- a/src/checks/test-weakening.test.ts
++++ b/src/checks/test-weakening.test.ts
+@@ -39,6 +39,31 @@ describe("compareTestFile", () => {
+     expect(findings.some((w) => w.kind === "test-skipped")).toBe(true);
+   });
+ 
++  it("flags a deleted test as the ambiguous test-removed, not assertion-removed", () => {
++    const parent =
++      'import { expect, it } from "vitest";\n' +
++      'it("a", () => { expect(f()).toBe(1); });\n' +
++      'it("b", () => { expect(g()).toBe(2); });\n';
++    const head =
++      'import { expect, it } from "vitest";\n' +
++      'it("a", () => { expect(f()).toBe(1); });\n';
++    const findings = compareTestFile("t.test.ts", parent, head);
++    expect(findings.some((w) => w.kind === "test-removed")).toBe(true);
++    expect(findings.some((w) => w.kind === "assertion-removed")).toBe(false);
++  });
++
++  it("still flags an assertion removed from a surviving test as assertion-removed", () => {
++    const parent =
++      'import { expect, it } from "vitest";\n' +
++      'it("a", () => { expect(f()).toBe(1); expect(g()).toBe(2); });\n';
++    const head =
++      'import { expect, it } from "vitest";\n' +
++      'it("a", () => { expect(f()).toBe(1); });\n';
++    const findings = compareTestFile("t.test.ts", parent, head);
++    expect(findings.some((w) => w.kind === "assertion-removed")).toBe(true);
++    expect(findings.some((w) => w.kind === "test-removed")).toBe(false);
++  });
++
+   it("reports nothing when the assertions are unchanged", () => {
+     const same = wrap("expect(f()).toBe(5);");
+     expect(compareTestFile("t.test.ts", same, same)).toEqual([]);
+diff --git a/src/checks/test-weakening.ts b/src/checks/test-weakening.ts
+index e1e8b9f..c68720a 100644
+--- a/src/checks/test-weakening.ts
++++ b/src/checks/test-weakening.ts
+@@ -30,6 +30,8 @@ const SKIP_IDENTIFIERS = new Set(["xit", "xtest", "xdescribe"]);
+ 
+ interface Extract {
+   expectCount: number;
++  /** Number of test cases (it/test calls, including skip variants). */
++  testCount: number;
+   strict: number;
+   loose: number;
+   /** Literal expected values from strict matchers, as a sorted multiset. */
+@@ -38,6 +40,8 @@ interface Extract {
+   firstLooseLine: number | null;
+ }
+ 
++const TEST_IDENTIFIERS = new Set(["it", "test"]);
++
+ function parse(file: string, content: string): ts.SourceFile {
+   return ts.createSourceFile(
+     file,
+@@ -53,6 +57,7 @@ function extract(file: string, content: string): Extract {
+   const sf = parse(file, content);
+   const result: Extract = {
+     expectCount: 0,
++    testCount: 0,
+     strict: 0,
+     loose: 0,
+     strictLiterals: [],
+@@ -66,8 +71,18 @@ function extract(file: string, content: string): Extract {
+       if (ts.isIdentifier(callee) && callee.text === "expect") {
+         result.expectCount++;
+       }
++      if (ts.isIdentifier(callee) && TEST_IDENTIFIERS.has(callee.text)) {
++        result.testCount++;
++      }
+       if (ts.isPropertyAccessExpression(callee)) {
+         const name = callee.name.text;
++        // it.skip / it.only / test.each etc. still declare one test case.
++        if (
++          ts.isIdentifier(callee.expression) &&
++          TEST_IDENTIFIERS.has(callee.expression.text)
++        ) {
++          result.testCount++;
++        }
+         if (STRICT_MATCHERS.has(name)) {
+           result.strict++;
+           const arg = node.arguments[0];
+@@ -91,6 +106,7 @@ function extract(file: string, content: string): Extract {
+         }
+       }
+       if (ts.isIdentifier(callee) && SKIP_IDENTIFIERS.has(callee.text)) {
++        result.testCount++;
+         result.skips.push({
+           kind: "test-skipped",
+           line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+@@ -133,11 +149,18 @@ export function compareTestFile(
+   }
+ 
+   if (after.expectCount < before.expectCount) {
++    // A drop in assertions alongside a drop in test cases is a deletion, which
++    // is ambiguous (a test may have been legitimately removed), so it is the
++    // softer test-removed (WARN). A drop with the test count unchanged means a
++    // surviving test lost an assertion, the real weaken-to-fit cheat (BLOCK).
++    const testsRemoved = after.testCount < before.testCount;
+     findings.push({
+       file,
+       line: 1,
+-      kind: "assertion-removed",
+-      detail: `expect() calls dropped from ${before.expectCount} to ${after.expectCount}`,
++      kind: testsRemoved ? "test-removed" : "assertion-removed",
++      detail: testsRemoved
++        ? `${before.testCount - after.testCount} test(s) removed and expect() calls dropped from ${before.expectCount} to ${after.expectCount}; a deleted test is ambiguous, not necessarily a weakened assertion`
++        : `expect() calls dropped from ${before.expectCount} to ${after.expectCount} with the test count unchanged; an assertion was removed from a surviving test`,
+     });
+   }
+ 
+diff --git a/src/core/decision.test.ts b/src/core/decision.test.ts
+index c1241c2..67c8d6b 100644
+--- a/src/core/decision.test.ts
++++ b/src/core/decision.test.ts
+@@ -297,6 +297,24 @@ describe("decide", () => {
+     expect(check.tier).toBe("warn");
+   });
+ 
++  it("only warns when a whole test was removed, since deletion is ambiguous", () => {
++    const { verdict, check } = findCheck(
++      honestRecord({
++        testWeakenings: [
++          {
++            file: "test/calc.test.ts",
++            line: 1,
++            kind: "test-removed",
++            detail: "1 test(s) removed",
++          },
++        ],
++      }),
++      "test-weakening",
++    );
++    expect(check.tier).toBe("warn");
++    expect(verdict.tier).not.toBe("block");
++  });
++
+   it("warns on an error-suppression pattern, never blocks on it alone", () => {
+     const { verdict, check } = findCheck(
+       honestRecord({
+diff --git a/src/core/decision.ts b/src/core/decision.ts
+index b5ae9fe..1fc00f8 100644
+--- a/src/core/decision.ts
++++ b/src/core/decision.ts
+@@ -542,11 +542,16 @@ function checkVacuousAssertion(record: EvidenceRecord): CheckResult {
+   };
+ }
+ 
++/** Test-weakening kinds that are ambiguous, so WARN rather than BLOCK. */
++const AMBIGUOUS_WEAKENINGS = new Set(["expected-value-changed", "test-removed"]);
++
+ /**
+  * test-weakening. Removing or loosening an existing assertion, skipping a test,
+- * or marking it todo to fit the changed code is a BLOCK. Changing an expected
+- * value is ambiguous (the behavior may legitimately have changed), so it is
+- * WARN.
++ * or marking it todo to fit the changed code is a BLOCK. Two kinds are
++ * ambiguous and only WARN: a changed expected value (the behavior may
++ * legitimately have changed) and a removed test (a test may have been
++ * legitimately deleted, e.g. for removed functionality; that is not the same as
++ * stripping an assertion from a test that still exists).
+  */
+ function checkTestWeakening(record: EvidenceRecord): CheckResult {
+   if (record.testWeakenings.length === 0) {
+@@ -558,7 +563,7 @@ function checkTestWeakening(record: EvidenceRecord): CheckResult {
+     };
+   }
+   const blocking = record.testWeakenings.filter(
+-    (w) => w.kind !== "expected-value-changed",
++    (w) => !AMBIGUOUS_WEAKENINGS.has(w.kind),
+   );
+   if (blocking.length > 0) {
+     return {
+@@ -573,7 +578,7 @@ function checkTestWeakening(record: EvidenceRecord): CheckResult {
+     id: "test-weakening",
+     tier: "warn",
+     summary:
+-      "An existing test's expected value changed; confirm the behavior change is intended.",
++      "An existing test's expected value changed or a test was removed; confirm the change is intended.",
+     evidence: record.testWeakenings.map(
+       (w) => `${w.file}:${w.line} ${w.kind}: ${w.detail}`,
+     ),
+diff --git a/src/core/evidence-record.ts b/src/core/evidence-record.ts
+index 97d5bed..9335838 100644
+--- a/src/core/evidence-record.ts
++++ b/src/core/evidence-record.ts
+@@ -247,6 +247,7 @@ export interface TestWeakening {
+     | "assertion-removed"
+     | "assertion-loosened"
+     | "expected-value-changed"
++    | "test-removed"
+     | "test-skipped"
+     | "test-todo";
+   readonly detail: string;
