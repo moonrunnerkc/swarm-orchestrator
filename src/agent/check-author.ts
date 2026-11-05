@@ -23,7 +23,12 @@ export interface AuthoredTest {
 }
 
 /** What the check-authoring stage produced for one requirement, and why where it produced nothing. */
-export { raisedNotAsserted, removeLaid, unrelatedImport } from "./authored-validation.ts";
+export {
+  ownUndefinedName,
+  raisedNotAsserted,
+  removeLaid,
+  unrelatedImport,
+} from "./authored-validation.ts";
 
 export interface Authored {
   readonly requirement: string;

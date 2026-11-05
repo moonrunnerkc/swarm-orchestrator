@@ -52,6 +52,23 @@ export function raisedNotAsserted(output: string, task: string): string | null {
   return line.trim().replace(/^E\s+/, "").slice(0, 300);
 }
 
+const undefinedName =
+  /ReferenceError: (\w+) is not defined|NameError: name '(\w+)' is not defined/g;
+
+/**
+ * A name the check uses and never defines or imports, which the task does not name either: it
+ * fails at the base on its own bug, and on every tree after. pubprep (2026-11-05, the sealed-set
+ * run): the check called vitest's beforeEach without importing it, where the project does not
+ * turn vitest's globals on, and every turn of the run failed on that line.
+ */
+export function ownUndefinedName(output: string, task: string): string | null {
+  for (const match of output.matchAll(undefinedName)) {
+    const name = match[1] ?? match[2] ?? "";
+    if (name.length > 0 && !new RegExp(`\\b${name}\\b`).test(task)) return name;
+  }
+  return null;
+}
+
 /** Runs an authored test file at the base: laid in, run by the harness, taken out again. */
 export async function runAtBase(
   chokepoint: Chokepoint,
@@ -74,6 +91,14 @@ export async function runAtBase(
     return { reasons: [`the runner did not collect it: ${output}`], output };
   if (unparsable.test(ran.output) && ran.output.includes(basename(test.path)))
     return { reasons: [`it does not parse: ${output}`], output };
+  const undefinedHere = ownUndefinedName(ran.output, task);
+  if (undefinedHere !== null)
+    return {
+      reasons: [
+        `it uses ${undefinedHere}, which it neither defines nor imports, so it fails on every tree; import it as the example test does`,
+      ],
+      output,
+    };
   const crashed = kind === "fix" ? raisedNotAsserted(ran.output, task) : null;
   if (crashed !== null)
     return {

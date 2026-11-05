@@ -8,7 +8,12 @@ import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import { createChokepoint } from "../tools/chokepoint.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
 import { parseAuthor } from "./author-prompt.ts";
-import { authorChecks, raisedNotAsserted, unrelatedImport } from "./check-author.ts";
+import {
+  authorChecks,
+  ownUndefinedName,
+  raisedNotAsserted,
+  unrelatedImport,
+} from "./check-author.ts";
 import { testConventions } from "./test-conventions.ts";
 import { authorTest, halfTest, scripted } from "./test-doubles.ts";
 
@@ -203,5 +208,19 @@ describe("a refactor claim about a file the base lacks", () => {
     expect(authored.attempts[0]).toEqual([
       "tracemantle/history/history_io.py is under tracemantle/, which the repository does not have; its tracemantle package is at src/tracemantle/",
     ]);
+  });
+});
+
+// pubprep (2026-11-05, sealed-set run): the check called beforeEach without importing it, so it
+// failed at the base and on every tree after, and no change could satisfy R1.
+describe("a check that uses a name it never defines or imports", () => {
+  it("is named, unless the task names it", () => {
+    const vitest =
+      "FAIL  test/cli-main.swarm-r1.test.ts\nReferenceError: beforeEach is not defined";
+    expect(ownUndefinedName(vitest, "Add --reviewers to parseArgs")).toBe("beforeEach");
+    expect(ownUndefinedName("NameError: name 'pytest' is not defined", "fix it")).toBe("pytest");
+    expect(
+      ownUndefinedName("ReferenceError: reviewers is not defined", "parseArgs returns `reviewers`"),
+    ).toBeNull();
   });
 });
