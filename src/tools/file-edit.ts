@@ -171,7 +171,7 @@ export function whereItDiffers(text: string, search: string): string | null {
     while (run < wanted.length && file[at + run] === wanted[run]) run += 1;
     if (run > best.run) best = { at, run };
   }
-  if (best.run === 0) return null;
+  if (best.run === 0) return startsLike(file, wanted);
   const mine = wanted[best.run] ?? "";
   const theirs = file[best.at + best.run];
   const spacing =
@@ -183,6 +183,34 @@ export function whereItDiffers(text: string, search: string): string | null {
       ? ` A SEARCH of ${wanted.length} lines is hard to copy exactly: change the block in smaller parts, or write the whole file with a write block.`
       : "";
   return `. Its first ${best.run} line(s) match the file from line ${best.at + 1}; its line ${best.run + 1} reads ${JSON.stringify(mine)}, where the file's line ${best.at + best.run + 1} reads ${theirs === undefined ? "nothing (the file ends)" : JSON.stringify(theirs)}${spacing}.${advice}\n`;
+}
+
+/**
+ * Where no line of a SEARCH starts a match, the file's line that begins most like its first: a
+ * model that splits a long line the file keeps whole (ironroot, 2026-11-05: a signature the file
+ * has on one line, sent over three) is shown the line as the file has it.
+ */
+function startsLike(file: readonly string[], wanted: readonly string[]): string | null {
+  const first = wanted[0] ?? "";
+  const shared = (line: string) => {
+    let at = 0;
+    while (at < line.length && at < first.length && line[at] === first[at]) at += 1;
+    return at;
+  };
+  let best = { at: -1, length: 0 };
+  for (const [at, line] of file.entries()) {
+    const length = shared(line);
+    if (length > best.length) best = { at, length };
+  }
+  if (best.at < 0 || best.length < Math.min(12, first.trim().length)) return null;
+  const theirs = file[best.at] ?? "";
+  const whole =
+    theirs.length > first.length && theirs.startsWith(first)
+      ? " (the file has it on one line, longer)"
+      : first.startsWith(theirs)
+        ? " (the file breaks it over more lines)"
+        : "";
+  return `. No line of it matches the file; its line 1 reads ${JSON.stringify(first)}, where the file's line ${best.at + 1} reads ${JSON.stringify(theirs)}${whole}.\n`;
 }
 
 export type EditResult =
