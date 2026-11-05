@@ -110,7 +110,7 @@ export function applyReplacements(
     const which = pairs.length > 1 ? `SEARCH part ${index + 1}` : "the SEARCH part";
     if (found === 0) {
       return {
-        refused: `${which} matches nothing in the file; copy the lines exactly as the file has them, whitespace included`,
+        refused: `${which} matches nothing in the file; copy the lines exactly as the file has them, whitespace included${closestLines(next, pair.search)}`,
       };
     }
     if (found > 1) {
@@ -122,6 +122,35 @@ export function applyReplacements(
     next = `${next.slice(0, at)}${pair.replace}${next.slice(at + pair.search.length)}`;
   }
   return { text: next };
+}
+
+/**
+ * The file's lines nearest a SEARCH part that matched nothing: the run of as many lines, as
+ * numbered in the file, that shares the most lines with it (whitespace at their ends aside).
+ * pubprep (2026-11-04) sent the same unmatched SEARCH eight times to a refusal that said only to
+ * copy the lines exactly; this says what the lines are.
+ */
+export function closestLines(text: string, search: string): string {
+  const file = text.split("\n");
+  const wanted = new Set(
+    search
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== ""),
+  );
+  const size = Math.min(Math.max(search.split("\n").length, 3), 30);
+  let best = { at: -1, shared: 0 };
+  for (let at = 0; at + 1 <= file.length; at += 1) {
+    const window = file.slice(at, at + size);
+    const shared = window.filter((line) => wanted.has(line.trim())).length;
+    if (shared > best.shared) best = { at, shared };
+  }
+  if (best.at < 0) return "";
+  const shown = file
+    .slice(best.at, best.at + size)
+    .map((line, offset) => `${String(best.at + offset + 1).padStart(5)}  ${line}`)
+    .join("\n");
+  return `. The file's closest lines, numbered as in the file:\n${shown}\n`;
 }
 
 export type EditResult =

@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RequirementOutcome } from "swarm-verify";
+import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { Authored } from "./check-author.ts";
 import type { Finalized } from "./finalize.ts";
 import type { LoadedInstruction } from "./instructions.ts";
@@ -257,4 +258,31 @@ function timings(loops: readonly LoopResult[]): {
     prefillMs: total((turn) => turn.prefillMs),
     generationMs: total((turn) => turn.generationMs),
   };
+}
+
+/** The ledger's last record: how the run stopped, the delivered patch and where the report is. */
+export async function recordStopped(
+  evidence: EvidenceRecorder,
+  input: {
+    readonly stop: string;
+    readonly reason: string | null;
+    readonly finalized: Finalized;
+    readonly applied: boolean;
+    readonly report: string;
+  },
+): Promise<void> {
+  await evidence.record({
+    type: "session-stopped",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      stop: input.stop,
+      reason: input.reason,
+      state: input.finalized.state,
+      patchSha256: input.finalized.snapshot.sha256,
+      verification: input.finalized.verification,
+      applied: input.applied,
+      report: input.report,
+    },
+  });
 }

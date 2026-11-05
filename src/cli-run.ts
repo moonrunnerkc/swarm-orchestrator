@@ -1,19 +1,27 @@
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
+import type { Escalate } from "./agent/attempts.ts";
 import { summaryLines } from "./agent/report.ts";
 import { type RunReport, runAgent } from "./agent/run.ts";
 import { swarmHome } from "./agent/verification.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
-import { finishedOutcome, recordOutcome } from "./runtime/profile.ts";
+import {
+  finishedOutcome,
+  type Profile,
+  profilePath,
+  readProfile,
+  recordOutcome,
+} from "./runtime/profile.ts";
 import {
   NoModelError,
   type ResolvedModel,
   resolveAtContexts,
   resolveModel,
 } from "./runtime/resolve.ts";
+import { escalationFor } from "./runtime/select.ts";
 import type { ConfirmationPrompt } from "./tools/chokepoint.ts";
 
 const write = (text: string) => process.stdout.write(`${text}\n`);
@@ -86,14 +94,15 @@ export async function run(args: readonly string[]): Promise<number> {
     process.once(name, () => controller.abort(new Error(`stopped by ${name}`)));
   }
   const modelName = values.model ?? agent?.model ?? "auto";
-  const endpoint = values.endpoint ?? agent?.endpoint ?? null;
+  // The one OpenAI-compatible endpoint: named, in swarm.toml, or this machine's SWARM_ENDPOINT.
+  const endpoint = values.endpoint ?? agent?.endpoint ?? process.env.SWARM_ENDPOINT ?? null;
   const named = count(values.context, "--context");
   // A discovered Ollama model gets the largest context it fits; a named model or server, whose
   // capacity is not estimated here, the smaller one.
   const contexts =
     named !== undefined
       ? [named]
-      : endpoint === null && modelName === "auto"
+      : modelName === "auto"
         ? discoveredContexts
         : [defaultContextTokens];
 
@@ -124,7 +133,8 @@ export async function run(args: readonly string[]): Promise<number> {
     task,
     model: model.client,
     modelReason: model.reason,
-    escalation: model.escalation?.client ?? null,
+    // Once, and only to a model whose record on R1's kind of task is better here.
+    escalation: escalateAmong(model, await readProfile(profilePath(swarmHome()))),
     contextTokens,
     apply: values["no-apply"] !== true,
     // Only the user changes what existing tests may expect; nothing the model says can.
@@ -153,7 +163,8 @@ export async function run(args: readonly string[]): Promise<number> {
     state: ran.report.state,
     escalated: ran.report.resources.escalations > 0,
   });
-  if (finished !== null) await recordOutcome(swarmHome(), model.digest, finished);
+  const kind = ran.report.requirements.find((one) => one.id === "R1")?.kind ?? null;
+  if (finished !== null) await recordOutcome(swarmHome(), model.digest, finished, kind);
   for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
   write(`evidence     ${ran.sessionDirectory}`);
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
@@ -170,4 +181,14 @@ function exitCodeOf(state: string, requirements: RunReport["report"]["requiremen
   if (state === "complete") return 0;
   if (state === "blocked") return 5;
   return requirements.some((one) => one.status === "failed") ? 1 : 4;
+}
+
+/** The escalation a run may make: to the alternative with the better record on R1's kind. */
+function escalateAmong(model: ResolvedModel, profile: Profile): Escalate | null {
+  if (model.alternatives.length === 0) return null;
+  return (kind) => {
+    const pick = escalationFor(model.digest, model.alternatives, profile, kind);
+    const to = model.alternatives.find((one) => one.digest === pick.to?.digest);
+    return { client: to?.client ?? null, reason: pick.reason };
+  };
 }

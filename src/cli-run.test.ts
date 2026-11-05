@@ -202,6 +202,11 @@ describe("swarm run against the stub endpoint", () => {
     const profiles = join(root, "home", "profiles");
     const [file] = await readdir(profiles);
     const profile = JSON.parse(await readFile(join(profiles, file ?? ""), "utf8"));
-    expect(profile.outcomes[`${endpoint}#stub`]).toEqual({ complete: 0, other: 1 });
+    // And under R1's kind, here the default the check author's unusable reply left.
+    expect(profile.outcomes[`${endpoint}#stub`]).toEqual({
+      complete: 0,
+      other: 1,
+      kinds: { other: { complete: 0, other: 1 } },
+    });
   });
 });

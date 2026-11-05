@@ -86,7 +86,7 @@ describe("escalating once to a stronger model", () => {
     const strong = scripted([fix, mapped]);
     const ran = await probe.run(
       { ...weak, model: "weak" },
-      { escalation: { ...strong, model: "strong" } },
+      { escalation: () => ({ client: { ...strong, model: "strong" }, reason: "a better record" }) },
     );
     expect(ran.stop).toBe("complete");
     expect(ran.report.resources.escalations).toBe(1);
@@ -96,10 +96,28 @@ describe("escalating once to a stronger model", () => {
     );
   });
 
+  it("finishes with the current model, and says why, where none has a better record", async () => {
+    const probe = await fixture();
+    const ran = await probe.run(scripted(["I would fix half by dividing by two."]), {
+      escalation: () => ({
+        client: null,
+        reason: "no other model here has a better record on fix tasks",
+      }),
+    });
+    expect(ran.stop).toBe("unusable-replies");
+    expect(ran.report.resources.escalations).toBe(0);
+    expect(ran.report.notes).toContain(
+      "Not escalated: no other model here has a better record on fix tasks.",
+    );
+  });
+
   it("does not escalate when the stop says nothing about the model", async () => {
     const probe = await fixture();
     const strong = scripted([fix, mapped]);
-    const ran = await probe.run(scripted([completionMarker]), { escalation: strong, maxSteps: 1 });
+    const ran = await probe.run(scripted([completionMarker]), {
+      escalation: () => ({ client: strong, reason: "a better record" }),
+      maxSteps: 1,
+    });
     expect(ran.stop).toBe("step-budget");
     expect(ran.report.resources.escalations).toBe(0);
     expect(strong.seen).toHaveLength(0);

@@ -2,7 +2,13 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyFileEdit, applyReplacements, readEditBlock, readWriteBlock } from "./file-edit.ts";
+import {
+  applyFileEdit,
+  applyReplacements,
+  closestLines,
+  readEditBlock,
+  readWriteBlock,
+} from "./file-edit.ts";
 
 const pair = (search: string, replace: string) =>
   ["<<<<<<< SEARCH", search, "=======", replace, ">>>>>>> REPLACE"].join("\n");
@@ -122,5 +128,37 @@ describe("replacing exactly once", () => {
     const said = "refused" in refused ? refused.refused : "";
     expect(said).toContain('no file at "path=fs-walk.ts"');
     expect(said).toContain("```edit src/app.ts");
+  });
+});
+
+// ironroot (2026-11-04, session 20261105T081734-bfcef7): a SEARCH that joined a signature the
+// file spreads over two lines was refused four times with only "copy the lines exactly".
+describe("a SEARCH part that matches nothing", () => {
+  it("is refused with the file's closest lines, numbered as in the file", () => {
+    const file = [
+      "import x",
+      "",
+      "async def _falsify_artifact_hash_stability(",
+      "    session: AsyncSession, run_id: str",
+      ") -> FalsificationAttempt:",
+      '    """Every artifact hashes to its content hash."""',
+      "    return None",
+    ].join("\n");
+    const search = [
+      "async def _falsify_artifact_hash_stability(session: AsyncSession, run_id: str) -> FalsificationAttempt:",
+      '    """Every artifact hashes to its content hash."""',
+      "    return None",
+    ].join("\n");
+    const result = applyReplacements(file, [{ search, replace: "" }]);
+    expect(result).toEqual({
+      refused: [
+        "the SEARCH part matches nothing in the file; copy the lines exactly as the file has them, whitespace included. The file's closest lines, numbered as in the file:",
+        "    5  ) -> FalsificationAttempt:",
+        '    6      """Every artifact hashes to its content hash."""',
+        "    7      return None",
+        "",
+      ].join("\n"),
+    });
+    expect(closestLines("nothing alike", "zzz")).toBe("");
   });
 });

@@ -7,13 +7,13 @@ import {
   type ConfirmationPrompt,
   createChokepoint,
 } from "../tools/chokepoint.ts";
-import { type Progress, runAttempts } from "./attempts.ts";
+import { type Escalate, type Progress, runAttempts } from "./attempts.ts";
 import { authoringStage } from "./authoring.ts";
 import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
 import type { StopReason } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
-import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
+import { assembleReport, type RunReportFile, recordStopped, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
 import { runEnvironment } from "./run-environment.ts";
 import { stablePrefix } from "./stable-prefix.ts";
@@ -27,8 +27,11 @@ export interface RunOptions {
   readonly model: ModelClient;
   /** Why this model, in one line, for the report. */
   readonly modelReason: string;
-  /** A stronger model to hand the run to once, when this one stops making progress. */
-  readonly escalation?: ModelClient | null;
+  /**
+   * Whom to hand the run to once, when this model stops making progress on a task of a kind:
+   * a model with a better record on that kind here, or none, with why.
+   */
+  readonly escalation?: Escalate | null;
   /** The money a turn costs where it is known; "none (local runtime)" for a local model. */
   readonly cost: string;
   readonly contextTokens: number;
@@ -259,6 +262,9 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       digests,
       notes: [
         ...instructions.notes,
+        ...(progress.escalationNote === undefined
+          ? []
+          : [`Not escalated: ${progress.escalationNote}.`]),
         ...(options.behaviorChange === "authorized" ? [behaviorChangeNote(finalized.result)] : []),
       ],
       start: managed.start,
@@ -268,19 +274,12 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       authored,
     });
     const paths = await writeReport(final, report);
-    await evidence.record({
-      type: "session-stopped",
-      actor: "harness",
-      provenance: ["tool-output"],
-      payload: {
-        stop,
-        reason,
-        state: finalized.state,
-        patchSha256: finalized.snapshot.sha256,
-        verification: finalized.verification,
-        applied: delivery.applied,
-        report: paths.json,
-      },
+    await recordStopped(evidence, {
+      stop,
+      reason,
+      finalized,
+      applied: delivery.applied,
+      report: paths.json,
     });
     return {
       stop,

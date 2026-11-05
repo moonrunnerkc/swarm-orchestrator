@@ -17,7 +17,15 @@ export interface Progress {
   record: RequirementRecord;
   review: ReviewOutcome | null;
   escalated: boolean;
+  /** Why a stalled run was not handed to another model, where it was not. */
+  escalationNote?: string;
 }
+
+/** The model to hand a stalled run to for a task of `kind`, or none, with why. */
+export type Escalate = (kind: string) => {
+  readonly client: ModelClient | null;
+  readonly reason: string;
+};
 
 type Shared = Omit<
   LoopOptions,
@@ -25,13 +33,14 @@ type Shared = Omit<
 >;
 
 /**
- * The loop, then at most one escalation to a stronger model on a model-related stop, and, when
+ * The loop, then at most one escalation, to a model with a better record on this kind of task, on
+ * a model-related stop, and, when
  * asked for, at most one fresh-context review of a completed change. A review's confirmed
  * finding sends the same model back into the loop with it; nothing a review says is a status.
  */
 export async function runAttempts(input: {
   readonly shared: Shared;
-  readonly escalation: ModelClient | null;
+  readonly escalation: Escalate | null;
   readonly review: boolean;
   readonly maxSteps: number;
   readonly maxTokens: number;
@@ -88,10 +97,20 @@ export async function runAttempts(input: {
       settled = await shared.diff();
       continue;
     }
-    const stronger = input.escalation;
-    if (progress.escalated || stronger === null || !modelRelated.has(loop.stop)) return loop;
+    if (progress.escalated || input.escalation === null || !modelRelated.has(loop.stop))
+      return loop;
+    const kind = progress.record.requirements.find((one) => one.id === "R1")?.kind ?? "other";
+    const choice = input.escalation(kind);
+    const stronger = choice.client;
+    if (stronger === null) {
+      shared.log(`not escalating: ${choice.reason}`);
+      progress.escalationNote = choice.reason;
+      return loop;
+    }
     progress.escalated = true;
-    shared.log(`escalating from ${progress.model.model} to ${stronger.model}: ${loop.stop}`);
+    shared.log(
+      `escalating from ${progress.model.model} to ${stronger.model}: ${loop.stop}; ${choice.reason}`,
+    );
     await input.evidence.record({
       type: "model-error",
       actor: "harness",
@@ -102,6 +121,7 @@ export async function runAttempts(input: {
           to: stronger.model,
           because: loop.stop,
           reason: loop.reason,
+          why: choice.reason,
         },
       },
     });

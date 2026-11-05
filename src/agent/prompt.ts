@@ -95,7 +95,18 @@ const markerCommand = new RegExp(`^(?:echo\\s+)?(["']?)${completionMarker}\\1$`)
 const shells = new Set(["", "bash", "sh", "shell"]);
 const editors = new Set(["edit", "write"]);
 
-export function parseReply(content: string): ParsedReply {
+/**
+ * The marker written as a fence of its own (```SWARM_TASK_COMPLETE, then a closing fence, or
+ * both on one line): read as the marker on a line of its own. qwen3.6 on the 2026-11-04 upgrade
+ * sent it so four times running, and the run ended as unusable replies with the work done.
+ */
+const markerFence = new RegExp(
+  `^[ \\t]*\`{3,}[ \\t]*${completionMarker}[ \\t]*(?:\\n[ \\t]*)?\`{3,}[ \\t]*$`,
+  "gm",
+);
+
+export function parseReply(reply: string): ParsedReply {
+  const content = reply.replace(markerFence, completionMarker);
   const blocks = [...content.matchAll(fenced)].map((match) => ({
     language: match[2] ?? "",
     info: match[3] ?? "",
