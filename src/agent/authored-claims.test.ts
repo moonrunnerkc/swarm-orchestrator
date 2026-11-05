@@ -72,4 +72,18 @@ describe("an authored move claim", () => {
       "core/history_io.py is not a path from the repository's root; the repository has src/skillcheck/core/history_io.py and src/tracemantle/core/history_io.py",
     ]);
   });
+
+  it("is dropped where it says an old source file is gone that the wording keeps as a shim", async () => {
+    const task =
+      "Move core/history_io.py into a new history/ package, leaving re-export shims at the old paths.";
+    const read = await claimsAtBase(
+      await base(),
+      [
+        { path: moved, symbol: "load_ledger" },
+        { path: "src/tracemantle/core/history_io.py", absent: true },
+      ],
+      task,
+    );
+    expect(read.kept.map((one) => one.path)).toEqual([moved]);
+  });
 });

@@ -126,7 +126,7 @@ export async function authorChecks(input: {
           ? {}
           : { failure: "no version constraint could be read from the task's wording" };
     } else if (parsed.kind === "refactor") {
-      const read = await claimsAtBase(input.workspace, parsed.claims ?? []);
+      const read = await claimsAtBase(input.workspace, parsed.claims ?? [], requirement.text);
       reasons.push(...read.reasons);
       if (parsed.claims === null) reasons.push("the reply has no ```claims block");
       if (reasons.length === 0) accepted = { structure: read.kept };

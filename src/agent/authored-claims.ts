@@ -21,6 +21,7 @@ const claimSchema = z.strictObject({
 export async function claimsAtBase(
   workspace: string,
   raw: readonly unknown[],
+  task = "",
 ): Promise<{ readonly kept: StructureClaim[]; readonly reasons: string[] }> {
   const kept: StructureClaim[] = [];
   const reasons: string[] = [];
@@ -43,6 +44,11 @@ export async function claimsAtBase(
     const unmoved = await notInSource(workspace, claim, tracked);
     if (unmoved !== null) {
       reasons.push(unmoved);
+      continue;
+    }
+    const kept_ = keptByWording(claim, task, tracked);
+    if (kept_ !== null) {
+      reasons.push(kept_);
       continue;
     }
     const read = await structureEvidence(workspace, claim);
@@ -124,4 +130,27 @@ function nearest(path: string, candidates: readonly string[]): string | null {
   const [first, second] = ranked;
   if (first === undefined) return null;
   return second !== undefined && shared(second) === shared(first) ? null : first;
+}
+
+const keepsOldPaths =
+  /\b(?:shims?|re-?exports?|keeps? working|still (?:import|work)s?|backward[- ]compatib)/i;
+const testPath =
+  /(?:^|\/)(?:tests?|__tests__|spec)\/|(?:^|\/)test_[^/]*$|[._](?:test|spec)\.[^/]+$/;
+
+/**
+ * Why a claim that a source file is gone cannot hold: the wording keeps the old paths (re-export
+ * shims, old imports that keep working), so a correct change leaves the file there. t6 (2026-11-05,
+ * rc.13): "leaving re-export shims at the old paths", and the author claimed both old modules
+ * absent; the model left the shims, as asked, and the claims failed it. A test file may still move.
+ */
+function keptByWording(
+  claim: z.infer<typeof claimSchema>,
+  task: string,
+  tracked: readonly string[],
+): string | null {
+  if (claim.absent !== true || claim.symbol !== undefined || claim.contains !== undefined)
+    return null;
+  if (!keepsOldPaths.test(task) || testPath.test(claim.path) || !tracked.includes(claim.path))
+    return null;
+  return `${claim.path} cannot be gone: the task keeps its old paths (${keepsOldPaths.exec(task)?.[0]}), so claim what it still provides instead`;
 }
