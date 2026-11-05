@@ -100,6 +100,8 @@ what each part of a result means and where its reach ends.
   specification the current work follows.
 - [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify): the verifier, its
   API, its GitHub Action and its integrations with CI, pre-commit and MCP.
+- [docs/acceptance/2026-11-04-comparison/README.md](docs/acceptance/2026-11-04-comparison/README.md):
+  Swarm and Claude Code on four tasks under criteria sealed before either ran, the latest result.
 - [docs/results.md](docs/results.md): earlier evaluation results, kept as history.
 - [docs/eval.md](docs/eval.md): how those evaluations ran.
 

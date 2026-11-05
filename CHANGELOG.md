@@ -3,6 +3,12 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+- The four-task comparison of Swarm and Claude Code under sealed criteria:
+  [docs/acceptance/2026-11-04-comparison/README.md](docs/acceptance/2026-11-04-comparison/README.md).
+- The test suite no longer collects the acceptance evidence under `docs/`.
+
 ## 16.0.4 - 2026-11-04
 
 A patch release for three defects in the agent loop, found by 16.0.3's dossier run through the
