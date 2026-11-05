@@ -76,6 +76,8 @@ export function createTurnChecks(input: {
   };
 
   return {
+    /** Where the authored tests are laid while they run: files the model reads only the results of. */
+    withheld: input.authored.map((one) => one.path),
     /** The declared test checks at the base, before the first edit: what a regression is measured from. */
     async baseline(): Promise<void> {
       suite = (await declaredChecks(workspace)).filter((check) => check.kind === "test");

@@ -57,7 +57,11 @@ export async function measureTree(
 export function failureLine(detail: string): string {
   const [first = "", ...rest] = detail.split("\n");
   if (!first.endsWith(":")) return first;
-  const named = rest.find((line) => /FAILED|FAIL |Error|assert|expected|✗|×/.test(line))?.trim();
+  // A passing case's line (✓) can carry these words in its title (claimcheck, rc.13: a control).
+  const named = rest
+    .filter((line) => !/^\s*✓/.test(line))
+    .find((line) => /FAILED|FAIL |Error|assert|expected|✗|×/.test(line))
+    ?.trim();
   return named === undefined ? first.slice(0, -1) : `${first} ${named.slice(0, 240)}`;
 }
 

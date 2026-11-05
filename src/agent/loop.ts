@@ -231,6 +231,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         step: steps,
         outputs: options.outputs,
         previous,
+        withheld: options.checks?.withheld ?? [],
       });
       previous = { command: ran.fact.command, comparable: ran.comparable, repeats: ran.repeats };
       if (ran.repeats >= repeatLimit) {

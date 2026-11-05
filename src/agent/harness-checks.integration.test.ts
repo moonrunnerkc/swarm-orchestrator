@@ -34,6 +34,23 @@ describe("the harness runs the checks, not the model", () => {
     expect(ran.report.resources.modelTestCommands).toBe(0);
   });
 
+  // claimcheck (2026-11-05, rc.13): the model read the authored test's path three times and was
+  // told only that no such file exists.
+  it("says what an authored check's path is when the model reads it", async () => {
+    const model = scripted([wrong, bash("cat test/half.swarm-r1.test.mjs"), fix]);
+    const ran = await (await fixture()).run(model, { maxSteps: 20 });
+    expect(ran.report.state).toBe("complete");
+    expect(model.seen[2]?.at(-1)?.content).toContain(
+      "[test/half.swarm-r1.test.mjs is the independent check written apart from your change.",
+    );
+  });
+
+  it("names a failing line, not a passing case whose title carries the words", () => {
+    const detail =
+      "its authored test fails:\n ✓ control: reports assertion-removed\n × reports test-removed";
+    expect(failureLine(detail)).toBe("its authored test fails: × reports test-removed");
+  });
+
   // depose (replayed 2026-11-05): the author wrote nothing usable, and the stop said only "the
   // task still fails", though nothing had measured it.
   it("says R1 had no independent check when a run with none stops for no progress", async () => {
