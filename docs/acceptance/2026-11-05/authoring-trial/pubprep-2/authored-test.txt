@@ -1,0 +1,165 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
+
+vi.mock("../src/claude-code.js", () => ({
+  findClaudeCodeBinary: vi.fn(() => null),
+}));
+
+vi.mock("../src/orchestrate.js", () => ({
+  orchestrate: vi.fn(),
+}));
+
+import { findClaudeCodeBinary } from "../src/claude-code.js";
+import { main, USAGE } from "../src/cli.js";
+import { orchestrate } from "../src/orchestrate.js";
+
+const findBinaryMock = vi.mocked(findClaudeCodeBinary);
+const orchestrateMock = vi.mocked(orchestrate);
+
+function makeCleanRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pubprep-cli-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+  writeFileSync(join(dir, ".gitignore"), ".pubprep/\n.env\n");
+  writeFileSync(join(dir, "README.md"), "# fixture\n");
+  execFileSync("git", ["add", "."], { cwd: dir });
+  execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: dir });
+  return dir;
+}
+
+function successfulOrchestrate() {
+  return Promise.resolve({
+    runDir: "/tmp/run",
+    manifestPath: "/tmp/run/manifest.json",
+    exitReason: "success",
+    manifest: {
+      run_id: "test-run",
+      started_at: "2026-05-22T00:00:00Z",
+      finished_at: "2026-05-22T00:01:00Z",
+      target_repo: "/tmp/run",
+      target_head_sha: "deadbeef",
+      agents: [],
+      convergence_branch: null,
+      exit_reason: "success",
+      publish_gate: null,
+      pull_request: null,
+      warnings: [],
+    },
+  });
+}
+
+describe("pubprep --reviewers", () => {
+  let stdoutSpy: MockInstance<(chunk: string) => boolean>;
+  let stderrSpy: MockInstance<(chunk: string) => boolean>;
+  let repo: string;
+  let fakeHome: string;
+
+  beforeEach(() => {
+    stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true) as MockInstance<(chunk: string) => boolean>;
+    stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true) as MockInstance<(chunk: string) => boolean>;
+    findBinaryMock.mockReset();
+    findBinaryMock.mockReturnValue("/bin/claude");
+    orchestrateMock.mockReset();
+    orchestrateMock.mockImplementation(successfulOrchestrate);
+    repo = makeCleanRepo();
+    fakeHome = mkdtempSync(join(tmpdir(), "pubprep-cli-home-"));
+  });
+
+  afterEach(() => {
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+  });
+
+  function stderrText(): string {
+    return stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+  }
+
+  function stdoutText(): string {
+    return stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+  }
+
+  it("documents --reviewers in the help text", async () => {
+    await main(["--help"]);
+    expect(stdoutText()).toContain("--reviewers");
+  });
+
+  it("passes a subset of reviewers to orchestrate in the correct order", async () => {
+    await main(["--reviewers", "docs,tech-debt"], { cwd: repo, home: fakeHome });
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewers: ["tech-debt-reviewer", "readme-docs-reviewer"],
+      }),
+    );
+  });
+
+  it("handles repeated reviewers and maintains the fixed order", async () => {
+    await main(["--reviewers", "security,tech-debt,security,docs,tech-debt"], { cwd: repo, home: fakeHome });
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewers: ["tech-debt-reviewer", "readme-docs-reviewer", "security-reviewer"],
+      }),
+    );
+  });
+
+  it("passes all three reviewers when the flag is omitted", async () => {
+    await main([], { cwd: repo, home: fakeHome });
+    const call = orchestrateMock.mock.calls[0]?.[0];
+    expect(call?.reviewers).toBeUndefined();
+  });
+
+  it("errors when --reviewers is provided without a value", async () => {
+    const code = await main(["--reviewers"], { cwd: repo, home: fakeHome });
+    expect(code).toBe(1);
+    const err = stderrText();
+    expect(err).toContain("tech-debt");
+    expect(err).toContain("docs");
+    expect(err).toContain("security");
+  });
+
+  it("errors when --reviewers is provided with an empty value", async () => {
+    const code = await main(["--reviewers", ""], { cwd: repo, home: fakeHome });
+    expect(code).toBe(1);
+    const err = stderrText();
+    expect(err).toContain("tech-debt");
+    expect(err).toContain("docs");
+    expect(err).toContain("security");
+  });
+
+  it("errors when an invalid reviewer name is provided", async () => {
+    const code = await main(["--reviewers", "invalid-name"], { cwd: repo, home: fakeHome });
+    expect(code).toBe(1);
+    const err = stderrText();
+    expect(err).toContain("invalid-name");
+    expect(err).toContain("tech-debt");
+    expect(err).toContain("docs");
+    expect(err).toContain("security");
+  });
+
+  it("errors when a mix of valid and invalid reviewer names are provided", async () => {
+    const code = await main(["--reviewers", "docs,unknown"], { cwd: repo, home: fakeHome });
+    expect(code).toBe(1);
+    const err = stderrText();
+    expect(err).toContain("unknown");
+    expect(err).toContain("tech-debt");
+    expect(err).toContain("docs");
+    expect(err).toContain("security");
+  });
+});
