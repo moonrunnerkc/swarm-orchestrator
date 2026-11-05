@@ -40,3 +40,24 @@ export function excludingCases(command: string, titles: readonly string[]): stri
   if (runner === "node") return `${command} --test-name-pattern=${quote(pattern)}`;
   return null;
 }
+
+/** The command narrowed to the one named case, or null where the runner has no filter this knows. */
+export function onlyCase(command: string, title: string): string | null {
+  const runner = runnerOf(command);
+  const pattern = `${literal(title)}$`;
+  if (runner === "vitest" || runner === "jest") return `${command} -t ${quote(pattern)}`;
+  if (runner === "pytest") return `${command} -k ${quote(title)}`;
+  if (runner === "node") return `${command} --test-name-pattern=${quote(pattern)}`;
+  return null;
+}
+
+/** The titles of the control cases a check's source declares: `control: ...`, `test_control_...`. */
+export function controlTitles(content: string): string[] {
+  const named = [...content.matchAll(/\b(?:it|test)\(\s*(["'`])(control\b[^"'`]*)\1/g)].map(
+    (match) => match[2] ?? "",
+  );
+  const python = [...content.matchAll(/^\s*(?:async\s+)?def\s+(test_control_\w+)/gm)].map(
+    (match) => match[1] ?? "",
+  );
+  return [...named, ...python].filter((title) => title.length > 0);
+}

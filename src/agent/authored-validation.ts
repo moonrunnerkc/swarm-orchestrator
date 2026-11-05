@@ -2,7 +2,7 @@ import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import type { AuthorKind } from "./author-prompt.ts";
-import { excludingCases, failingCases } from "./authored-cases.ts";
+import { controlTitles, excludingCases, failingCases, onlyCase } from "./authored-cases.ts";
 import type { AuthoredTest } from "./check-author.ts";
 
 const excerpt = (text: string) => text.slice(-1500);
@@ -84,16 +84,17 @@ const errorLine = /\b([A-Z]\w*(?:Error|Exception))(?: \[\w+\])?: ([^\n]*)/g;
  * of undefined (reading 'constructor')" on the reference patch and every other.
  */
 export function foreignError(output: string, task: string): string | null {
-  const words = new Set((task.match(/[A-Za-z_][\w-]{3,}/g) ?? []).map((one) => one.toLowerCase()));
   for (const match of output.matchAll(errorLine)) {
     const [line, type = "", message = ""] = match;
     if (/^Assertion/.test(type)) continue;
-    const named = (message.match(/[A-Za-z_][\w-]{3,}/g) ?? []).some((one) =>
-      words.has(one.toLowerCase()),
-    );
-    if (!named) return line.trim().slice(0, 300);
+    if (namesNothing(message, task)) return line.trim().slice(0, 300);
   }
   return null;
+}
+
+function namesNothing(message: string, task: string): boolean {
+  const words = new Set((task.match(/[A-Za-z_][\w-]{3,}/g) ?? []).map((one) => one.toLowerCase()));
+  return !(message.match(/[A-Za-z_][\w-]{3,}/g) ?? []).some((one) => words.has(one.toLowerCase()));
 }
 
 const stringMatcherToThrow =
@@ -109,6 +110,44 @@ export function misusedMatcher(content: string): string | null {
   const found = stringMatcherToThrow.exec(content);
   if (found === null) return null;
   return `it passes expect.${found[1]} to toThrow, which compares it with the error object and not its message, so it fails on every tree; give toThrow a regular expression or a string`;
+}
+
+/**
+ * A case the author names as a control: existing behavior driven through the same setup as the
+ * task's cases, which must pass at the base. One that fails there shows the setup never reaches
+ * the code, which no base failure of the task's own cases can show: pubprep (2026-11-05, rc.10 and
+ * rc.12) drove main() from a dirty tree and from /tmp, and main() refused before the work, while
+ * at the base the same cases failed on the task's own "Unknown flag: --reviewers".
+ */
+const controlCase = /^control\b|^test_control_/i;
+
+const printedError = /^(?:error|fatal|ERROR|FATAL)\b:? (.+)$/gm;
+
+/**
+ * Why a control case, run alone at the base, shows the code refused before the work: it printed
+ * an error, where a control drives behavior that succeeds now. A control passes by its own assertions, which
+ * can hold with the work never reached. pubprep (2026-11-05 trial 10): main() ran in an empty
+ * directory, printed that it is not a git repository and returned, and the control's assertion
+ * on an orchestrate call that never came held anyway.
+ */
+async function controlsRefused(
+  chokepoint: Chokepoint,
+  workspace: string,
+  test: Omit<AuthoredTest, "atBase">,
+): Promise<string | null> {
+  for (const title of controlTitles(test.content)) {
+    const alone = onlyCase(test.command, title);
+    if (alone === null) return null;
+    await writeFile(join(workspace, test.path), test.content);
+    const ran = await chokepoint
+      .check(alone, `authored control "${title}", alone at the base`)
+      .finally(() => removeLaid(workspace, test.path));
+    const printed = printedError.exec(plainOutput(ran.output));
+    printedError.lastIndex = 0;
+    if (printed !== null)
+      return `its control case "${title}" makes the code print "${printed[0].trim().slice(0, 200)}" at the base: a control drives behavior that succeeds now, so the setup does not reach the code; set it up as the repository's own tests do`;
+  }
+  return null;
 }
 
 /** Runs an authored test file at the base: laid in, run by the harness, taken out again. */
@@ -152,6 +191,16 @@ export async function runAtBase(
       ],
       output,
     };
+  const control = failingCases(plain).find((one) => controlCase.test(one.title));
+  if (control !== undefined)
+    return {
+      reasons: [
+        `its control case "${control.title}" fails at the base with ${control.error.slice(0, 300)}: existing behavior through the same setup must pass now, so the setup does not reach the code; set it up as the repository's own tests do`,
+      ],
+      output,
+    };
+  const refused = await controlsRefused(chokepoint, workspace, test);
+  if (refused !== null) return { reasons: [refused], output };
   // Cases that fail on every tree are left out where other cases fail at the base as they should;
   // the check runs as narrowed, and is run again at the base so.
   // An upgrade's behavior check is judged as a feature's: what the new versions make the code do.
