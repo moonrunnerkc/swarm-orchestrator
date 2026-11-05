@@ -158,3 +158,18 @@ describe("what the check-authoring stage holds on R1", () => {
     expect(next.requirements[0]?.kind).toBe("refactor");
   });
 });
+
+describe("an upgrade whose author found a code change to check", () => {
+  // claimcheck's upgrade (2026-11-05, rc.10): the versions alone read satisfied.
+  const task = "vitest to ^5, and move the Stryker version claimcheck installs to 10.x";
+  it("holds R1 to a test of that change, whatever a proposal says", () => {
+    const held = withAuthored(initialRecord(task), "upgrade", [], true);
+    expect(held.requirements[0]?.behaviorAsked).toBe(true);
+    const next = applyProposal(
+      task,
+      held,
+      JSON.stringify([{ id: "R1", text: task, kind: "upgrade", behaviorAsked: false }]),
+    );
+    expect(next.requirements[0]?.behaviorAsked).toBe(true);
+  });
+});

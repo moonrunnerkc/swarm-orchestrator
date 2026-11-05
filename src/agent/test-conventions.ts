@@ -1,6 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { gitText } from "./git.ts";
+import { type NamedFile, namedFiles } from "./named-files.ts";
 
 export type Runner = "vitest" | "jest" | "mocha" | "node" | "pytest";
 
@@ -13,6 +14,8 @@ export interface TestConventions {
   readonly example: { readonly path: string; readonly content: string };
   /** Where the code names the task uses are defined at the base: a path and the defining line. */
   readonly definitions: readonly Definition[];
+  /** The source files the task names by path, with their imports and declarations. */
+  readonly named: readonly NamedFile[];
   /** Where an authored check for a requirement is laid while it runs, beside the example. */
   pathFor(requirement: string): string;
   /** The command that runs one test file from the repository root. */
@@ -229,6 +232,7 @@ export async function testConventions(
     roots,
     example,
     definitions,
+    named: await namedFiles(workspace, sources, task),
     pathFor: (requirement) => sibling(example.path, requirement, runner),
     commandFor: commandOf(runner, python, coverage),
   };

@@ -81,6 +81,13 @@ export function authorRequest(
         )),
     "A module or name the task asks for that is not listed does not exist yet.",
     "",
+    ...conventions.named.flatMap((file) => [
+      `${file.path}, as the base has it (imports and declarations, no bodies):`,
+      "```",
+      ...file.outline,
+      "```",
+    ]),
+    ...(conventions.named.length === 0 ? [] : [""]),
     `Example test from this repository (${conventions.example.path}):`,
     "```",
     conventions.example.content,

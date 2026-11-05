@@ -138,8 +138,28 @@ describe("the check author", () => {
       conventions: await testConventions(repo, task),
       turnTokens: 1000,
     });
-    expect(authored).toMatchObject({ kind: "upgrade", failure: null });
+    expect(authored).toMatchObject({ kind: "upgrade", failure: null, behaviorAsked: true });
     expect(authored.test?.path).toBe("test/half.swarm-r1.test.mjs");
+  });
+
+  it("says an upgrade asks for a code change where every test it wrote was refused", async () => {
+    const { repo, evidence, chokepoint } = await base();
+    const upgrade = requirementSchema.parse({
+      ...requirement,
+      kind: "upgrade",
+      versions: [{ name: "vitest", ecosystem: "npm", range: "^5", wording: "vitest to ^5" }],
+    });
+    const authored = await authorChecks({
+      model: scripted([], { author: [authorTest("upgrade", passing)] }),
+      chokepoint,
+      evidence,
+      workspace: repo,
+      requirement: upgrade,
+      conventions: await testConventions(repo, task),
+      turnTokens: 1000,
+    });
+    expect(authored.test).toBeNull();
+    expect(authored.behaviorAsked).toBe(true);
   });
 
   it("keeps only the refactor claims that fail at the base", async () => {

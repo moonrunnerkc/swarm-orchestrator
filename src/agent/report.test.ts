@@ -124,6 +124,7 @@ describe("each requirement as asked, as read, and as judged", () => {
       },
     ],
     testsAsked: false,
+    behaviorAsked: false,
     witness: "independent",
     status: "failed",
     evidence: [],

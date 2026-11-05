@@ -16,7 +16,11 @@ export interface RequirementRecord {
    * What the check-authoring stage fixed on R1 before the first edit: its kind and the structure
    * claims written apart from the change. A proposal cannot change or drop either.
    */
-  readonly held?: { readonly kind: Requirement["kind"]; readonly structure: readonly Claim[] };
+  readonly held?: {
+    readonly kind: Requirement["kind"];
+    readonly structure: readonly Claim[];
+    readonly behaviorAsked: boolean;
+  };
 }
 
 type Claim = Requirement["evidence"]["structure"][number];
@@ -30,6 +34,7 @@ function holding(requirement: Requirement, held: RequirementRecord["held"]): Req
   return {
     ...requirement,
     kind: held.kind,
+    behaviorAsked: held.behaviorAsked,
     evidence: { ...requirement.evidence, structure: [...held.structure, ...own] },
   };
 }
@@ -39,8 +44,9 @@ export function withAuthored(
   record: RequirementRecord,
   kind: Requirement["kind"],
   structure: readonly Claim[],
+  behaviorAsked = false,
 ): RequirementRecord {
-  const held = { kind, structure };
+  const held = { kind, structure, behaviorAsked };
   return {
     ...record,
     held,
@@ -147,6 +153,7 @@ export function applyProposal(
       required: isTask,
       // Read from the wording by code, like the versions: no proposal sets it.
       testsAsked: isTask ? (r1?.testsAsked ?? false) : false,
+      behaviorAsked: isTask ? (r1?.behaviorAsked ?? false) : false,
       versions,
       text: isTask ? task : entry.text,
       source: isTask

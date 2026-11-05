@@ -37,6 +37,11 @@ export interface Authored {
   readonly kind: AuthorKind | null;
   readonly test: AuthoredTest | null;
   readonly structure: readonly StructureClaim[];
+  /**
+   * An upgrade whose author found a code change to check beside the versions: it wrote a test
+   * block in some attempt, accepted or not. The verifier then holds R1 to a test of the change.
+   */
+  readonly behaviorAsked: boolean;
   /** Why no independent check exists for the requirement; null where one does. */
   readonly failure: string | null;
   /** Each attempt's reasons for rejection, in order; an accepted attempt has none. */
@@ -70,11 +75,13 @@ export async function authorChecks(input: {
   const attempts: string[][] = [];
   let tokens = { inputTokens: 0, outputTokens: 0 };
   let kind: AuthorKind | null = null;
+  let behaviorAsked = false;
   const done = (rest: Partial<Authored>): Authored => ({
     requirement: requirement.id,
     kind,
     test: null,
     structure: [],
+    behaviorAsked,
     failure: null,
     attempts,
     ...tokens,
@@ -111,6 +118,7 @@ export async function authorChecks(input: {
     kind = parsed.kind ?? kind;
     const reasons: string[] = parsed.problem === null ? [] : [parsed.problem];
     let accepted: Partial<Authored> | null = null;
+    if (parsed.kind === "upgrade" && parsed.test !== null) behaviorAsked = true;
     if (parsed.kind === "upgrade" && parsed.test === null) {
       accepted =
         requirement.versions.length > 0

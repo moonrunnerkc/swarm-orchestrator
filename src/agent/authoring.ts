@@ -46,7 +46,7 @@ export async function authoringStage(input: {
   const record =
     first === undefined || first.kind === null
       ? input.record
-      : withAuthored(input.record, first.kind, first.structure);
+      : withAuthored(input.record, first.kind, first.structure, first.behaviorAsked);
   const checks = createTurnChecks({
     chokepoint: input.chokepoint,
     workspace: input.workspace,

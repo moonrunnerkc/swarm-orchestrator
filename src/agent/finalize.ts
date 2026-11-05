@@ -49,6 +49,7 @@ function unmeasured(record: RequirementRecord, why: string): RequirementOutcome[
     expected: one.evidence,
     versions: one.versions,
     testsAsked: one.testsAsked,
+    behaviorAsked: one.behaviorAsked,
     status: "unverified",
     witness: "none",
     evidence: [],
