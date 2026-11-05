@@ -1,0 +1,20 @@
+$ cat src/skillcheck/template_detection.py
+$ python3 tests/repro_template_bug.py
+$ cat <<EOF > tests/repro_template_bug.py
+$ python3 tests/repro_template_bug.py
+$ export PYTHONPATH=$PYTHONPATH:.
+$ PYTHONPATH=. python3 tests/repro_template_bug.py
+$ PYTHONPATH=src python3 tests/repro_template_bug.py
+$ PYTHONPATH=. python3 tests/repro_template_bug.py
+$ PYTHONPATH=src python3 -c "from skillcheck.template_detection import is_template; print('Import successful')"
+$ # I need to rewrite the repro script because it uses 'from src.skillcheck...' 
+$ PYTHONPATH=src python3 tests/repro_template_bug.py
+$ cat src/skillcheck/template_detection.py
+requirements R1
+edit src/skillcheck/template_detection.py
+$ PYTHONPATH=src python3 tests/repro_template_bug.py
+verifying the working tree
+requirements R1
+$ mv tests/repro_template_bug.py tests/test_template_detection_bug.py
+requirements R1
+verifying the working tree

@@ -1,0 +1,56 @@
+diff --git a/src/skillcheck/template_detection.py b/src/skillcheck/template_detection.py
+index 6508f3e..0901532 100644
+--- a/src/skillcheck/template_detection.py
++++ b/src/skillcheck/template_detection.py
+@@ -11,7 +11,7 @@ _PLACEHOLDER_PATTERNS = [
+     re.compile(r"\b(TODO|FIXME)\b"),
+     re.compile(r"\byour (skill|description|name|tool)\b", re.IGNORECASE),
+     re.compile(r"<[a-z][a-z0-9_-]*>"),
+-    re.compile(r"\[(description|name|skill name|placeholder|TODO|...)\]", re.IGNORECASE),
++    re.compile(r"\[(description|name|skill name|placeholder|TODO|\.\.\.)\]", re.IGNORECASE),
+     re.compile(r"\{[a-z][a-z0-9_]*\}"),
+     re.compile(r"\b(lorem ipsum|placeholder|sample description)\b", re.IGNORECASE),
+ ]
+diff --git a/tests/test_template_detection_bug.py b/tests/test_template_detection_bug.py
+new file mode 100644
+index 0000000..064484c
+--- /dev/null
++++ b/tests/test_template_detection_bug.py
+@@ -0,0 +1,37 @@
++import unittest
++from collections import namedtuple
++from pathlib import Path
++
++try:
++    from skillcheck.template_detection import is_template
++except ImportError:
++    # Fallback for different PYTHONPATH setups
++    from src.skillcheck.template_detection import is_template
++
++class MockPath:
++    def __init__(self, name):
++        self.name = name
++        self.parent = self
++
++class MockSkill:
++    def __init__(self, description, path_name="skill"):
++        # is_template uses skill.frontmatter.get('description')
++        # and skill.path.parent.name
++        self.frontmatter = {"description": description}
++        self.path = MockPath(path_name)
++
++class TestTemplateDetectionBug(unittest.TestCase):
++    def test_bracketed_acronyms_are_not_templates(self):
++        # These should NOT be templates
++        self.assertFalse(is_template(MockSkill("This is a skill [ISO]")), "Should not be template: [ISO]")
++        self.assertFalse(is_template(MockSkill("This is a skill [API]")), "Should not be template: [API]")
++        self.assertFalse(is_template(MockSkill("This is a skill [CLI]")), "Should not be template: [CLI]")
++
++    def test_placeholders_are_templates(self):
++        # These SHOULD be templates
++        self.assertTrue(is_template(MockSkill("This is a skill [...]")), "Should be template: [...]")
++        self.assertTrue(is_template(MockSkill("Fill in the [...] here")), "Should be template: [...]")
++        self.assertTrue(is_template(MockSkill("This is a [placeholder]")), "Should be template: [placeholder]")
++
++if __name__ == "__main__":
++    unittest.main()

@@ -1,0 +1,251 @@
+diff --git a/src/skillcheck/cli.py b/src/skillcheck/cli.py
+index f074dc4..ee33c15 100644
+--- a/src/skillcheck/cli.py
++++ b/src/skillcheck/cli.py
+@@ -301,6 +301,8 @@ def _apply_config(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
+     config_path = args.config or find_config(args.path[0])
+     try:
+         loaded_config = load_config(config_path)
++        if config_path:
++            print(f"Loaded config from {config_path}", file=sys.stderr)
+     except ConfigError as exc:
+         parser.error(str(exc))
+ 
+diff --git a/src/skillcheck/config_loader.py b/src/skillcheck/config_loader.py
+index 173029f..9059f95 100644
+--- a/src/skillcheck/config_loader.py
++++ b/src/skillcheck/config_loader.py
+@@ -89,13 +89,31 @@ def find_config(start: Path) -> Path | None:
+         Path to skillcheck.toml, or None when not found.
+     """
+     current = start if start.is_dir() else start.parent
++    home = Path.home()
+     for directory in (current, *current.parents):
++        if (directory / ".git").exists() or directory == home:
++            candidate = directory / "skillcheck.toml"
++            return candidate if candidate.exists() else None
+         candidate = directory / "skillcheck.toml"
+         if candidate.exists():
+             return candidate
+     return None
+ 
+ 
++def _strip_inline_comment(line: str) -> str:
++    """Remove inline # comments from a line, respecting quoted strings."""
++    in_quote = None
++    for i, char in enumerate(line):
++        if char in ('"', "'"):
++            if in_quote is None:
++                in_quote = char
++            elif in_quote == char:
++                in_quote = None
++        elif char == "#" and in_quote is None:
++            return line[:i]
++    return line
++
++
+ def _parse_without_tomllib(raw: str) -> dict[str, Any]:
+     """Parse a minimal TOML subset for Python 3.10 fallback.
+ 
+@@ -106,7 +124,7 @@ def _parse_without_tomllib(raw: str) -> dict[str, Any]:
+     parsed: dict[str, Any] = {}
+     current = parsed
+     for line_no, raw_line in enumerate(raw.splitlines(), start=1):
+-        line = raw_line.split("#", 1)[0].strip()
++        line = _strip_inline_comment(raw_line).strip()
+         if not line:
+             continue
+         if line.startswith("["):
+@@ -199,15 +217,15 @@ def load_config(path: Path | None) -> SkillcheckConfig:
+             raise ConfigError(f"Unknown config key '{raw_key}' in {path}; remove it or use a supported skillcheck option.")
+         if field in _INT_FIELDS:
+             if not isinstance(value, int) or isinstance(value, bool):
+-                raise ConfigError(f"Config key '{raw_key}' must be an integer.")
++                raise ConfigError(f"Config key '{raw_key}' must be an integer (got {repr(value)})")
+             values[field] = value
+         elif field in _BOOL_FIELDS:
+             if not isinstance(value, bool):
+-                raise ConfigError(f"Config key '{raw_key}' must be true or false.")
++                raise ConfigError(f"Config key '{raw_key}' must be true or false (got {repr(value)})")
+             values[field] = value
+         elif field in _STR_FIELDS:
+             if not isinstance(value, str):
+-                raise ConfigError(f"Config key '{raw_key}' must be a string.")
++                raise ConfigError(f"Config key '{raw_key}' must be a string (got {repr(value)})")
+             values[field] = value
+         elif field == "ignore":
+             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+diff --git a/tests/skillcheck/cli/test_config_logging.py b/tests/skillcheck/cli/test_config_logging.py
+new file mode 100644
+index 0000000..75f043f
+--- /dev/null
++++ b/tests/skillcheck/cli/test_config_logging.py
+@@ -0,0 +1,52 @@
++import sys
++import pytest
++from pathlib import Path
++from skillcheck.cli import main
++from unittest.mock import patch
++
++def test_cli_prints_config_path_to_stderr(tmp_path, monkeypatch):
++    # Create a dummy config file
++    config_file = tmp_path / "skillcheck.toml"
++    config_file.write_text('format = "text"')
++    
++    # Mock sys.argv to simulate running the CLI with a path that will find the config
++    # We use a simple command that doesn't do much, like --version or just a path
++    monkeypatch.setattr(sys, "argv", ["skillcheck", str(tmp_path)])
++    
++    # Capture stderr
++    with patch("sys.stderr") as mock_stderr:
++        # We might need to mock other things to prevent the CLI from actually 
++        # running a full validation which might fail due to missing files
++        # but _apply_config is called early.
++        # To avoid full execution, we can mock run_validation.
++        with patch("skillcheck.cli.run_validation"):
++            try:
++                main()
++            except SystemExit:
++                pass
++            
++            # Check if the expected message was printed to stderr
++            # Since we used a mock, we check the calls to write/print
++            # But print(..., file=sys.stderr) calls sys.stderr.write
++            
++            # Let's check if any call to write contains the expected string
++            found = False
++            for call in mock_stderr.write.call_args_list:
++                if f"Loaded config from {config_file}" in call[0][0]:
++                    found = True
++                    break
++            assert found, f"Expected 'Loaded config from {config_file}' in stderr"
++
++def test_cli_no_config_no_print(tmp_path, monkeypatch):
++    # No config file created
++    monkeypatch.setattr(sys, "argv", ["skillcheck", str(tmp_path)])
++    
++    with patch("sys.stderr") as mock_stderr:
++        with patch("skillcheck.cli.run_validation"):
++            try:
++                main()
++            except SystemExit:
++                pass
++            
++            for call in mock_stderr.write.call_args_list:
++                assert "Loaded config from" not in call[0][0]
+diff --git a/tests/skillcheck/test_config_loader.py b/tests/skillcheck/test_config_loader.py
+new file mode 100644
+index 0000000..4ac49ac
+--- /dev/null
++++ b/tests/skillcheck/test_config_loader.py
+@@ -0,0 +1,110 @@
++import os
++import pathlib
++import pytest
++from skillcheck.config_loader import find_config, load_config, ConfigError, SkillcheckConfig
++
++def test_find_config_stops_at_git(tmp_path):
++    # Setup: /root/.git/skillcheck.toml (should be found)
++    # /root/dir1/.git/skillcheck.toml (should be found if starting in dir1)
++    # /root/dir1/dir2/skillcheck.toml (should be found)
++    # /root/dir1/dir2/ (starting here, should stop at /root/dir1/.git)
++    
++    root = tmp_path / "root"
++    root.mkdir()
++    (root / ".git").mkdir()
++    (root / "skillcheck.toml").write_text("format = 'text'")
++    
++    dir1 = root / "dir1"
++    dir1.mkdir()
++    (dir1 / ".git").mkdir()
++    (dir1 / "skillcheck.toml").write_text("format = 'dir1'")
++    
++    dir2 = dir1 / "dir2"
++    dir2.mkdir()
++    (dir2 / "skillcheck.toml").write_text("format = 'dir2'")
++    
++    # Start in dir2, should find dir2/skillcheck.toml
++    assert find_config(dir2) == dir2 / "skillcheck.toml"
++    
++    # Start in dir2, but remove dir2/skillcheck.toml, should find dir1/skillcheck.toml
++    (dir2 / "skillcheck.toml").unlink()
++    assert find_config(dir2) == dir1 / "skillcheck.toml"
++    
++    # Start in dir2, remove dir1/skillcheck.toml, should stop at dir1/.git and NOT find root/skillcheck.toml
++    (dir1 / "skillcheck.toml").unlink()
++    assert find_config(dir2) is None
++
++def test_find_config_stops_at_home(tmp_path, monkeypatch):
++    # Mock Path.home()
++    home = tmp_path / "home"
++    home.mkdir()
++    (home / "skillcheck.toml").write_text("format = 'home'")
++    
++    # Create a directory above home
++    above_home = home.parent
++    (above_home / "skillcheck.toml").write_text("format = 'above'")
++    
++    monkeypatch.setattr(pathlib.Path, "home", lambda: home)
++    
++    # Start in a subdir of home
++    subdir = home / "subdir"
++    subdir.mkdir()
++    
++    # Should find home/skillcheck.toml
++    assert find_config(subdir) == home / "skillcheck.toml"
++    
++    # Remove home/skillcheck.toml, should NOT find above_home/skillcheck.toml
++    (home / "skillcheck.toml").unlink()
++    assert find_config(subdir) is None
++
++def test_load_config_type_errors(tmp_path):
++    def create_config(content):
++        p = tmp_path / "skillcheck.toml"
++        p.write_text(content)
++        return p
++
++    # Integer error
++    p = create_config("max-lines = 'nope'")
++    with pytest.raises(ConfigError) as exc:
++        load_config(p)
++    assert "Config key 'max-lines' must be an integer (got 'nope')" in str(exc.value)
++
++    # Boolean error
++    p = create_config("strict-vscode = 'yes'")
++    with pytest.raises(ConfigError) as exc:
++        load_config(p)
++    assert "Config key 'strict-vscode' must be true or false (got 'yes')" in str(exc.value)
++
++    # String error
++    p = create_config("format = 5")
++    with pytest.raises(ConfigError) as exc:
++        load_config(p)
++    assert "Config key 'format' must be a string (got 5)" in str(exc.value)
++
++def test_fallback_parser_comments(tmp_path, monkeypatch):
++    # Force fallback parser by mocking tomllib
++    monkeypatch.setattr("skillcheck.config_loader.tomllib", None)
++    
++    p = tmp_path / "skillcheck.toml"
++    # Test inline comments, including # inside quotes
++    p.write_text(
++        'format = "text" # This is a comment\n'
++        'max-lines = 100 # Another comment\n'
++        'target-agent = "agent #1" # Comment after quoted #\n'
++        'ignore = ["file1.py", "file2.py"] # Array comment\n'
++    )
++    
++    config = load_config(p)
++    assert config.format == "text"
++    assert config.max_lines == 100
++    assert config.target_agent == "agent #1"
++    assert config.ignore == ("file1.py", "file2.py")
++
++def test_fallback_parser_invalid_comment(tmp_path, monkeypatch):
++    monkeypatch.setattr("skillcheck.config_loader.tomllib", None)
++    
++    p = tmp_path / "skillcheck.toml"
++    # Test that it doesn't just split by # blindly
++    p.write_text('target-agent = "agent #1"')
++    config = load_config(p)
++    assert config.target_agent == "agent #1"

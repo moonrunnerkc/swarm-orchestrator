@@ -1,0 +1,254 @@
+From 1184c78665c138a3668a99bf44f42a997a9f816a Mon Sep 17 00:00:00 2001
+From: moonrunnerkc <bradkinnard@proton.me>
+Date: Wed, 4 Nov 2026 20:08:26 -0700
+Subject: [PATCH 1/2] test: vendor tiktoken's cl100k_base so the suite runs
+ offline
+
+test_explicit_tokenizer_provenance_and_special_markers fetched the
+cl100k_base vocabulary from openaipublic.blob.core.windows.net on a cold
+cache, so it failed wherever tests run with the network closed
+(NameResolutionError in a --network none container).
+
+tests/conftest.py now points TIKTOKEN_CACHE_DIR at tests/fixtures/tiktoken,
+which holds the upstream file under the SHA-1 of its URL, the name
+tiktoken's cache looks up. tiktoken accepts it only if its SHA-256 equals
+the hash it pins (223921b7...). tiktoken's MIT license and SOURCE.txt sit
+beside it. Nothing under src/ changes; the cold-offline tokenizer test
+still sets its own empty cache.
+
+tests/test_tokenizer_offline.py refuses every fetch, points the default
+cache at an empty directory so a warm machine cache cannot satisfy it, and
+loads cl100k_base. It fails without the vendored copy (the refused fetch)
+and passes with it. Implementation ledger count 1590 -> 1591.
+
+Evidence, ghcr.io/astral-sh/uv:python3.12-bookworm, dependencies prepared
+online, suite run as a non-root user with the network closed: main fails
+this test and the two pre-commit tests (3 failed, 1581 passed); main with
+only the new test fails it as well; with this commit only the two
+pre-commit tests fail (1583 passed).
+
+
+Cherry-picked from f14a5db onto c37c9d6 for the fix-pick reruns: conftest.py gains
+import os, the count is README.md's (786 -> 787; the base has no implementation ledger),
+and CHANGELOG.md's entry goes under a Fixed heading.
+---
+ CHANGELOG.md                       |  4 +++
+ README.md                          |  2 +-
+ tests/conftest.py                  |  5 ++++
+ tests/fixtures/tiktoken/LICENSE    | 21 ++++++++++++++
+ tests/fixtures/tiktoken/SOURCE.txt | 16 +++++++++++
+ tests/test_tokenizer_offline.py    | 45 ++++++++++++++++++++++++++++++
+ 6 files changed, 92 insertions(+), 1 deletion(-)
+ create mode 100644 tests/fixtures/tiktoken/LICENSE
+ create mode 100644 tests/fixtures/tiktoken/SOURCE.txt
+ create mode 100644 tests/test_tokenizer_offline.py
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 8946fb4..2dbcbfe 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ## [Unreleased]
+ 
++### Fixed
++
++- The tiktoken tests no longer fetch the cl100k_base vocabulary. The suite reads a vendored copy from `tests/fixtures/tiktoken` (tiktoken's cache layout, upstream SHA-256 checked by tiktoken, MIT notice beside it), so they pass with the network closed.
++
+ ### Added
+ 
+ - `[tool.ruff]` and `[tool.mypy]` configuration in `pyproject.toml`. Ruff lints `src` and `tests` with an explicit `E, F, I, UP, B` selection at line length 127 (`E501` ignored for unavoidable long string literals in JSON fixtures and schema text). Mypy runs `strict` against `src/skillcheck` under `python_version = "3.10"`, with an `ignore_missing_imports` override for the untyped `tiktoken` dependency and the `tomllib` 3.11+ stdlib backport branch. The source was brought clean under both with real annotations, not blanket ignores.
+diff --git a/README.md b/README.md
+index f3a5164..496fb8a 100644
+--- a/README.md
++++ b/README.md
+@@ -14,7 +14,7 @@
+ 
+ Static analyzer for `SKILL.md` files. Validates frontmatter, body sizing, file references, and cross-agent compatibility against the [agentskills.io specification](https://agentskills.io/specification). No network calls. No LLM API calls. No file mutations.
+ 
+-786 tests cover all rule modules.
++787 tests cover all rule modules.
+ 
+ ## Install
+ 
+diff --git a/tests/conftest.py b/tests/conftest.py
+index add9d81..b2bedcd 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -1,4 +1,5 @@
+ import importlib.util
++import os
+ import sys
+ from pathlib import Path
+ 
+@@ -6,6 +7,10 @@ import pytest
+ 
+ FIXTURES_DIR = Path(__file__).parent / "fixtures"
+ 
++# tiktoken reads cl100k_base from this cache before it would fetch it, so the
++# tokenizer tests run offline. See tests/fixtures/tiktoken/SOURCE.txt.
++os.environ["TIKTOKEN_CACHE_DIR"] = str(FIXTURES_DIR / "tiktoken")
++
+ # Invoke the CLI through the same interpreter that runs the tests, rather than a
+ # bare ``skillcheck`` entry on PATH. PATH may resolve to a stale console script
+ # built for a different Python (e.g. a system 3.9 install that cannot import the
+diff --git a/tests/fixtures/tiktoken/LICENSE b/tests/fixtures/tiktoken/LICENSE
+new file mode 100644
+index 0000000..83ed103
+--- /dev/null
++++ b/tests/fixtures/tiktoken/LICENSE
+@@ -0,0 +1,21 @@
++MIT License
++
++Copyright (c) 2022 OpenAI, Shantanu Jain
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
+diff --git a/tests/fixtures/tiktoken/SOURCE.txt b/tests/fixtures/tiktoken/SOURCE.txt
+new file mode 100644
+index 0000000..431fd5f
+--- /dev/null
++++ b/tests/fixtures/tiktoken/SOURCE.txt
+@@ -0,0 +1,16 @@
++tiktoken's cl100k_base vocabulary, vendored so the tokenizer tests run with the network closed.
++
++File:     9b5ad71b2ce5302211f9c61530b329a4922fc6a4
++Upstream: https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
++SHA-256:  223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7
++
++tiktoken caches a downloaded vocabulary in TIKTOKEN_CACHE_DIR under the SHA-1 of its URL,
++which is the file name above, and accepts a cached copy only when its SHA-256 equals the hash
++tiktoken_ext/openai_public.py pins for that URL (the value above, as of tiktoken 0.14.0).
++tests/conftest.py sets TIKTOKEN_CACHE_DIR to this directory for the suite only; nothing under
++src/ reads it.
++
++If a tiktoken release pins a different hash for this URL, tiktoken deletes this file and fetches
++the vocabulary again, and the offline test fails. Replace the file with the new upstream bytes.
++
++LICENSE beside this file is tiktoken's license (MIT), copied from the tiktoken 0.14.0 wheel.
+diff --git a/tests/test_tokenizer_offline.py b/tests/test_tokenizer_offline.py
+new file mode 100644
+index 0000000..bb60897
+--- /dev/null
++++ b/tests/test_tokenizer_offline.py
+@@ -0,0 +1,45 @@
++"""The suite's tiktoken vocabulary loads with the network closed.
++
++CI's tokenizer job and offline containers would otherwise fetch cl100k_base
++from openaipublic.blob.core.windows.net, and every tiktoken test would fail
++for the network rather than for the code. conftest.py points
++TIKTOKEN_CACHE_DIR at tests/fixtures/tiktoken, which holds the vocabulary
++under the cache key tiktoken derives from its URL.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++from pathlib import Path
++
++import pytest
++
++_HAS_TIKTOKEN = importlib.util.find_spec("tiktoken") is not None
++
++
++@pytest.mark.skipif(not _HAS_TIKTOKEN, reason="tiktoken extra is not installed")
++def test_cl100k_base_loads_with_the_network_closed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
++    import tempfile
++
++    import tiktoken
++    import tiktoken.load
++    import tiktoken.registry
++
++    def closed(blobpath: str) -> bytes:
++        if "://" in blobpath:
++            raise OSError(f"network closed in this test; refused {blobpath}")
++        with open(blobpath, "rb") as handle:
++            return handle.read()
++
++    # A warm cache in the machine's temp directory must not satisfy the load:
++    # only the cache the suite configures may.
++    empty = tmp_path / "temp"
++    empty.mkdir()
++    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(empty))
++    monkeypatch.delenv("DATA_GYM_CACHE_DIR", raising=False)
++    monkeypatch.setattr(tiktoken.load, "read_file", closed)
++    monkeypatch.setattr(tiktoken.registry, "ENCODINGS", {})
++
++    encoding = tiktoken.get_encoding("cl100k_base")
++
++    assert encoding.encode("hello world") == [15339, 1917]
+-- 
+2.54.0 (Apple Git-157)
+
+
+From bb755d22efbfeb771ed7de46ae09e6390b360d7d Mon Sep 17 00:00:00 2001
+From: moonrunnerkc <bradkinnard@proton.me>
+Date: Wed, 4 Nov 2026 20:08:26 -0700
+Subject: [PATCH 2/2] test: run the pre-commit hook tests without a PyPI fetch
+
+The tests declared a local hook with language: python. pre-commit builds
+a venv for such a hook and pip-installs a placeholder package into it,
+and pip's build isolation fetches setuptools from PyPI, so both tests
+failed with the network closed ("No matching distribution found for
+setuptools>=40.8.0"). That venv never held tracemantle: online it holds
+only pip and pre-commit-placeholder-package, and the hook's entry ran the
+tracemantle installed beside the tests, from PATH.
+
+language: system runs that same command without building the venv, so
+the tests assert what they asserted before. pre-commit 4.7.0, the version
+the container resolves, runs it without a warning.
+
+Evidence, same container as the previous commit: both tests pass with the
+network closed; the suite is 1585 passed, 6 skipped, exit 0, with the
+network closed and with it open.
+
+
+Cherry-picked from e4c83d4 onto c37c9d6: the base's hook is still named
+skillcheck.
+---
+ tests/test_pre_commit.py | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/tests/test_pre_commit.py b/tests/test_pre_commit.py
+index 2261f37..cc2c37e 100644
+--- a/tests/test_pre_commit.py
++++ b/tests/test_pre_commit.py
+@@ -23,7 +23,10 @@ def _make_repo(tmp_path: Path) -> Path:
+     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, capture_output=True, check=True)
+     subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True, check=True)
+ 
+-    # Use local repo type so pre-commit resolves the hook from the installed package
++    # A local system hook runs the skillcheck installed beside the tests. A
++    # python hook would also build a hook venv first, which pip-installs a
++    # placeholder package with setuptools fetched from PyPI, and then run this
++    # same skillcheck from PATH: the venv never holds it.
+     config = tmp_path / ".pre-commit-config.yaml"
+     config.write_text(
+         textwrap.dedent("""\
+@@ -33,7 +36,7 @@ def _make_repo(tmp_path: Path) -> Path:
+               - id: skillcheck
+                 name: skillcheck
+                 entry: skillcheck
+-                language: python
++                language: system
+                 files: '(^|/)SKILL\\.md$'
+                 pass_filenames: true
+                 args: [--skip-dirname-check]
+-- 
+2.54.0 (Apple Git-157)
+

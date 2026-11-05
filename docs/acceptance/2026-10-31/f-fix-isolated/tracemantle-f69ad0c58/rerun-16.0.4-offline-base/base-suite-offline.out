@@ -1,0 +1,84 @@
+tiktoken 0.14.0 3.12.12
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+........................................................................ [ 36%]
+........................................................................ [ 45%]
+........................................................................ [ 54%]
+........................................................................ [ 63%]
+........................................................................ [ 72%]
+....................................................................ss.. [ 82%]
+.....F.................................................................. [ 91%]
+......................................................................   [100%]
+=================================== FAILURES ===================================
+________________ test_readme_test_count_matches_collected_count ________________
+
+    def test_readme_test_count_matches_collected_count() -> None:
+        claimed = _readme_claimed_count()
+        collected = _collected_test_count()
+>       assert claimed == collected, (
+            f"README claims {claimed} tests, pytest --collect-only reports "
+            f"{collected}. Update the README's 'N tests cover ...' line in the "
+            f"same commit that changes the suite size."
+        )
+E       AssertionError: README claims 787 tests, pytest --collect-only reports 790. Update the README's 'N tests cover ...' line in the same commit that changes the suite size.
+E       assert 787 == 790
+
+tests/test_readme_test_count_claim.py:50: AssertionError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.12-final-0 _______________
+
+Name                                              Stmts   Miss  Cover   Missing
+-------------------------------------------------------------------------------
+src/skillcheck/__init__.py                            5      0   100%
+src/skillcheck/agents/__init__.py                    29      0   100%
+src/skillcheck/agents/_response_text.py              12      0   100%
+src/skillcheck/agents/base.py                        17      0   100%
+src/skillcheck/agents/claude.py                       4      0   100%
+src/skillcheck/agents/codex.py                        8      0   100%
+src/skillcheck/agents/cursor.py                       8      0   100%
+src/skillcheck/agents/graph_base.py                  17      0   100%
+src/skillcheck/agents/graph_claude.py                 4      0   100%
+src/skillcheck/agents/graph_codex.py                  8      0   100%
+src/skillcheck/agents/graph_cursor.py                 8      0   100%
+src/skillcheck/agents/graph_parser.py               124     10    92%   132, 146, 161, 174, 190, 212, 234, 288, 330, 337
+src/skillcheck/agents/parser.py                      83      2    98%   170, 175
+src/skillcheck/agents/schema.py                      35      0   100%
+src/skillcheck/cli.py                               161    161     0%   1-546
+src/skillcheck/commands.py                          254    254     0%   10-529
+src/skillcheck/config.py                             22      0   100%
+src/skillcheck/config_loader.py                     126     75    40%   91-96, 106-151, 167, 170-171, 175-178, 183, 187, 191, 194, 197-215
+src/skillcheck/core/__init__.py                      11      0   100%
+src/skillcheck/core/activation.py                    76     52    32%   91-92, 96-101, 105-113, 117-125, 141-193
+src/skillcheck/core/activation_render.py             19     13    32%   19-28, 40-54, 66-79
+src/skillcheck/core/graph.py                        195      3    98%   309, 436, 449
+src/skillcheck/core/graph_analyzers.py               88      3    97%   266, 271, 301
+src/skillcheck/core/graph_render.py                  41      0   100%
+src/skillcheck/core/history.py                      146     33    77%   301-302, 325-326, 380-385, 422-425, 464-497, 509-514
+src/skillcheck/core/reporter.py                      35      2    94%   42, 44
+src/skillcheck/core/semantic.py                      44      0   100%
+src/skillcheck/core/symbolic.py                      15      3    80%   44-45, 72
+src/skillcheck/formatters.py                        123     85    31%   31-33, 45-102, 112-149, 158-195, 235-269
+src/skillcheck/parser.py                             34      2    94%   52-53
+src/skillcheck/result.py                             45      0   100%
+src/skillcheck/rules/__init__.py                     55      5    91%   122, 159-162, 164
+src/skillcheck/rules/compat.py                       95      5    95%   69, 85, 167, 201, 215
+src/skillcheck/rules/description.py                 139      9    94%   81, 167, 194-196, 211, 223, 227, 287
+src/skillcheck/rules/disclosure.py                   55      0   100%
+src/skillcheck/rules/frontmatter.py                   6      0   100%
+src/skillcheck/rules/frontmatter_common.py           33      4    88%   19, 22, 25, 41
+src/skillcheck/rules/frontmatter_description.py      60      4    93%   60, 76, 94, 113
+src/skillcheck/rules/frontmatter_fields.py           40      0   100%
+src/skillcheck/rules/frontmatter_name.py             89      6    93%   53, 72, 75, 102, 150, 170
+src/skillcheck/rules/references.py                   61      1    98%   61
+src/skillcheck/rules/sizing.py                       21      0   100%
+src/skillcheck/rules/template.py                      8      0   100%
+src/skillcheck/template_detection.py                 15      1    93%   40
+src/skillcheck/tokenizer.py                          27      5    81%   43-44, 63-65
+-------------------------------------------------------------------------------
+TOTAL                                              2501    738    70%
+Required test coverage of 68% reached. Total coverage: 70.49%
+=========================== short test summary info ============================
+FAILED tests/test_readme_test_count_claim.py::test_readme_test_count_matches_collected_count
+1 failed, 787 passed, 2 skipped in 38.26s
+exit 1

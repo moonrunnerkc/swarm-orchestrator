@@ -1,0 +1,69 @@
+state        complete
+reason       check test: 1 test(s) fail at the base commit and still fail, which does not block: tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count
+requirement  R1 satisfied (is_template in src/skillcheck/template_detection.py reads a real skill as a template when its description has bracketed acronyms such as [ISO], [API] or [CLI], which silently turns off the directory-name, VS Code dirname and description checks for that skill. A literal [...] placeholder must still be read as a template. Fix it, with a test.)
+regression   none; 1 inherited
+base         bb755d22efbfeb771ed7de46ae09e6390b360d7d
+change       2 file(s) from the patch
+check        test: inherited-failures (python3 -m pytest -q, pre-existing)
+baseline     0 of 1 check(s) pass at the base commit
+held-out     visible 100%, held-out 100%, gap 0%, judged in 1 process(es)
+test files   1 added
+coverage     unmeasured: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break
+mutation     unmeasured: no changed source line has an operator to mutate
+execution    isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared; dependencies prepared from a uv.lock resolved during preparation, kept with the evidence under lockfiles/, and digested
+environment  sha256:350a3724483271abaa27d9a624ab0d710dffc2a88b400c3a7b21d06679c5c6b6
+
+$ python3 -m pytest -q
+              4      0   100%
+src/skillcheck/agents/codex.py                        8      0   100%
+src/skillcheck/agents/cursor.py                       8      0   100%
+src/skillcheck/agents/graph_base.py                  17      0   100%
+src/skillcheck/agents/graph_claude.py                 4      0   100%
+src/skillcheck/agents/graph_codex.py                  8      0   100%
+src/skillcheck/agents/graph_cursor.py                 8      0   100%
+src/skillcheck/agents/graph_parser.py               124     10    92%   132, 146, 161, 174, 190, 212, 234, 288, 330, 337
+src/skillcheck/agents/parser.py                      83      2    98%   170, 175
+src/skillcheck/agents/schema.py                      35      0   100%
+src/skillcheck/cli.py                               161    161     0%   1-546
+src/skillcheck/commands.py                          254    254     0%   10-529
+src/skillcheck/config.py                             22      0   100%
+src/skillcheck/config_loader.py                     126     75    40%   91-96, 106-151, 167, 170-171, 175-178, 183, 187, 191, 194, 197-215
+src/skillcheck/core/__init__.py                      11      0   100%
+src/skillcheck/core/activation.py                    76     52    32%   91-92, 96-101, 105-113, 117-125, 141-193
+src/skillcheck/core/activation_render.py             19     13    32%   19-28, 40-54, 66-79
+src/skillcheck/core/graph.py                        195      3    98%   309, 436, 449
+src/skillcheck/core/graph_analyzers.py               88      3    97%   266, 271, 301
+src/skillcheck/core/graph_render.py                  41      0   100%
+src/skillcheck/core/history.py                      146     33    77%   301-302, 325-326, 380-385, 422-425, 464-497, 509-514
+src/skillcheck/core/reporter.py                      35      2    94%   42, 44
+src/skillcheck/core/semantic.py                      44      0   100%
+src/skillcheck/core/symbolic.py                      15      3    80%   44-45, 72
+src/skillcheck/formatters.py                        123     85    31%   31-33, 45-102, 112-149, 158-195, 235-269
+src/skillcheck/parser.py                             34      2    94%   52-53
+src/skillcheck/result.py                             45      0   100%
+src/skillcheck/rules/__init__.py                     55      5    91%   122, 159-162, 164
+src/skillcheck/rules/compat.py                       95      5    95%   69, 85, 167, 201, 215
+src/skillcheck/rules/description.py                 139      9    94%   81, 167, 194-196, 211, 223, 227, 287
+src/skillcheck/rules/disclosure.py                   55      0   100%
+src/skillcheck/rules/frontmatter.py                   6      0   100%
+src/skillcheck/rules/frontmatter_common.py           33      4    88%   19, 22, 25, 41
+src/skillcheck/rules/frontmatter_description.py      60      4    93%   60, 76, 94, 113
+src/skillcheck/rules/frontmatter_fields.py           40      0   100%
+src/skillcheck/rules/frontmatter_name.py             89      6    93%   53, 72, 75, 102, 150, 170
+src/skillcheck/rules/references.py                   61      1    98%   61
+src/skillcheck/rules/sizing.py                       21      0   100%
+src/skillcheck/rules/template.py                      8      0   100%
+src/skillcheck/template_detection.py                 15      1    93%   40
+src/skillcheck/tokenizer.py                          27      5    81%   43-44, 63-65
+-------------------------------------------------------------------------------
+TOTAL                                              2501    738    70%
+Required test coverage of 68% reached. Total coverage: 70.49%
+=========================== short test summary info ============================
+FAILED tests/test_readme_test_count_claim.py::test_readme_test_count_matches_collected_count - AssertionError: README claims 787 tests, pytest --collect-only reports 792. Update the README's 'N tests cover ...' line in the same commit that changes the suite size.
+assert 787 == 792
+1 failed, 789 passed, 2 skipped in 78.63s (0:01:18)
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/run-comparison/p2/fix-tracemantle-f69ad0c58/attempt-1/held-out/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/run-comparison/p2/fix-tracemantle-f69ad0c58/attempt-1/held-out/verdict/attestation.pub.pem
+exit 0

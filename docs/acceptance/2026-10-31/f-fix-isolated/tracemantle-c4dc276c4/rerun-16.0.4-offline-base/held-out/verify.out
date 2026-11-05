@@ -1,0 +1,68 @@
+state        complete
+reason       check test: 1 test(s) fail at the base commit and still fail, which does not block: tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count
+requirement  R1 satisfied (Harden skillcheck.toml handling in src/skillcheck/config_loader.py and the CLI: (1) a wrong-typed value must name the value it got, as in "Config key 'max-lines' must be an integer (got 'nope')", "must be true or false (got 'yes')" and "must be a string (got 5)"; (2) the fallback parser used when tomllib is missing must drop an inline # comment without cutting a # inside a quoted value, through a helper _strip_inline_comment(line) that returns the line without its comment; (3) find_config must stop climbing at a directory that holds .git (a skillcheck.toml there is still found) or at the user's home, never reaching a config above them; (4) the CLI must print "Loaded config from <path>" to stderr when it loads a config file. Add tests.)
+requirement  R2 satisfied (Wrong-typed values in config must name the value they got (e.g., "Config key 'max-lines' must be an integer (got 'nope')"))
+requirement  R3 satisfied (Fallback parser must drop inline # comments without cutting # inside quoted values via _strip_inline_comment(line))
+requirement  R4 satisfied (find_config must stop climbing at a directory holding .git or at the user's home)
+requirement  R5 satisfied (CLI must print "Loaded config from <path>" to stderr when it loads a config file)
+regression   none; 1 inherited
+base         dba92c94287668e65697aea8f114bbfdf2543593
+change       4 file(s) from the patch
+check        test: inherited-failures (python3 -m pytest -q, pre-existing)
+baseline     0 of 1 check(s) pass at the base commit
+held-out     visible 100%, held-out 100%, gap 0%, judged in 2 process(es)
+test files   2 added
+coverage     unmeasured: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break
+mutation     killed: == to != at src/skillcheck/config_loader.py:94
+execution    isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared; dependencies prepared from a uv.lock resolved during preparation, kept with the evidence under lockfiles/, and digested
+environment  sha256:9fd2af86f28f57bed62ccc0d00ccfb1fbccceaad911bdfdae946b7018e4bc35c
+
+$ python3 -m pytest -q
+/agents/graph_cursor.py                 8      0   100%
+src/skillcheck/agents/graph_parser.py               107      8    93%   125, 138, 154, 176, 198, 243, 288, 295
+src/skillcheck/agents/parser.py                      71      2    97%   144, 149
+src/skillcheck/agents/schema.py                      35      0   100%
+src/skillcheck/cli.py                               163     58    64%   306-307, 311, 316, 318, 320, 322, 324, 326, 328, 330, 332, 334, 336, 338, 340, 342, 344, 422, 437, 444-449, 453-454, 459-464, 466-471, 482, 492-493, 496, 498, 500, 502, 505, 510-515, 521, 524, 529-555
+src/skillcheck/commands.py                          285    243    15%   83, 91-92, 97-98, 107-134, 145-149, 159-168, 173-188, 193-208, 213-248, 253-269, 284-313, 334-352, 370-433, 446-495, 516-638
+src/skillcheck/config.py                             22      0   100%
+src/skillcheck/config_loader.py                     141     29    79%   129, 131-142, 144, 147, 157, 165-166, 188-189, 193-196, 201, 205, 209, 212, 217, 225, 232
+src/skillcheck/core/__init__.py                      11      0   100%
+src/skillcheck/core/activation.py                    76     52    32%   91-92, 96-101, 105-113, 117-125, 141-193
+src/skillcheck/core/activation_render.py             19     13    32%   19-28, 40-54, 66-79
+src/skillcheck/core/graph.py                        145      3    98%   228, 358, 371
+src/skillcheck/core/graph_analyzers.py               88      3    97%   266, 271, 301
+src/skillcheck/core/graph_model.py                   54      0   100%
+src/skillcheck/core/graph_render.py                  42      0   100%
+src/skillcheck/core/history.py                       87     21    76%   290-323, 335-340
+src/skillcheck/core/history_io.py                    88     15    83%   68, 85-86, 90-91, 111-112, 196-201, 238-241
+src/skillcheck/core/semantic.py                      43      0   100%
+src/skillcheck/core/symbolic.py                      15      3    80%   44-45, 72
+src/skillcheck/formatters.py                        121     85    30%   31-33, 45-102, 112-149, 158-195, 246-280
+src/skillcheck/parser.py                             34      2    94%   52-53
+src/skillcheck/result.py                             45      0   100%
+src/skillcheck/rules/__init__.py                     55      5    91%   122, 159-162, 164
+src/skillcheck/rules/compat.py                       96      5    95%   70, 86, 168, 202, 216
+src/skillcheck/rules/description.py                 139      9    94%   81, 167, 194-196, 211, 223, 227, 287
+src/skillcheck/rules/disclosure.py                   46      0   100%
+src/skillcheck/rules/frontmatter.py                   6      0   100%
+src/skillcheck/rules/frontmatter_common.py           33      4    88%   19, 22, 25, 41
+src/skillcheck/rules/frontmatter_description.py      60      4    93%   60, 76, 94, 113
+src/skillcheck/rules/frontmatter_fields.py           32      2    94%   57-58
+src/skillcheck/rules/frontmatter_name.py             89      6    93%   53, 72, 75, 102, 150, 170
+src/skillcheck/rules/references.py                   61      1    98%   61
+src/skillcheck/rules/sizing.py                       21      0   100%
+src/skillcheck/rules/template.py                      8      0   100%
+src/skillcheck/template_detection.py                 15      1    93%   40
+src/skillcheck/tokenizer.py                          27      5    81%   43-44, 63-65
+-------------------------------------------------------------------------------
+TOTAL                                              2534    580    77%
+Required test coverage of 68% reached. Total coverage: 77.11%
+=========================== short test summary info ============================
+FAILED tests/test_readme_test_count_claim.py::test_readme_test_count_matches_collected_count - AssertionError: README claims 818 tests, pytest --collect-only reports 829. Update the README's 'N tests cover ...' line in the same commit that changes the suite size.
+assert 818 == 829
+1 failed, 828 passed in 84.31s (0:01:24)
+
+
+attestation  /Users/brad/projects/recovery-2026-10-31/run-comparison/p2/fix-tracemantle-c4dc276c4/attempt-1/held-out/verdict/attestation.sigstore.json
+public key   /Users/brad/projects/recovery-2026-10-31/run-comparison/p2/fix-tracemantle-c4dc276c4/attempt-1/held-out/verdict/attestation.pub.pem
+exit 0

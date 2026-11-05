@@ -1,0 +1,272 @@
+{
+  "state": "complete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 1 test(s) fail at the base commit and still fail, which does not block: tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count"
+  ],
+  "base": {
+    "commit": "bb755d22efbfeb771ed7de46ae09e6390b360d7d"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/skillcheck/template_detection.py",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test_template_detection_bug.py",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "is_template in src/skillcheck/template_detection.py reads a real skill as a template when its description has bracketed acronyms such as [ISO], [API] or [CLI], which silently turns off the directory-name, VS Code dirname and description checks for that skill. A literal [...] placeholder must still be read as a template. Fix it, with a test.",
+      "source": "user",
+      "kind": "fix",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "tests/test_template_detection_bug.py"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests.test_template_detection_bug.TestTemplateDetectionBug::test_bracketed_acronyms_are_not_templates",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.test_template_detection_bug.TestTemplateDetectionBug::test_placeholders_are_templates",
+          "authority": "implementation-authored",
+          "outcome": "passes before and after",
+          "detail": "passes against the base's source too"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [
+      "tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count"
+    ],
+    "removed": [],
+    "unresolved": [],
+    "flaky": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 792,
+      "exitCode": 1,
+      "durationMs": 79625,
+      "outputSha256": "8809e63e20af0838f2d1e3b91f0bd3ec482e212593d677d280a2baa224c8639b",
+      "tests": {
+        "runner": "pytest",
+        "collected": {
+          "base": 790,
+          "candidate": 792
+        },
+        "counts": {
+          "preserved": 787,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 1,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 2,
+          "addedFailing": 0,
+          "witnesses": 1,
+          "skipped": 2,
+          "flaky": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "tests.test_template_detection_bug.TestTemplateDetectionBug::test_bracketed_acronyms_are_not_templates",
+          "tests.test_template_detection_bug.TestTemplateDetectionBug::test_placeholders_are_templates"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "tests.test_template_detection_bug.TestTemplateDetectionBug::test_bracketed_acronyms_are_not_templates"
+        ],
+        "flaky": [],
+        "reruns": [
+          {
+            "id": "tests.test_template_detection_bug.TestTemplateDetectionBug::test_bracketed_acronyms_are_not_templates",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "5f1c4128c8d5edb82ca5c3efa8e4553f920bb09adf1c688822981d262a29f42c",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 790,
+        "exitCode": 1,
+        "durationMs": 81045,
+        "outputSha256": "0f1fc1d3fc101237c283108845402e81595a1356739dc4a6cd26efa9e184c985"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/skillcheck/template_detection.py",
+      "category": "source"
+    },
+    {
+      "path": "tests/test_template_detection_bug.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "tests/test_template_detection_bug.py"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "movedAndEdited": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+  },
+  "mutation": {
+    "status": "unmeasured",
+    "reason": "no changed source line has an operator to mutate"
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "16.0.4",
+    "model": "gemma4:31b",
+    "promptSha256": "dfe1349ed6e60f2e4c3d6f785ab6bcacdd349bd082fb3246fd51e46a0f0ac7a0",
+    "ledgerSha256": "1dc53998dc47671ce641dc96dcfd1131f0cb55977f6c1a56c9e477f366500cb1",
+    "ledgerRecords": 63,
+    "reportSha256": "af6172e36014c0cfd799934679337fdd2a23b6e4eb90d939f78c180c4aca9785",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "5f1c4128c8d5edb82ca5c3efa8e4553f920bb09adf1c688822981d262a29f42c",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "65594c8b8fd9dd7d5eb360092c5b6ca9fe80936e4d98251dc3a333b0e87effed",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "5cd0e4c68b4d9128e189d7752e1da865a5b8b6c412a572e01a18c0a1fc85ff6e"
+      },
+      "treeSha256": "65594c8b8fd9dd7d5eb360092c5b6ca9fe80936e4d98251dc3a333b0e87effed",
+      "note": "prepared from a uv.lock resolved during preparation, kept with the evidence under lockfiles/, and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none",
+    "reruns": 3
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break",
+    "mutation: no changed source line has an operator to mutate"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "8809e63e20af0838f2d1e3b91f0bd3ec482e212593d677d280a2baa224c8639b"
+    },
+    {
+      "name": "lockfiles/base/uv.lock",
+      "sha256": "5cd0e4c68b4d9128e189d7752e1da865a5b8b6c412a572e01a18c0a1fc85ff6e"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.3"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "bb755d22efbfeb771ed7de46ae09e6390b360d7d",
+    "patchSha256": "345f10899c0297680a293be34e5ad3f6a8eef48b540499a4b8e64cc597229738",
+    "treeSha256": "9eacfa003518afdc3f96ded198bd3acc84db689be8dfc7a3bcb89cbb8d36ead7"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "7e5e99e330641a193ca53c12cd6bb4244dc76f6d637a24f82615793656f89dbe",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261105T051546-ae955c/verifications/2",
+    "bundle": "/Users/brad/.swarm/sessions/20261105T051546-ae955c/verifications/2/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261105T051546-ae955c/verifications/2/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261105T051546-ae955c/verifications/2/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261105T051546-ae955c/verifications/2/attestation.pub.pem"
+  },
+  "failureOutput": "$ python3 -m pytest -q\n              4      0   100%\nsrc/skillcheck/agents/codex.py                        8      0   100%\nsrc/skillcheck/agents/cursor.py                       8      0   100%\nsrc/skillcheck/agents/graph_base.py                  17      0   100%\nsrc/skillcheck/agents/graph_claude.py                 4      0   100%\nsrc/skillcheck/agents/graph_codex.py                  8      0   100%\nsrc/skillcheck/agents/graph_cursor.py                 8      0   100%\nsrc/skillcheck/agents/graph_parser.py               124     10    92%   132, 146, 161, 174, 190, 212, 234, 288, 330, 337\nsrc/skillcheck/agents/parser.py                      83      2    98%   170, 175\nsrc/skillcheck/agents/schema.py                      35      0   100%\nsrc/skillcheck/cli.py                               161    161     0%   1-546\nsrc/skillcheck/commands.py                          254    254     0%   10-529\nsrc/skillcheck/config.py                             22      0   100%\nsrc/skillcheck/config_loader.py                     126     75    40%   91-96, 106-151, 167, 170-171, 175-178, 183, 187, 191, 194, 197-215\nsrc/skillcheck/core/__init__.py                      11      0   100%\nsrc/skillcheck/core/activation.py                    76     52    32%   91-92, 96-101, 105-113, 117-125, 141-193\nsrc/skillcheck/core/activation_render.py             19     13    32%   19-28, 40-54, 66-79\nsrc/skillcheck/core/graph.py                        195      3    98%   309, 436, 449\nsrc/skillcheck/core/graph_analyzers.py               88      3    97%   266, 271, 301\nsrc/skillcheck/core/graph_render.py                  41      0   100%\nsrc/skillcheck/core/history.py                      146     33    77%   301-302, 325-326, 380-385, 422-425, 464-497, 509-514\nsrc/skillcheck/core/reporter.py                      35      2    94%   42, 44\nsrc/skillcheck/core/semantic.py                      44      0   100%\nsrc/skillcheck/core/symbolic.py                      15      3    80%   44-45, 72\nsrc/skillcheck/formatters.py                        123     85    31%   31-33, 45-102, 112-149, 158-195, 235-269\nsrc/skillcheck/parser.py                             34      2    94%   52-53\nsrc/skillcheck/result.py                             45      0   100%\nsrc/skillcheck/rules/__init__.py                     55      5    91%   122, 159-162, 164\nsrc/skillcheck/rules/compat.py                       95      5    95%   69, 85, 167, 201, 215\nsrc/skillcheck/rules/description.py                 139      9    94%   81, 167, 194-196, 211, 223, 227, 287\nsrc/skillcheck/rules/disclosure.py                   55      0   100%\nsrc/skillcheck/rules/frontmatter.py                   6      0   100%\nsrc/skillcheck/rules/frontmatter_common.py           33      4    88%   19, 22, 25, 41\nsrc/skillcheck/rules/frontmatter_description.py      60      4    93%   60, 76, 94, 113\nsrc/skillcheck/rules/frontmatter_fields.py           40      0   100%\nsrc/skillcheck/rules/frontmatter_name.py             89      6    93%   53, 72, 75, 102, 150, 170\nsrc/skillcheck/rules/references.py                   61      1    98%   61\nsrc/skillcheck/rules/sizing.py                       21      0   100%\nsrc/skillcheck/rules/template.py                      8      0   100%\nsrc/skillcheck/template_detection.py                 15      1    93%   40\nsrc/skillcheck/tokenizer.py                          27      5    81%   43-44, 63-65\n-------------------------------------------------------------------------------\nTOTAL                                              2501    738    70%\nRequired test coverage of 68% reached. Total coverage: 70.49%\n=========================== short test summary info ============================\nFAILED tests/test_readme_test_count_claim.py::test_readme_test_count_matches_collected_count - AssertionError: README claims 787 tests, pytest --collect-only reports 792. Update the README's 'N tests cover ...' line in the same commit that changes the suite size.\nassert 787 == 792\n1 failed, 789 passed, 2 skipped in 77.66s (0:01:17)\n"
+}

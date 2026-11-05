@@ -168,7 +168,7 @@ tracemantle 590c8e61e's human fix fails a README test-count test, and ironroot 8
 fails 31 tests the base passes. depose was not probed: every candidate there touches its Go apps,
 and its build needs Go, which the image lacks. tracemantle's base has 131 to 135 tests that fail in
 the container, all for one reason (they download a tiktoken encoding, and the network is closed for
-checks); they are inherited, and a regression among them would not be seen.
+checks); they are inherited, and a regression among them would not be seen. Rerun on a base without them: Fix picks on an offline base, below.
 
 | Task | Directory | Session | State | Stop | Model | Turns | Input / output tokens | Wall | Replay | Held-out |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -233,6 +233,33 @@ the fixes (`e-dossier-16.0.4-candidate/`):
 swarm-verify 2.0.3 inside it, `npm audit signatures` verifying four packages, and the dossier task
 through the installed CLI with `--model auto`: gemma4:31b chosen, complete in 17 turns (86,665 /
 1,083 tokens, 309 s, session 20261104T182902-d9321b), replay agreeing, no `sed -i`.
+
+## Fix picks on an offline base (2026-11-04)
+
+The two tracemantle fix picks again, with the installed 16.0.4 (`--model auto`, isolated, then
+`swarm-verify replay`), each on a new base: the fix commit's parent with tracemantle's offline-test
+commits (f14a5db, which vendors tiktoken's cl100k_base for the tests, and e4c83d4, which runs the
+pre-commit hook tests without a PyPI fetch) cherry-picked on top. The cherry-picks needed three
+adaptations at these older bases, recorded in each base commit: `import os` in conftest.py, the
+count in README.md rather than the implementation ledger, and the hook still named skillcheck.
+The sealed held-out check is the fix commit's test, run with `--no-cov`, and the task text is as
+before. Evidence in `f-fix-isolated/tracemantle-*/rerun-16.0.4-offline-base/`.
+
+| Task | Base | Session | State | Stop | Model | Turns | Input / output tokens | Wall | Replay | Held-out | Inherited |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fix: tracemantle f69ad0c58 | bb755d2 (c37c9d6 + 2) | 20261105T051546-ae955c | complete | complete | gemma4:31b | 21 | 88,491 / 2,504 | 918 s | agrees | fails at the base, passes with the patch | 1 |
+| fix: tracemantle c4dc276c4 | dba92c9 (07e3694 + 2) | 20261105T055110-b87a1a | complete | complete | gemma4:31b | 27 | 252,126 / 6,516 | 2,340 s | agrees | fails at the base, passes with the patch | 1 |
+
+- **No fetch failure is inherited any more.** Each base's whole suite, in the verifier's image
+  with the network closed (`base-suite-offline.out`), fails one test where it failed 131 to 135:
+  `test_readme_test_count_claim`, whose README line is behind the suite at the fix's parent
+  itself (c37c9d6 claims 786 tests and collects 789; 07e3694 claims 817 and collects 821). That
+  drift is tracemantle's own history, kept as it is rather than corrected in a base built for the
+  run, and it is the one inherited failure each run reports. Every other test of the base is
+  measured, so a regression among them would be seen.
+- Both held-out verdicts are complete and their replays agree; neither escalated, and both
+  source repositories were unchanged. The fix category is isolated with no inherited block
+  hiding regressions, apart from that one count test.
 
 ## Input tokens before and after context management
 

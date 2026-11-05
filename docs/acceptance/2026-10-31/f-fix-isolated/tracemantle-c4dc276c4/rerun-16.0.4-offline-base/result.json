@@ -1,0 +1,539 @@
+{
+  "state": "complete",
+  "scope": "requirements",
+  "reasons": [
+    "check test: 1 test(s) fail at the base commit and still fail, which does not block: tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count"
+  ],
+  "base": {
+    "commit": "dba92c94287668e65697aea8f114bbfdf2543593"
+  },
+  "change": {
+    "source": "patch",
+    "applied": true,
+    "files": [
+      {
+        "path": "src/skillcheck/cli.py",
+        "status": "modified"
+      },
+      {
+        "path": "src/skillcheck/config_loader.py",
+        "status": "modified"
+      },
+      {
+        "path": "tests/skillcheck/cli/test_config_logging.py",
+        "status": "added"
+      },
+      {
+        "path": "tests/skillcheck/test_config_loader.py",
+        "status": "added"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Harden skillcheck.toml handling in src/skillcheck/config_loader.py and the CLI: (1) a wrong-typed value must name the value it got, as in \"Config key 'max-lines' must be an integer (got 'nope')\", \"must be true or false (got 'yes')\" and \"must be a string (got 5)\"; (2) the fallback parser used when tomllib is missing must drop an inline # comment without cutting a # inside a quoted value, through a helper _strip_inline_comment(line) that returns the line without its comment; (3) find_config must stop climbing at a directory that holds .git (a skillcheck.toml there is still found) or at the user's home, never reaching a config above them; (4) the CLI must print \"Loaded config from <path>\" to stderr when it loads a config file. Add tests.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_find_config_stops_at_git"
+          },
+          {
+            "name": "test_find_config_stops_at_home"
+          },
+          {
+            "name": "test_load_config_type_errors"
+          },
+          {
+            "name": "test_fallback_parser_comments"
+          },
+          {
+            "name": "test_fallback_parser_invalid_comment"
+          },
+          {
+            "name": "test_cli_prints_config_path_to_stderr"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_find_config_stops_at_git",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_find_config_stops_at_home",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_load_config_type_errors",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_fallback_parser_invalid_comment",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.cli.test_config_logging::test_cli_prints_config_path_to_stderr",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R2",
+      "text": "Wrong-typed values in config must name the value they got (e.g., \"Config key 'max-lines' must be an integer (got 'nope')\")",
+      "source": "inferred",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_load_config_type_errors"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_load_config_type_errors",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R3",
+      "text": "Fallback parser must drop inline # comments without cutting # inside quoted values via _strip_inline_comment(line)",
+      "source": "inferred",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_fallback_parser_comments"
+          },
+          {
+            "name": "test_fallback_parser_invalid_comment"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_fallback_parser_invalid_comment",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R4",
+      "text": "find_config must stop climbing at a directory holding .git or at the user's home",
+      "source": "inferred",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_find_config_stops_at_git"
+          },
+          {
+            "name": "test_find_config_stops_at_home"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_find_config_stops_at_git",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        },
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.test_config_loader::test_find_config_stops_at_home",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R5",
+      "text": "CLI must print \"Loaded config from <path>\" to stderr when it loads a config file",
+      "source": "inferred",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "test_cli_prints_config_path_to_stderr"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "status": "satisfied",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests.skillcheck.cli.test_config_logging::test_cli_prints_config_path_to_stderr",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "regression": {
+    "status": "none",
+    "newFailures": [],
+    "inherited": [
+      "tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count"
+    ],
+    "removed": [],
+    "unresolved": [],
+    "flaky": []
+  },
+  "checks": [
+    {
+      "name": "test",
+      "command": "python3 -m pytest -q",
+      "kind": "test",
+      "authority": "pre-existing",
+      "result": "inherited-failures",
+      "collected": 829,
+      "exitCode": 1,
+      "durationMs": 85299,
+      "outputSha256": "113c8af166b805dedf61f05d7b279594846c944b063c045cfd9ef138d4bbf3d2",
+      "tests": {
+        "runner": "pytest",
+        "collected": {
+          "base": 822,
+          "candidate": 829
+        },
+        "counts": {
+          "preserved": 821,
+          "renamed": 0,
+          "fixed": 0,
+          "newFailures": 0,
+          "inherited": 1,
+          "removed": 0,
+          "superseded": 0,
+          "expectationChanges": 0,
+          "added": 7,
+          "addedFailing": 0,
+          "witnesses": 6,
+          "skipped": 0,
+          "flaky": 0
+        },
+        "fixed": [],
+        "newFailures": [],
+        "inherited": [
+          "tests.test_readme_test_count_claim::test_readme_test_count_matches_collected_count"
+        ],
+        "removed": [],
+        "renamed": [],
+        "superseded": [],
+        "expectationChanges": [],
+        "added": [
+          "tests.skillcheck.cli.test_config_logging::test_cli_no_config_no_print",
+          "tests.skillcheck.cli.test_config_logging::test_cli_prints_config_path_to_stderr",
+          "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+          "tests.skillcheck.test_config_loader::test_fallback_parser_invalid_comment",
+          "tests.skillcheck.test_config_loader::test_find_config_stops_at_git",
+          "tests.skillcheck.test_config_loader::test_find_config_stops_at_home",
+          "tests.skillcheck.test_config_loader::test_load_config_type_errors"
+        ],
+        "addedFailing": [],
+        "witnesses": [
+          "tests.skillcheck.cli.test_config_logging::test_cli_prints_config_path_to_stderr",
+          "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+          "tests.skillcheck.test_config_loader::test_fallback_parser_invalid_comment",
+          "tests.skillcheck.test_config_loader::test_find_config_stops_at_git",
+          "tests.skillcheck.test_config_loader::test_find_config_stops_at_home",
+          "tests.skillcheck.test_config_loader::test_load_config_type_errors"
+        ],
+        "flaky": [],
+        "reruns": [
+          {
+            "id": "tests.skillcheck.cli.test_config_logging::test_cli_prints_config_path_to_stderr",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          },
+          {
+            "id": "tests.skillcheck.test_config_loader::test_fallback_parser_comments",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          },
+          {
+            "id": "tests.skillcheck.test_config_loader::test_fallback_parser_invalid_comment",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          },
+          {
+            "id": "tests.skillcheck.test_config_loader::test_find_config_stops_at_git",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          },
+          {
+            "id": "tests.skillcheck.test_config_loader::test_find_config_stops_at_home",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          },
+          {
+            "id": "tests.skillcheck.test_config_loader::test_load_config_type_errors",
+            "snapshot": "witness",
+            "results": [
+              "fail",
+              "fail",
+              "fail",
+              "fail"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "baseline": {
+    "status": "measured",
+    "cached": false,
+    "environmentSha256": "b3dcb3c42aea7e7c57f7eb7b1721a6bf545bc644505aeeb620b4f3e10b5250c1",
+    "checks": [
+      {
+        "name": "test",
+        "command": "python3 -m pytest -q",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "fail",
+        "collected": 822,
+        "exitCode": 1,
+        "durationMs": 86231,
+        "outputSha256": "153005c0e7661cd385b2b6d9b1cee62dd2b3a7f389ff707cd9303a125c59c742"
+      }
+    ],
+    "heldOut": []
+  },
+  "heldOut": {
+    "status": "unmeasured",
+    "reason": "no held-out checks are sealed for this workspace"
+  },
+  "artifacts": [
+    {
+      "path": "src/skillcheck/cli.py",
+      "category": "source"
+    },
+    {
+      "path": "src/skillcheck/config_loader.py",
+      "category": "source"
+    },
+    {
+      "path": "tests/skillcheck/cli/test_config_logging.py",
+      "category": "tests"
+    },
+    {
+      "path": "tests/skillcheck/test_config_loader.py",
+      "category": "tests"
+    }
+  ],
+  "testFiles": {
+    "added": [
+      "tests/skillcheck/cli/test_config_logging.py",
+      "tests/skillcheck/test_config_loader.py"
+    ],
+    "modified": [],
+    "deleted": [],
+    "moved": [],
+    "movedAndEdited": [],
+    "relocated": []
+  },
+  "coverage": {
+    "status": "unmeasured",
+    "reason": "the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+  },
+  "mutation": {
+    "status": "killed",
+    "path": "src/skillcheck/config_loader.py",
+    "line": 94,
+    "operator": "== to !=",
+    "syntax": "valid",
+    "rejected": 0
+  },
+  "producer": {
+    "name": "swarm-orchestrator",
+    "version": "16.0.4",
+    "model": "gemma4:31b",
+    "promptSha256": "683c3648b93d1979204492c09c1dd336cc48970cf9e8422c85d43414be71769c",
+    "ledgerSha256": "dbc6150ff94d553f19410af71c1c2f298d647fea0d935260a8026dcd342432ff",
+    "ledgerRecords": 78,
+    "reportSha256": "d7acf2af81fe45bcb94d890f358d70ec56f1725f3157fe811c59454f16b4cc4c",
+    "instructions": []
+  },
+  "environment": {
+    "sha256": "b3dcb3c42aea7e7c57f7eb7b1721a6bf545bc644505aeeb620b4f3e10b5250c1",
+    "node": "in ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248)",
+    "platform": "linux-arm64",
+    "git": "2.54.0 (Apple Git-157)",
+    "dependencies": "prepared",
+    "dependencyTreeSha256": "91664f957b72b87f4ddd322a44ea62a64336da798de68fef20ff2fa92bc85831",
+    "reproducible": true
+  },
+  "execution": {
+    "mode": "isolated",
+    "statement": "isolated: docker ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248, network closed for checks and open only while dependencies were prepared",
+    "network": "closed",
+    "image": "ghcr.io/astral-sh/uv:python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 (sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248 arm64)",
+    "dependencies": {
+      "mode": "prepared",
+      "reproducible": true,
+      "lockfiles": {
+        "uv.lock": "69e2ae7b9dedcbdbe91562742f428da786826c8c569682b576a34046f327b42b"
+      },
+      "treeSha256": "91664f957b72b87f4ddd322a44ea62a64336da798de68fef20ff2fa92bc85831",
+      "note": "prepared from a uv.lock resolved during preparation, kept with the evidence under lockfiles/, and digested"
+    },
+    "policyMet": true,
+    "problems": []
+  },
+  "policy": {
+    "behaviorChange": "none",
+    "reruns": 3
+  },
+  "unmeasured": [
+    "held-out: no held-out checks are sealed for this workspace",
+    "coverage: the project measures coverage itself (pytest-cov in its pytest options), which a second coverage run would break"
+  ],
+  "logs": [
+    {
+      "name": "logs/test.txt",
+      "sha256": "113c8af166b805dedf61f05d7b279594846c944b063c045cfd9ef138d4bbf3d2"
+    },
+    {
+      "name": "lockfiles/base/uv.lock",
+      "sha256": "69e2ae7b9dedcbdbe91562742f428da786826c8c569682b576a34046f327b42b"
+    }
+  ],
+  "verifier": {
+    "name": "swarm-verify",
+    "version": "2.0.3"
+  },
+  "version": "swarm-verify.result/v1",
+  "snapshot": {
+    "base": "dba92c94287668e65697aea8f114bbfdf2543593",
+    "patchSha256": "dc0a006930e17ebcb648e8cc7a09377759a8e1a197b9b7183e461554dc3fdad1",
+    "treeSha256": "c103bdfe6216e60ab88e3c7c09bf78d66de147793f0e31c1f62a40f5231f3cf4"
+  },
+  "integrity": {
+    "signed": true,
+    "signer": {
+      "kind": "key",
+      "fingerprint": "8c5ed5b218745e42c16a99d98024241cbf74c7aa7bf570fd6e5495491d0b5dae"
+    },
+    "statementSha256": "896b72a476f335e33d28245a56e2bebe906b70437475653345a7a7e0d2c7d50f",
+    "problems": []
+  },
+  "evidence": {
+    "directory": "/Users/brad/.swarm/sessions/20261105T055110-b87a1a/verifications/3",
+    "bundle": "/Users/brad/.swarm/sessions/20261105T055110-b87a1a/verifications/3/attestation.sigstore.json",
+    "statement": "/Users/brad/.swarm/sessions/20261105T055110-b87a1a/verifications/3/statement.json",
+    "patch": "/Users/brad/.swarm/sessions/20261105T055110-b87a1a/verifications/3/change.patch",
+    "publicKey": "/Users/brad/.swarm/sessions/20261105T055110-b87a1a/verifications/3/attestation.pub.pem"
+  },
+  "failureOutput": "$ python3 -m pytest -q\n/agents/graph_cursor.py                 8      0   100%\nsrc/skillcheck/agents/graph_parser.py               107      8    93%   125, 138, 154, 176, 198, 243, 288, 295\nsrc/skillcheck/agents/parser.py                      71      2    97%   144, 149\nsrc/skillcheck/agents/schema.py                      35      0   100%\nsrc/skillcheck/cli.py                               163     58    64%   306-307, 311, 316, 318, 320, 322, 324, 326, 328, 330, 332, 334, 336, 338, 340, 342, 344, 422, 437, 444-449, 453-454, 459-464, 466-471, 482, 492-493, 496, 498, 500, 502, 505, 510-515, 521, 524, 529-555\nsrc/skillcheck/commands.py                          285    243    15%   83, 91-92, 97-98, 107-134, 145-149, 159-168, 173-188, 193-208, 213-248, 253-269, 284-313, 334-352, 370-433, 446-495, 516-638\nsrc/skillcheck/config.py                             22      0   100%\nsrc/skillcheck/config_loader.py                     141     29    79%   129, 131-142, 144, 147, 157, 165-166, 188-189, 193-196, 201, 205, 209, 212, 217, 225, 232\nsrc/skillcheck/core/__init__.py                      11      0   100%\nsrc/skillcheck/core/activation.py                    76     52    32%   91-92, 96-101, 105-113, 117-125, 141-193\nsrc/skillcheck/core/activation_render.py             19     13    32%   19-28, 40-54, 66-79\nsrc/skillcheck/core/graph.py                        145      3    98%   228, 358, 371\nsrc/skillcheck/core/graph_analyzers.py               88      3    97%   266, 271, 301\nsrc/skillcheck/core/graph_model.py                   54      0   100%\nsrc/skillcheck/core/graph_render.py                  42      0   100%\nsrc/skillcheck/core/history.py                       87     21    76%   290-323, 335-340\nsrc/skillcheck/core/history_io.py                    88     15    83%   68, 85-86, 90-91, 111-112, 196-201, 238-241\nsrc/skillcheck/core/semantic.py                      43      0   100%\nsrc/skillcheck/core/symbolic.py                      15      3    80%   44-45, 72\nsrc/skillcheck/formatters.py                        121     85    30%   31-33, 45-102, 112-149, 158-195, 246-280\nsrc/skillcheck/parser.py                             34      2    94%   52-53\nsrc/skillcheck/result.py                             45      0   100%\nsrc/skillcheck/rules/__init__.py                     55      5    91%   122, 159-162, 164\nsrc/skillcheck/rules/compat.py                       96      5    95%   70, 86, 168, 202, 216\nsrc/skillcheck/rules/description.py                 139      9    94%   81, 167, 194-196, 211, 223, 227, 287\nsrc/skillcheck/rules/disclosure.py                   46      0   100%\nsrc/skillcheck/rules/frontmatter.py                   6      0   100%\nsrc/skillcheck/rules/frontmatter_common.py           33      4    88%   19, 22, 25, 41\nsrc/skillcheck/rules/frontmatter_description.py      60      4    93%   60, 76, 94, 113\nsrc/skillcheck/rules/frontmatter_fields.py           32      2    94%   57-58\nsrc/skillcheck/rules/frontmatter_name.py             89      6    93%   53, 72, 75, 102, 150, 170\nsrc/skillcheck/rules/references.py                   61      1    98%   61\nsrc/skillcheck/rules/sizing.py                       21      0   100%\nsrc/skillcheck/rules/template.py                      8      0   100%\nsrc/skillcheck/template_detection.py                 15      1    93%   40\nsrc/skillcheck/tokenizer.py                          27      5    81%   43-44, 63-65\n-------------------------------------------------------------------------------\nTOTAL                                              2534    580    77%\nRequired test coverage of 68% reached. Total coverage: 77.11%\n=========================== short test summary info ============================\nFAILED tests/test_readme_test_count_claim.py::test_readme_test_count_matches_collected_count - AssertionError: README claims 818 tests, pytest --collect-only reports 829. Update the README's 'N tests cover ...' line in the same commit that changes the suite size.\nassert 818 == 829\n1 failed, 828 passed in 83.35s (0:01:23)\n"
+}
