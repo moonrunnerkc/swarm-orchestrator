@@ -38,7 +38,8 @@ export function unrelatedImport(output: string, task: string): string | null {
 
 const assertion =
   /AssertionError|expect\(received\)|\bassert [^\n]*\n\s*E\s+assert\b|^E\s+assert\b/m;
-const raised = /\b([A-Z]\w*(?:Error|Exception))\b/g;
+// A bare Error too: what most JavaScript code throws.
+const raised = /\b((?:[A-Z]\w*)?(?:Error|Exception))\b/g;
 const crashWords = /\b(?:rais|throw|crash|exception|error|traceback)/i;
 
 /**
@@ -108,8 +109,14 @@ const stringMatcherToThrow =
  */
 export function misusedMatcher(content: string): string | null {
   const found = stringMatcherToThrow.exec(content);
-  if (found === null) return null;
-  return `it passes expect.${found[1]} to toThrow, which compares it with the error object and not its message, so it fails on every tree; give toThrow a regular expression or a string`;
+  if (found !== null)
+    return `it passes expect.${found[1]} to toThrow, which compares it with the error object and not its message, so it fails on every tree; give toThrow a regular expression or a string`;
+  // vitest hoists vi.mock to the top of the file wherever it is written, and from vitest 5 refuses
+  // one inside a block: claimcheck's upgrade check (rc.13) loaded under vitest 4 at the base and
+  // failed to load under the vitest 5 the task asks for.
+  if (/^[ \t]+vi\.mock\(/m.test(content))
+    return "it calls vi.mock inside a block, which vitest hoists to the top of the file anyway and its newer versions refuse; call vi.mock at the top level and set each case's behavior with mockImplementation";
+  return null;
 }
 
 /**
@@ -227,11 +234,14 @@ export async function runAtBase(
       ],
       output,
     };
-  const crashed = kind === "fix" ? raisedNotAsserted(plain, task) : null;
+  // A fix and an upgrade change code the base already runs: their checks fail there on an assertion.
+  // claimcheck's upgrade (2026-11-05, rc.13): every case raised "toolchain node_modules not found",
+  // a wrong argument of its own, and was accepted since the message names vitest.
+  const crashed = kind === "fix" || kind === "upgrade" ? raisedNotAsserted(plain, task) : null;
   if (crashed !== null)
     return {
       reasons: [
-        `it fails at the base by raising ${crashed} before any assertion, which a correct fix would raise too; build the inputs as the code's own tests do, then assert the behavior the task says is wrong`,
+        `it fails at the base by raising ${crashed} before any assertion, which a correct change would raise too; build the inputs as the code's own tests do, then assert the behavior the task says changes`,
       ],
       output,
     };

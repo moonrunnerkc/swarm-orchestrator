@@ -107,3 +107,22 @@ describe("a string matcher given to toThrow", () => {
     ).toBeNull();
   });
 });
+
+describe("a vi.mock inside a block", () => {
+  // claimcheck's upgrade (2026-11-05, rc.13): vitest 5 refused the file the base's vitest 4 ran.
+  it("is named, since vitest hoists it and its newer versions refuse it", () => {
+    const nested = 'describe("x", () => {\n  vi.mock("../src/a.js");\n});\n';
+    expect(misusedMatcher(nested)).toMatch(/^it calls vi.mock inside a block/);
+    expect(misusedMatcher('vi.mock("../src/a.js", () => ({}));\n')).toBeNull();
+  });
+});
+
+describe("an upgrade's check that raises before it asserts", () => {
+  it("is named, as a fix's is", () => {
+    const base =
+      "FAIL  eval/a.swarm-r1.test.ts > installs Stryker 10\nError: toolchain node_modules not found at vitest\n";
+    expect(raisedNotAsserted(base, "move the Stryker version it installs to 10.x")).toMatch(
+      /toolchain node_modules not found/,
+    );
+  });
+});
