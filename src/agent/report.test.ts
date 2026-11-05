@@ -26,6 +26,9 @@ const report: RunReportFile = {
   resources: {
     steps: 1,
     author: { turns: 0, inputTokens: 0, outputTokens: 0 },
+    harnessChecks: 0,
+    modelTestCommands: 0,
+    turnsByRequirement: {},
     inputTokens: 1,
     outputTokens: 1,
     estimatedTurns: 0,
@@ -118,6 +121,7 @@ describe("each requirement as asked, as read, and as judged", () => {
         wording: "Stryker packages to the latest 9.x",
       },
     ],
+    testsAsked: false,
     witness: "independent",
     status: "failed",
     evidence: [],

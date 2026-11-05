@@ -45,7 +45,8 @@ describe("the managed workspace", () => {
       model: "interfering",
       async complete() {
         turns += 1;
-        if (turns === 2)
+        // The user edits their own tree while the model's one turn is out.
+        if (turns === 1)
           await writeFile(join(probe.repo, "half.mjs"), "export const half = (n) => n >> 1;\n");
         return {
           content: turns === 1 ? fix : mapped,

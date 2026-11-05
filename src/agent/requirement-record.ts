@@ -67,14 +67,33 @@ const proposalSchema = z.array(
 
 const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
 
+/**
+ * Whether the wording asks for tests: an asking word, then tests ("with a test", "Add tests",
+ * "write a regression test"). "the tests stay as they are" and "the test suite must stay green"
+ * ask for none.
+ */
+export function asksForTests(task: string): boolean {
+  return /\b(?:add|adds|adding|write|writing|with|include|including)\s+(?:(?:a|an|new|unit|regression|some|more)\s+)*tests?\b/i.test(
+    task,
+  );
+}
+
 export function initialRecord(
   task: string,
   versions: readonly VersionConstraint[] = [],
   notes: readonly string[] = [],
 ): RequirementRecord {
+  const testsAsked = asksForTests(task);
   return {
     requirements: [
-      requirementSchema.parse({ id: "R1", text: task, source: "user", kind: "other", versions }),
+      requirementSchema.parse({
+        id: "R1",
+        text: task,
+        source: "user",
+        kind: "other",
+        versions,
+        testsAsked,
+      }),
     ],
     notes,
   };
@@ -108,7 +127,8 @@ export function applyProposal(
   }
   const notes: string[] = [];
   const accepted = new Map<string, Requirement>();
-  const held = record.requirements.find((one) => one.id === "R1")?.versions ?? [];
+  const r1 = record.requirements.find((one) => one.id === "R1");
+  const held = r1?.versions ?? [];
   for (const entry of entries.data) {
     const isTask = entry.id === "R1";
     const versions = isTask ? held : [];
@@ -123,6 +143,10 @@ export function applyProposal(
     const quoted = normalize(task).includes(normalize(entry.text));
     const shaped = {
       ...entry,
+      // R1 is the task and decides it; what the model adds records how it split the task.
+      required: isTask,
+      // Read from the wording by code, like the versions: no proposal sets it.
+      testsAsked: isTask ? (r1?.testsAsked ?? false) : false,
       versions,
       text: isTask ? task : entry.text,
       source: isTask

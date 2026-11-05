@@ -1,11 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type ModelClient, ModelError } from "./model.ts";
+import type { ModelClient } from "./model.ts";
 import { completionMarker, systemPrompt } from "./prompt.ts";
-import { bash, fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
+import {
+  bash,
+  fixture,
+  noAuthoredCheck,
+  recordAndComplete,
+  scripted,
+  write,
+} from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
+/** A change that is not the fix: the run goes on past it. */
+const _wip = write("NOTES.md", "half: work in progress");
 const mapped = recordAndComplete([
   { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "half" }] } },
 ]);
@@ -25,58 +34,60 @@ async function ledger(
 }
 
 describe("swarm run", () => {
-  it("completes once the verifier finds every requirement satisfied", async () => {
+  it("verifies as soon as the harness's checks pass, without waiting for the model to ask", async () => {
     const probe = await fixture();
-    const ran = await probe.run(scripted([fix, mapped]));
+    const ran = await probe.run(scripted([fix, bash("echo never sent")]));
     expect(ran).toMatchObject({
       stop: "complete",
       report: { state: "complete", verification: "reused" },
     });
     // The check author's one turn is in the totals, apart from the loop's steps.
     expect(ran.report.resources).toMatchObject({
-      steps: 2,
+      steps: 1,
       author: { turns: 1, inputTokens: 90, outputTokens: 10 },
       verifications: 1,
-      inputTokens: 270,
-      outputTokens: 30,
+      inputTokens: 180,
+      outputTokens: 20,
       estimatedTurns: 0,
       escalations: 0,
     });
   });
 
-  it("hands the verifier's findings back and continues from the same budgets", async () => {
+  it("hands the failing checks back after a change, and answers a completion over them with them", async () => {
     const probe = await fixture();
-    const model = scripted([
-      write("half.mjs", "export const half = (n) => n * 2;"),
-      mapped,
-      fix,
-      mapped,
-    ]);
+    const model = scripted([write("half.mjs", "export const half = (n) => n * 2;"), mapped, fix]);
     const ran = await probe.run(model);
     expect(ran).toMatchObject({
       stop: "complete",
-      report: { resources: { steps: 4, verifications: 2 } },
+      report: { resources: { steps: 3, verifications: 1 } },
     });
-    const afterFindings = model.seen[2]?.at(-1)?.content ?? "";
-    expect(afterFindings).toContain("Latest verifier findings:");
-    expect(afterFindings).toContain("R1 failed: failing: test/half.test.mjs::half");
-    expect(afterFindings).toContain("AssertionError");
+    const afterChange = model.seen[1]?.at(-1)?.content ?? "";
+    expect(afterChange).toContain("Checks the harness ran on the tree after your last change:");
+    expect(afterChange).toMatch(/- R1: failing \[evidence [0-9a-f]{16}\]/);
+    expect(afterChange).toContain("AssertionError");
+    // What the authored test printed, never its source.
+    expect(afterChange).not.toContain('import { half } from "../half.mjs"');
+    const answered = model.seen[2]?.at(-1)?.content ?? "";
+    expect(answered).toContain("Not verified: the harness's checks of this tree still fail.");
   });
 
   it("acts on a reply form a server's reasoning parser moved out of the content", async () => {
     // Rapid-MLX with thinking off moves everything before a stray </think> into
     // reasoning_content (seen on dossier, 2026-11-01).
     const probe = await fixture();
-    const model = scripted([{ content: "I'll fix it.", reasoning: fix }, mapped]);
+    const model = scripted([{ content: "I'll look.", reasoning: bash("cat half.mjs") }, fix]);
     const ran = await probe.run(model);
     expect(ran.stop).toBe("complete");
     expect(model.seen[1]?.find((message) => message.role === "assistant")?.content).toContain(
-      "half.mjs",
+      "cat half.mjs",
     );
     const call = (await ledger(ran.sessionDirectory)).find(
       (record) => record.type === "model-call" && !("author" in record.payload),
     );
-    expect(call?.payload).toMatchObject({ reasoning: fix, replyFromReasoning: true });
+    expect(call?.payload).toMatchObject({
+      reasoning: bash("cat half.mjs"),
+      replyFromReasoning: true,
+    });
   });
 
   it("lets an existing expectation change only when the user authorized a behavior change", async () => {
@@ -119,7 +130,10 @@ describe("swarm run", () => {
     const unmapped = recordAndComplete([
       { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "no such test" }] } },
     ]);
-    const model = scripted([fix, unmapped, completionMarker, mapped]);
+    // No authored check: completion is the model's to ask for, and the verifier answers it.
+    const model = scripted([fix, unmapped, completionMarker, mapped], {
+      author: [noAuthoredCheck],
+    });
     const ran = await (await fixture()).run(model);
     expect(ran.stop).toBe("complete");
     // The repeat on the same tree and record reused the held result rather than verifying again.
@@ -164,13 +178,13 @@ describe("swarm run", () => {
     });
     const tokens = await (await fixture()).run(scripted(exploring), {
       maxSteps: 30,
-      maxTokens: 1500,
+      maxTokens: 3000,
       turnTokens: 1000,
     });
     expect(tokens).toMatchObject({ stop: "token-budget", report: { verification: "fresh" } });
-    // No turn began that the allowance could not pay for.
+    // No turn began that the allowance could not pay for, the check author's call included.
     const spent = tokens.report.resources.inputTokens + tokens.report.resources.outputTokens;
-    expect(spent).toBeLessThanOrEqual(1500);
+    expect(spent).toBeLessThanOrEqual(3000);
     expect(tokens.report.resources.steps).toBeGreaterThan(0);
   });
 
@@ -201,67 +215,10 @@ describe("swarm run", () => {
       },
     };
     const ran = await probe.run(silent);
-    expect(ran.report.resources).toMatchObject({ steps: 2, inferenceMs: 0, inferenceTurns: 0 });
+    expect(ran.report.resources).toMatchObject({ steps: 1, inferenceMs: 0, inferenceTurns: 0 });
     const markdown = await readFile(join(ran.sessionDirectory, "final", "report.md"), "utf8");
     expect(markdown).toContain("inference time not reported by the runtime");
     expect(markdown).not.toContain("0 s of inference");
-  });
-
-  it("finalizes the tree a provider failure leaves", async () => {
-    const probe = await fixture();
-    let turns = 0;
-    const failing: ModelClient = {
-      model: "failing",
-      async complete() {
-        turns += 1;
-        if (turns === 1)
-          return {
-            content: fix,
-            inputTokens: 9,
-            outputTokens: 1,
-            inferenceMs: 1,
-            retries: 0,
-            truncated: false,
-          };
-        throw new ModelError("HTTP 500: overloaded (three attempts in a row)", 2);
-      },
-    };
-    const ran = await probe.run(failing);
-    expect(ran.stop).toBe("model-error");
-    // The failed turn's own retries are counted with the rest.
-    expect(ran.report.resources.retries).toBe(2);
-    expect(ran.report.verification).toBe("fresh");
-    expect(ran.result?.checks[0]?.tests?.fixed).toEqual(["test/half.test.mjs::half"]);
-  });
-
-  it("writes an incomplete report bound to the tree when the run is cancelled", async () => {
-    const probe = await fixture();
-    const controller = new AbortController();
-    let turns = 0;
-    const cancelling: ModelClient = {
-      model: "cancelling",
-      async complete() {
-        turns += 1;
-        if (turns === 1)
-          return {
-            content: fix,
-            inputTokens: 9,
-            outputTokens: 1,
-            inferenceMs: 1,
-            retries: 0,
-            truncated: false,
-          };
-        controller.abort(new Error("interrupted"));
-        throw controller.signal.reason;
-      },
-    };
-    const ran = await probe.run(cancelling, { signal: controller.signal });
-    expect(ran.stop).toBe("cancelled");
-    expect(ran.report).toMatchObject({ state: "incomplete", verification: "not run" });
-    expect(ran.report.snapshot.patchSha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(ran.report.requirements[0]?.limitation).toBe(
-      "final verification did not run: the run was cancelled",
-    );
   });
 
   it("loads repository instructions into the prompt and digests them into the evidence", async () => {

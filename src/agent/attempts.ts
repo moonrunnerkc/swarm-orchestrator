@@ -19,7 +19,10 @@ export interface Progress {
   escalated: boolean;
 }
 
-type Shared = Omit<LoopOptions, "model" | "record" | "maxSteps" | "maxTokens" | "handoff">;
+type Shared = Omit<
+  LoopOptions,
+  "model" | "record" | "maxSteps" | "maxTokens" | "handoff" | "settled"
+>;
 
 /**
  * The loop, then at most one escalation to a stronger model on a model-related stop, and, when
@@ -41,6 +44,7 @@ export async function runAttempts(input: {
 }): Promise<{ readonly stop: StopReason; readonly reason: string | null }> {
   const { shared, progress } = input;
   let handoff: string | null = null;
+  let settled: string | null = null;
   while (true) {
     const spent = progress.loops.reduce(
       (sum, one) => sum + one.usage.inputTokens + one.usage.outputTokens,
@@ -54,6 +58,7 @@ export async function runAttempts(input: {
       maxSteps: input.maxSteps - progress.loops.reduce((sum, one) => sum + one.steps, 0),
       maxTokens: input.maxTokens - spent - reviewTokens,
       handoff,
+      settled,
     });
     progress.loops.push(loop);
     progress.record = loop.record;
@@ -80,6 +85,7 @@ export async function runAttempts(input: {
       shared.log(`review: ${progress.review.outcome}`);
       if (progress.review.handoff === null) return loop;
       handoff = progress.review.handoff;
+      settled = await shared.diff();
       continue;
     }
     const stronger = input.escalation;

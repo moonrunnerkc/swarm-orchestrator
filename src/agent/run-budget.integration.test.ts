@@ -2,7 +2,14 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { authorPrompt } from "./author-prompt.ts";
-import { bash, fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
+import {
+  bash,
+  fixture,
+  noAuthoredCheck,
+  recordAndComplete,
+  scripted,
+  write,
+} from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
 const mapped = recordAndComplete([
@@ -55,7 +62,10 @@ describe("a run's turn budget", () => {
     const unmapped = recordAndComplete([
       { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "no such test" }] } },
     ]);
-    const model = scripted([fix, unmapped, bash("ls"), bash("ls"), bash("ls")]);
+    // No authored check, so the model's completion reaches the verifier and its findings stay open.
+    const model = scripted([fix, unmapped, bash("ls"), bash("ls"), bash("ls")], {
+      author: [noAuthoredCheck],
+    });
     await (await fixture()).run(model, { maxSteps: 6 });
     const said = model.seen.map((turn) => turn.at(-1)?.content ?? "");
     expect(said[3]).not.toContain("The verifier's findings are still open");
@@ -75,12 +85,10 @@ describe("a run's token accounting", () => {
     const reported = await turnsOf("reported");
     const counts = { inputTokens: 90, outputTokens: 10 };
     const both = { inputCount: "reported", outputCount: "reported" };
-    expect(reported.turns).toEqual([
-      { ...counts, ...both },
-      { ...counts, ...both },
-    ]);
+    // The fix is the loop's one turn: the harness's checks pass and it verifies.
+    expect(reported.turns).toEqual([{ ...counts, ...both }]);
     const unreported = await turnsOf("unreported");
-    expect(unreported.turns).toHaveLength(2);
+    expect(unreported.turns).toHaveLength(1);
     for (const turn of unreported.turns) {
       expect(turn).toMatchObject({ inputCount: "estimated", outputCount: "estimated" });
     }

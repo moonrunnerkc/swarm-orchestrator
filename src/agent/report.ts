@@ -90,6 +90,12 @@ export interface RunReportFile {
     readonly retries: number;
     readonly escalations: number;
     readonly verifications: number;
+    /** Check commands the harness ran after the model's changes, apart from its turns. */
+    readonly harnessChecks: number;
+    /** The model's own commands that ran a test runner. */
+    readonly modelTestCommands: number;
+    /** Where the loop's turns went: each charged to the requirement whose checks were failing. */
+    readonly turnsByRequirement: Readonly<Record<string, number>>;
     /** The money the run cost where it is known; a local runtime's is none. */
     readonly cost: string;
     /** Every loop turn's counts in order, each reported by the runtime or estimated. */
@@ -203,6 +209,9 @@ export function assembleReport(input: {
       retries: sum((loop) => loop.usage.retries),
       escalations: input.escalated ? 1 : 0,
       verifications: sum((loop) => loop.verifications),
+      harnessChecks: sum((loop) => loop.harnessChecks),
+      modelTestCommands: sum((loop) => loop.modelTestCommands),
+      turnsByRequirement: turnsByRequirement(loops),
       cost: input.options.cost,
       // The review's turn is in the totals above; these are the loop's turns.
       turns: loops.flatMap((loop) => loop.usage.perTurn),
@@ -219,4 +228,13 @@ export async function writeReport(
   await writeFile(json, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   await writeFile(markdown, renderMarkdown(report), { mode: 0o600 });
   return { json, markdown };
+}
+
+/** The loops' turns by requirement, summed across an escalation. */
+function turnsByRequirement(loops: readonly LoopResult[]): Record<string, number> {
+  const total: Record<string, number> = {};
+  for (const loop of loops)
+    for (const [id, turns] of Object.entries(loop.turnsByRequirement))
+      total[id] = (total[id] ?? 0) + turns;
+  return total;
 }

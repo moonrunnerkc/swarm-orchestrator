@@ -147,8 +147,12 @@ describe("the prompt over a long run", () => {
     const contextTokens = 20_000;
     const ran = await runLoop({
       ...(await loopOptions(model, contextTokens)),
-      // The tree changes after the third command, so that turn edited the file.
-      diff: async () => (model.seen.length >= 3 ? changed : ""),
+      // The tree changes after the third command, so that turn edited the file; another file
+      // changes every turn after it, so the run keeps making progress.
+      diff: async () =>
+        model.seen.length >= 3
+          ? `${changed}\ndiff --git a/src/notes.ts b/src/notes.ts\n+// ${model.seen.length}`
+          : "",
       log: (line: string) => logged.push(line),
     });
     expect(ran.steps).toBe(40);
@@ -162,7 +166,7 @@ describe("the prompt over a long run", () => {
     );
     expect(digest).toContain("Files read or named, by step: src/module-0.ts (1, ");
     expect(digest).toContain(
-      "Files edited, by the step after which they changed: src/module-1.ts (3).",
+      "Files edited, by the step after which they changed: src/module-1.ts (3)",
     );
     expect(digest).toMatch(
       /- step 5: `npm test -- --run 4` exited 1: FAIL src\/module-3.ts \[evidence [0-9a-f]{16}\]/,

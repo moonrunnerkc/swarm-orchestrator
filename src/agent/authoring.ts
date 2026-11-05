@@ -4,12 +4,14 @@ import { type Authored, authorChecks, sealAuthored } from "./check-author.ts";
 import type { ModelClient } from "./model.ts";
 import { type RequirementRecord, withAuthored } from "./requirement-record.ts";
 import { testConventions } from "./test-conventions.ts";
+import { createTurnChecks, type TurnChecks } from "./turn-checks.ts";
 
 /**
  * Between recording the requirements and the first edit: checks for R1 written by a fresh-context
  * call that never sees the change, run at the base, and sealed outside the tree where the verifier
- * judges with them. R1's kind and authored claims are held from here on. Where no check survives,
- * the record is unchanged and R1 can be satisfied only by independent evidence from elsewhere.
+ * judges with them; then the harness's checks for the loop, with the declared tests measured at
+ * the base. R1's kind and authored claims are held from here on. Where no check survives, R1 can
+ * be satisfied only by independent evidence from elsewhere.
  */
 export async function authoringStage(input: {
   readonly model: ModelClient;
@@ -20,16 +22,38 @@ export async function authoringStage(input: {
   readonly record: RequirementRecord;
   readonly home: string;
   readonly turnTokens: number;
+  /** Where the harness's own check reports go, outside the tree the model works in. */
+  readonly scratch: string;
   readonly signal?: AbortSignal | undefined;
-}): Promise<{ readonly record: RequirementRecord; readonly authored: readonly Authored[] }> {
+}): Promise<{
+  readonly record: RequirementRecord;
+  readonly authored: readonly Authored[];
+  readonly checks: TurnChecks;
+}> {
   const requirement = input.record.requirements.find((one) => one.id === "R1");
-  if (requirement === undefined) return { record: input.record, authored: [] };
-  const conventions = await testConventions(input.workspace, input.task);
-  const authored = await authorChecks({ ...input, requirement, conventions });
-  await sealAuthored(input.workspace, [authored], input.home);
+  const authored =
+    requirement === undefined
+      ? []
+      : [
+          await authorChecks({
+            ...input,
+            requirement,
+            conventions: await testConventions(input.workspace, input.task),
+          }),
+        ];
+  await sealAuthored(input.workspace, authored, input.home);
+  const first = authored[0];
   const record =
-    authored.kind === null
+    first === undefined || first.kind === null
       ? input.record
-      : withAuthored(input.record, authored.kind, authored.structure);
-  return { record, authored: [authored] };
+      : withAuthored(input.record, first.kind, first.structure);
+  const checks = createTurnChecks({
+    chokepoint: input.chokepoint,
+    workspace: input.workspace,
+    authored: authored.flatMap((one) => (one.test === null ? [] : [one.test])),
+    scratch: input.scratch,
+  });
+  // Still the base: what the declared tests do before any edit, for regressions to be read from.
+  await checks.baseline();
+  return { record, authored, checks };
 }

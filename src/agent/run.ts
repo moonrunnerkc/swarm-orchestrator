@@ -1,5 +1,4 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { snapshotWorkingTree, type VerifyResult } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
@@ -162,13 +161,10 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
 
     let stop: RunReport["stop"] = "interrupted";
     let reason: string | null = null;
-    let authoring: Awaited<ReturnType<typeof authoringStage>> = {
-      record: progress.record,
-      authored: [],
-    };
+    let authored: Awaited<ReturnType<typeof authoringStage>>["authored"] = [];
     try {
       // Checks for R1 written apart from the change, before its first edit (check-author.ts).
-      authoring = await authoringStage({
+      const authoring = await authoringStage({
         model: options.model,
         chokepoint,
         evidence,
@@ -177,9 +173,11 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         record: progress.record,
         home,
         turnTokens: options.turnTokens,
+        scratch: join(evidence.directory, "checks"),
         signal: options.signal,
       });
       progress.record = authoring.record;
+      authored = authoring.authored;
       ({ stop, reason } = await runAttempts({
         shared: {
           task: options.task,
@@ -196,6 +194,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
               "utf8",
             ),
           verify: verifier.tree,
+          checks: authoring.checks,
           turnTokens: options.turnTokens,
           turnTime: () => ({
             leftMs: deadline - Date.now() - verifier.reserveMs(),
@@ -209,7 +208,10 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         escalation: options.escalation ?? null,
         review: options.review === true,
         maxSteps: options.maxSteps,
-        maxTokens: options.maxTokens,
+        // One allowance for the run: the check author's calls came out of it first.
+        maxTokens:
+          options.maxTokens -
+          authored.reduce((sum, one) => sum + one.inputTokens + one.outputTokens, 0),
         verifier,
         evidence,
         base,
@@ -263,7 +265,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       python,
       delivery,
       startedAt: started,
-      authored: authoring.authored,
+      authored,
     });
     const paths = await writeReport(final, report);
     await evidence.record({

@@ -25,6 +25,8 @@ export interface CurrentState {
   readonly diff: string;
   /** The latest verifier findings, or null before the first verification. */
   readonly findings: string | null;
+  /** What the harness's checks found after the last change, or null before any change. */
+  readonly checks?: string | null;
   /** A notice said once, such as the turns or time running short. */
   readonly notice: string | null;
 }
@@ -52,6 +54,7 @@ export function stateBlock(state: CurrentState): string {
     "",
     "Diff against the base:",
     state.diff.trim().length === 0 ? "(no change yet)" : diffView(state.diff.trimEnd(), diffCap),
+    ...(state.checks == null ? [] : ["", state.checks]),
     ...(state.findings === null ? [] : ["", "Latest verifier findings:", truncate(state.findings)]),
     ...(state.notice === null ? [] : ["", state.notice]),
   ].join("\n");
