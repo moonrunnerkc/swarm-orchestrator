@@ -39,6 +39,17 @@ const notNames = new Set([
   "versions",
 ]);
 
+/** The names a list joins onto the end of `before`: "a, b and " gives a and b. */
+function coordinated(before: string): { readonly names: string[]; readonly text: string } {
+  const list = /((?:[@\w][\w@./-]*(?:,\s*(?:and\s+|or\s+)?|\s+(?:and|or)\s+))+)$/.exec(before);
+  const text = list?.[1] ?? "";
+  const names = text
+    .split(/,\s*|\s+(?:and|or)\s+|\s+/)
+    .map((one) => one.trim())
+    .filter((one) => one.length > 0 && !notNames.has(one.toLowerCase()));
+  return { names, text };
+}
+
 const normalized = (name: string) => name.toLowerCase().replace(/[-_.]+/g, "-");
 
 /** The declared packages a word names: the one of that name, or those it names a part of. */
@@ -82,14 +93,18 @@ export function versionConstraintsOf(
       );
       continue;
     }
-    for (const one of packages) {
+    // "vitest and @vitest/coverage-v8 to ^5": the names joined to the one before "to" share its
+    // range (claimcheck, 2026-11-05: only the last name was held, and vitest went unchecked).
+    const joined = coordinated(task.slice(0, match.index));
+    const phraseText = `${joined.text}${wording}`;
+    for (const one of [...joined.names.flatMap((name) => named(name, dependencies)), ...packages]) {
       if (constraints.some((seen) => seen.name === one.name && seen.range === wanted)) continue;
       constraints.push({
         name: one.name,
         ecosystem: one.ecosystem,
         range: wanted,
         latest: latest !== undefined,
-        wording,
+        wording: phraseText,
       });
     }
   }

@@ -37,7 +37,9 @@ export const authorPrompt = [
   "Name each definition the task moves twice: defined in the new module, no longer defined in the",
   "old one; where the task says old imports keep working, add a provides claim for each name.",
   "",
-  "For an upgrade: the kind line alone. The versions are read from the task's wording by code.",
+  "For an upgrade: the kind line; the versions are read from the task's wording by code. Where the",
+  "task also asks for code to change with them (a version it installs, a call it adapts), add one",
+  "```test block for that behavior, as for a feature.",
 ].join("\n");
 
 /** What the author is shown: the requirement as recorded, and the repository's conventions. */

@@ -175,7 +175,7 @@ export async function authorChecks(input: {
     kind = parsed.kind ?? kind;
     const reasons: string[] = parsed.problem === null ? [] : [parsed.problem];
     let accepted: Partial<Authored> | null = null;
-    if (parsed.kind === "upgrade") {
+    if (parsed.kind === "upgrade" && parsed.test === null) {
       accepted =
         requirement.versions.length > 0
           ? {}

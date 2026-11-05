@@ -137,7 +137,8 @@ export async function runAtBase(
     };
   // Cases that fail on every tree are left out where other cases fail at the base as they should;
   // the check runs as narrowed, and is run again at the base so.
-  const own = kind === "feature" || kind === "other";
+  // An upgrade's behavior check is judged as a feature's: what the new versions make the code do.
+  const own = kind === "feature" || kind === "other" || kind === "upgrade";
   const cases = own && !narrowed ? failingCases(plain) : [];
   const broken = cases.filter((one) => foreignError(one.error, task) !== null);
   const command =
