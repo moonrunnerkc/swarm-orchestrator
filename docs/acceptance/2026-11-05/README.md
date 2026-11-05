@@ -14,6 +14,17 @@ Swarm's November 4 patch. One trial each.
   the import-based example choice and the rejection of an unrelated import.
 - `pubprep-2/`: fails at the base; passes the reference and Claude Code's patch (8 of 8); fails
   Swarm's patch on "handles repeated reviewers and maintains the fixed order".
+- `pubprep-7/` to `pubprep-9/`: after rc.10's pubprep run read incomplete where the judge read
+  complete, each authored test was also sealed and run on the reference patch by `swarm-verify
+  verify` in its container (`container-reference.txt`; `trial-17/container-judge.sh`), the way
+  the verdict runs it. pubprep-7 (told the tree is uncommitted) passed both references and
+  Claude Code's patch on this machine, but in the container its main() case failed: it set a
+  short fake key, and only this machine's `claude` binary had kept main() from checking it.
+  pubprep-8 (told about the container and to mock what the repository's tests mock) held its
+  main() cases there, but three cases gave `expect.stringMatching` to `toThrow` and failed
+  everywhere. pubprep-9 (that misuse refused from the source): the first attempt was refused for
+  it, the second passed the reference in the container, 9 of 9, and both patches on the host, and
+  failed Swarm's November 4 patch.
 - `ironroot-1/`: eight claims, all failing at the base, all holding on the reference and Claude
   Code's patch; the four "falsification.py lacks" claims fail on Swarm's copy. These were text
   claims; the author now writes symbol claims.
