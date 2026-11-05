@@ -5,8 +5,42 @@ The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 
 ## Unreleased
 
-- The four-task comparison of Swarm and Claude Code under sealed criteria:
-  [docs/acceptance/2026-11-04-comparison/README.md](docs/acceptance/2026-11-04-comparison/README.md).
+**What "complete" means changes.** A run is complete only when each requirement is shown met by
+evidence the coding model did not write: a test written for R1 from the task's wording by a
+separate call that never sees the change, a test the base already had that the change makes
+pass, structure claims or version constraints read from your wording, or your own held-out
+checks. Where the only evidence is the model's own tests or claims, the requirement reads
+`unverified` with witness `self-attested`, and the run is `incomplete: independent evidence
+missing`. A 16.x run reported complete on its own tests may read incomplete here: look at the
+report's witness column and its "Independent checks" line, and where the check author wrote
+nothing usable for your repository, add a held-out check (`swarm-verify init --seal`) or a test
+that fails today. Requirements the model adds (R2 and on) are recorded and no longer decide the
+state; R1 is the task. Requires swarm-verify 2.1.0.
+
+### Changed
+
+- **The harness runs the checks.** After every turn that changes the tree it runs R1's
+  independent checks, and the project's tests against how they ran at the base once those pass;
+  it verifies as soon as everything passes, whether or not the model has asked. A completion over
+  failing checks is answered with them. A turn counts as progress when it changes the tree, a
+  check's result or the verifier's findings; the third turn in a row without one ends the run,
+  naming the requirement left failing.
+- **Escalation needs a measured gap.** A stalled run is handed to another model only where that
+  model's record on this kind of task, on this machine, is better over two or more such tasks; the
+  report says why when it is not. `--model auto` also considers the one configured
+  OpenAI-compatible endpoint (`--endpoint`, `[agent] endpoint`, or `SWARM_ENDPOINT`) when it
+  answers, under the same readiness probe and record.
+- **The prompt's front stays the same from turn to turn**, so a runtime's prompt cache holds it;
+  the report gives prefill and generation time where Ollama reports them, and where the turns
+  went: by requirement, the harness's check runs and the model's own test commands.
+
+### Fixed
+
+- The completion marker written as a fenced block of its own was read as no reply form.
+- A SEARCH part that matches nothing is answered with the file's closest lines, numbered.
+- The four-task comparison of Swarm and Claude Code under sealed criteria is in
+  [docs/acceptance/2026-11-04-comparison/README.md](docs/acceptance/2026-11-04-comparison/README.md);
+  the fix task's criteria are corrected to test identity there, with the originals kept.
 - The test suite no longer collects the acceptance evidence under `docs/`.
 
 ## 16.0.4 - 2026-11-04
