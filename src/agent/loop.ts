@@ -9,6 +9,7 @@ import {
   focusOf,
   type Measured,
   measureTree,
+  stillFailing,
   withOpen,
 } from "./harness-turn.ts";
 import { callModel } from "./loop-model.ts";
@@ -136,7 +137,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     }
     const stalled =
       quiet === quietNudge
-        ? `Your last ${quietNudge} turns changed neither the tree nor any check's result. ${focus ?? "The task"}'s check still fails (above). Change the code it exercises; one more turn without a change ends the run.`
+        ? `Your last ${quietNudge} turns changed neither the tree nor any check's result. ${stillFailing(measured, focus)} One more turn without a change ends the run.`
         : null;
     // Said once, for whichever budget runs short first.
     const budget = noticed

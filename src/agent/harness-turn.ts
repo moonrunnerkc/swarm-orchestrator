@@ -36,7 +36,7 @@ export async function measureTree(
   const results = (await checks.requirements(record)).map((one) => {
     const asked = record.requirements.find((r) => r.id === one.requirement)?.testsAsked === true;
     if (!asked || one.status !== "passing" || testsTouched(diff).length > 0) return one;
-    const detail = `${one.detail}\nthe task asks for tests, and the change adds none yet`;
+    const detail = `the task asks for tests, and the change adds none yet: add them\n${one.detail}`;
     return { ...one, status: "failing" as const, detail };
   });
   const checked = results.filter((one) => one.status !== "none");
@@ -121,4 +121,12 @@ export function withOpen(
   if (measured === null && record.held !== undefined)
     return `${why ?? "the turns ran out"}; R1's independent check fails at the base, and the tree was never changed`;
   return why;
+}
+
+/** What the nudge before a no-progress stop says is still failing, in the check's own words. */
+export function stillFailing(measured: Measured | null, focus: string | null): string {
+  const failing = measured?.checks.find((one) => one.requirement === focus);
+  return failing === undefined
+    ? "Make the change the task asks for."
+    : `${failing.requirement} still fails: ${failureLine(failing.detail)}.`;
 }

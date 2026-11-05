@@ -28,6 +28,8 @@ describe("the harness runs the checks, not the model", () => {
     expect(model.seen[3]?.at(-1)?.content).toContain(
       "Your last 2 turns changed neither the tree nor any check's result.",
     );
+    // In the check's own words, not a guess at what to change (claimcheck, rc.7 sealed-set run).
+    expect(model.seen[3]?.at(-1)?.content).toContain("R1 still fails: its authored test fails:");
     expect(ran.report.resources.harnessChecks).toBeGreaterThan(0);
     expect(ran.report.resources.modelTestCommands).toBe(0);
   });
