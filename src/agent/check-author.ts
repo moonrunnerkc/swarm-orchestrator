@@ -25,6 +25,7 @@ export interface AuthoredTest {
 /** What the check-authoring stage produced for one requirement, and why where it produced nothing. */
 export {
   foreignError,
+  misusedMatcher,
   ownUndefinedName,
   plainOutput,
   raisedNotAsserted,

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseAuthor } from "./author-prompt.ts";
-import { foreignError, raisedNotAsserted, unrelatedImport } from "./check-author.ts";
+import {
+  foreignError,
+  misusedMatcher,
+  raisedNotAsserted,
+  unrelatedImport,
+} from "./check-author.ts";
 
 describe("an authored check failing at the base for a reason no change removes", () => {
   it("names an import of a module the base lacks and the task never asks for", () => {
@@ -81,5 +86,24 @@ describe("a feature's check failing at the base on an error about nothing the ta
       foreignError("TypeError: Cannot read properties of undefined (reading 'reviewers')", task),
     ).toBeNull();
     expect(foreignError("TypeError: parseArgs is not a function", task)).toBeNull();
+  });
+});
+
+describe("a string matcher given to toThrow", () => {
+  // pubprep (2026-11-05 trial 8): it compared the error object, so it failed the reference too.
+  it("is named, since it never matches a thrown error", () => {
+    const case_ =
+      'expect(() => parseArgs(["--reviewers"])).toThrow(\n  expect.stringMatching(/docs/)\n);';
+    expect(misusedMatcher(case_)).toMatch(/^it passes expect.stringMatching to toThrow/);
+  });
+
+  it("is not a regular expression, a string, or a matcher on the message", () => {
+    expect(misusedMatcher("expect(f).toThrow(/docs/);")).toBeNull();
+    expect(misusedMatcher('expect(f).toThrow("docs");')).toBeNull();
+    expect(
+      misusedMatcher(
+        "expect(f).toThrow(expect.objectContaining({ message: expect.stringContaining('d') }));",
+      ),
+    ).toBeNull();
   });
 });

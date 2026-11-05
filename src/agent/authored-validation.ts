@@ -96,6 +96,21 @@ export function foreignError(output: string, task: string): string | null {
   return null;
 }
 
+const stringMatcherToThrow =
+  /\.(?:toThrow|toThrowError|rejects\.toThrow)\(\s*expect\.(stringMatching|stringContaining)\(/;
+
+/**
+ * A matcher misuse visible in the check's source: vitest and jest compare an asymmetric string
+ * matcher given to toThrow with the thrown error object, not its message, so it never matches.
+ * pubprep (2026-11-05 trial 8): three error cases written so failed the reference patch and every
+ * other, while at the base their failure was an assertion's like any sound case's.
+ */
+export function misusedMatcher(content: string): string | null {
+  const found = stringMatcherToThrow.exec(content);
+  if (found === null) return null;
+  return `it passes expect.${found[1]} to toThrow, which compares it with the error object and not its message, so it fails on every tree; give toThrow a regular expression or a string`;
+}
+
 /** Runs an authored test file at the base: laid in, run by the harness, taken out again. */
 export async function runAtBase(
   chokepoint: Chokepoint,
@@ -111,6 +126,8 @@ export async function runAtBase(
   readonly command?: string;
   readonly excluded?: readonly string[];
 }> {
+  const misuse = misusedMatcher(test.content);
+  if (misuse !== null) return { reasons: [misuse], output: "" };
   const absolute = join(workspace, test.path);
   await mkdir(dirname(absolute), { recursive: true });
   await writeFile(absolute, test.content);
