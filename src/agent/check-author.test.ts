@@ -182,3 +182,26 @@ describe("a fix's check that raises before it asserts", () => {
     ).toBeNull();
   });
 });
+
+describe("a refactor claim about a file the base lacks", () => {
+  it("is rejected where it lies under a top-level directory the repository does not have", async () => {
+    const { repo, evidence, chokepoint } = await base();
+    await mkdir(join(repo, "src", "tracemantle"), { recursive: true });
+    const claims = [{ path: "tracemantle/history/history_io.py", symbol: "load_ledger" }];
+    const authored = await authorChecks({
+      model: scripted([], {
+        author: [`kind: refactor\n\n\`\`\`claims\n${JSON.stringify(claims)}\n\`\`\`\n`],
+      }),
+      chokepoint,
+      evidence,
+      workspace: repo,
+      requirement,
+      conventions: await testConventions(repo, task),
+      turnTokens: 1000,
+    });
+    expect(authored.structure).toEqual([]);
+    expect(authored.attempts[0]).toEqual([
+      "tracemantle/history/history_io.py is under tracemantle/, which the repository does not have; its tracemantle package is at src/tracemantle/",
+    ]);
+  });
+});

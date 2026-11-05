@@ -27,6 +27,8 @@ export const authorPrompt = [
   '  {"path": "a/new.py", "symbol": "moved_name"}                    the module defines the name',
   '  {"path": "a/old.py", "symbol": "moved_name", "absent": true}    the module no longer defines it',
   '  {"path": "a/old.py", "symbol": "moved_name", "provides": true}  an importer still gets it there',
+  "Paths are the repository's own, from its root, as the definitions below show where code lives;",
+  "where the task's wording names a path the repository does not have, use the repository's.",
   "Name each definition the task moves twice: defined in the new module, no longer defined in the",
   "old one; where the task says old imports keep working, add a provides claim for each name.",
   "",

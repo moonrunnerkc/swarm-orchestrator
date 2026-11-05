@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { type Requirement, type SealedFile, sealFiles, structureEvidence } from "swarm-verify";
 import { z } from "zod";
 import type { EvidenceRecorder } from "../evidence/session.ts";
@@ -54,6 +56,7 @@ async function claimsAtBase(
 ): Promise<{ readonly kept: StructureClaim[]; readonly reasons: string[] }> {
   const kept: StructureClaim[] = [];
   const reasons: string[] = [];
+  const misplaced: string[] = [];
   for (const entry of raw) {
     const parsed = claimSchema.safeParse(entry);
     if (!parsed.success) {
@@ -63,12 +66,38 @@ async function claimsAtBase(
       continue;
     }
     const claim = { ...parsed.data, authority: "independently-generated" as const };
+    const placed = await placement(workspace, claim.path);
+    if (placed !== null) {
+      misplaced.push(placed);
+      continue;
+    }
     const read = await structureEvidence(workspace, claim);
     if (read.outcome === "observed") reasons.push(`${read.ref} already holds at the base`);
     else kept.push(claim);
   }
+  if (misplaced.length > 0) return { kept, reasons: misplaced };
   if (kept.length === 0) reasons.unshift("no claim fails at the base");
   return { kept, reasons: kept.length === 0 ? reasons : [] };
+}
+
+/**
+ * Why a claim's path cannot be where a correct change puts the file: it is under a top-level
+ * directory the repository does not have, named for a package it keeps under src/. tracemantle (replayed 2026-11-05): the wording says
+ * tracemantle/history/, the source is under src/, and a claim on tracemantle/history/history_io.py
+ * could never hold whatever the change did.
+ */
+async function placement(workspace: string, path: string): Promise<string | null> {
+  const exists = (rel: string) =>
+    access(join(workspace, rel)).then(
+      () => true,
+      () => false,
+    );
+  if (await exists(path)) return null;
+  const top = path.split("/")[0] ?? path;
+  // A new top-level directory may be what the task asks for; one that shadows a package the
+  // repository keeps under src/ is the layout misread.
+  if (!path.includes("/") || (await exists(top)) || !(await exists(join("src", top)))) return null;
+  return `${path} is under ${top}/, which the repository does not have; its ${top} package is at src/${top}/`;
 }
 
 /**
