@@ -1,15 +1,15 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import type { AuthorKind } from "./author-prompt.ts";
-import { controlTitles, excludingCases, failingCases, onlyCase } from "./authored-cases.ts";
+import { controlsRefused, passingAlone } from "./authored-alone.ts";
+import { excludingCases, failingCases, plainOutput, removeLaid } from "./authored-cases.ts";
 import type { AuthoredTest } from "./check-author.ts";
 
-const excerpt = (text: string) => text.slice(-1500);
-const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+export { plainOutput, removeLaid } from "./authored-cases.ts";
 
-/** A runner's output without its colour escapes, which split the words the rules look for. */
-export const plainOutput = (text: string) => text.replace(ansi, "");
+const excerpt = (text: string) => text.slice(-1500);
+
 const notCollected =
   /No test files found|no tests ran|collected 0 items|file or directory not found|No tests found/i;
 // Node reports an export the base lacks as a SyntaxError too; that is the failure a feature's
@@ -128,35 +128,6 @@ export function misusedMatcher(content: string): string | null {
  */
 const controlCase = /^control\b|^test_control_/i;
 
-const printedError = /^(?:error|fatal|ERROR|FATAL)\b:? (.+)$/gm;
-
-/**
- * Why a control case, run alone at the base, shows the code refused before the work: it printed
- * an error, where a control drives behavior that succeeds now. A control passes by its own assertions, which
- * can hold with the work never reached. pubprep (2026-11-05 trial 10): main() ran in an empty
- * directory, printed that it is not a git repository and returned, and the control's assertion
- * on an orchestrate call that never came held anyway.
- */
-async function controlsRefused(
-  chokepoint: Chokepoint,
-  workspace: string,
-  test: Omit<AuthoredTest, "atBase">,
-): Promise<string | null> {
-  for (const title of controlTitles(test.content)) {
-    const alone = onlyCase(test.command, title);
-    if (alone === null) return null;
-    await writeFile(join(workspace, test.path), test.content);
-    const ran = await chokepoint
-      .check(alone, `authored control "${title}", alone at the base`)
-      .finally(() => removeLaid(workspace, test.path));
-    const printed = printedError.exec(plainOutput(ran.output));
-    printedError.lastIndex = 0;
-    if (printed !== null)
-      return `its control case "${title}" makes the code print "${printed[0].trim().slice(0, 200)}" at the base: a control drives behavior that succeeds now, so the setup does not reach the code; set it up as the repository's own tests do`;
-  }
-  return null;
-}
-
 /** Runs an authored test file at the base: laid in, run by the harness, taken out again. */
 export async function runAtBase(
   chokepoint: Chokepoint,
@@ -213,7 +184,14 @@ export async function runAtBase(
   // An upgrade's behavior check is judged as a feature's: what the new versions make the code do.
   const own = kind === "feature" || kind === "other" || kind === "upgrade";
   const cases = own && !narrowed ? failingCases(plain) : [];
-  const broken = cases.filter((one) => foreignError(one.error, task) !== null);
+  const foreignCases = cases.filter((one) => foreignError(one.error, task) !== null);
+  const leaning = await passingAlone(
+    chokepoint,
+    workspace,
+    test,
+    cases.filter((one) => !foreignCases.includes(one)),
+  );
+  const broken = [...foreignCases, ...leaning];
   const command =
     broken.length > 0 && broken.length < cases.length
       ? excludingCases(
@@ -254,13 +232,4 @@ export async function runAtBase(
       output,
     };
   return { reasons: [], output };
-}
-
-/** Takes a laid check out of the tree, with any bytecode its run left beside it. */
-export async function removeLaid(workspace: string, path: string): Promise<void> {
-  await rm(join(workspace, path), { force: true });
-  const stem = basename(path).replace(/\.py$/, "");
-  const cache = join(workspace, dirname(path), "__pycache__");
-  const left = await readdir(cache).catch(() => [] as string[]);
-  for (const name of left) if (name.startsWith(`${stem}.`)) await rm(join(cache, name));
 }

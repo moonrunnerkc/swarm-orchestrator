@@ -1,4 +1,20 @@
+import { readdir, rm } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { runnerOf } from "./test-conventions.ts";
+
+const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/** A runner's output without its colour escapes, which split the words the rules look for. */
+export const plainOutput = (text: string) => text.replace(ansi, "");
+
+/** Takes a laid check out of the tree, with any bytecode its run left beside it. */
+export async function removeLaid(workspace: string, path: string): Promise<void> {
+  await rm(join(workspace, path), { force: true });
+  const stem = basename(path).replace(/\.py$/, "");
+  const cache = join(workspace, dirname(path), "__pycache__");
+  const left = await readdir(cache).catch(() => [] as string[]);
+  for (const name of left) if (name.startsWith(`${stem}.`)) await rm(join(cache, name));
+}
 
 /** One failing case of a test run, as its runner names it, with the first line of its error. */
 export interface FailingCase {

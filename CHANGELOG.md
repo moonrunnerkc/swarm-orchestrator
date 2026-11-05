@@ -25,6 +25,17 @@ state; R1 is the task. Requires swarm-verify 2.1.0.
   failing checks is answered with them. A turn counts as progress when it changes the tree, a
   check's result or the verifier's findings; the third turn in a row without one ends the run,
   naming the requirement left failing.
+- **Checks are written apart from the change, and held to the base.** Before the first edit a
+  separate call writes R1's checks from your wording and the repository's test conventions (tests
+  for a fix, a feature or an upgrade's stated code change; symbol claims for a refactor); it sees
+  where the task's names are defined and the imports and signatures of files the task names, never
+  the change. A check is refused at the base, with the reason, where it passes there, does not
+  run, uses a runner's API wrongly, raises before asserting on a fix or upgrade, or names a path a
+  correct change cannot produce; a check that drives the code through setup of its own carries a
+  `control:` case that must reach the work at the base. Its source stays out of the tree; the model
+  reads its results.
+- **An upgrade whose wording asks for a code change is held to a test of it**, not to its versions
+  alone (swarm-verify's `behaviorAsked`).
 - **Escalation needs a measured gap.** A stalled run is handed to another model only where that
   model's record on this kind of task, on this machine, is better over two or more such tasks; the
   report says why when it is not. `--model auto` also considers the one configured

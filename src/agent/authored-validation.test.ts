@@ -81,3 +81,41 @@ describe("an authored control case", () => {
     expect(await readdir(join(workspace, "test"))).toEqual([]);
   });
 });
+
+describe("an authored case that passes when run alone", () => {
+  // pubprep (2026-11-05, rc.13 and rc.17): it read orchestrate's first mocked call, made by an
+  // earlier case, and failed on every tree.
+  it("is left out by name, since what fails it is another case's leftovers", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "alone-"));
+    const base = [
+      failing("parses the list", "Error: Unknown flag: --reviewers."),
+      failing(
+        "passes --reviewers to orchestrate",
+        "AssertionError: expected undefined to equal [ 'docs' ]",
+      ),
+    ].join("");
+    const outcome = (output: string, exitCode: number): ShellOutcome => ({
+      decision: "allowed",
+      output,
+      exitCode,
+      record: "",
+    });
+    const chokepoint: Chokepoint = {
+      run: async () => outcome("", 0),
+      edit: async () => outcome("", 0),
+      check: async (command) => {
+        if (command.includes("'passes --reviewers to orchestrate$'"))
+          return outcome(" ✓ passes\n", 0);
+        if (command.includes("(?!"))
+          return outcome(failing("parses the list", "Error: Unknown flag"), 1);
+        return outcome(
+          command.includes(" -t ") ? failing("parses the list", "Error: Unknown flag") : base,
+          1,
+        );
+      },
+    };
+    const ran = await runAtBase(chokepoint, workspace, test, task, "feature");
+    expect(ran.reasons).toEqual([]);
+    expect(ran.excluded).toEqual(["passes --reviewers to orchestrate"]);
+  });
+});
