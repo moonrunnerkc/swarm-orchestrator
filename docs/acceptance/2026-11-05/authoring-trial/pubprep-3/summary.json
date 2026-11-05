@@ -1,0 +1,48 @@
+{
+  "model": "gemma4:31b",
+  "seconds": 219,
+  "kind": "feature",
+  "failure": null,
+  "attempts": [
+    []
+  ],
+  "tokens": [
+    4625,
+    4152
+  ],
+  "r1": {
+    "id": "R1",
+    "text": "Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.",
+    "source": "user",
+    "kind": "feature",
+    "required": true,
+    "assumptions": [],
+    "evidence": {
+      "tests": [],
+      "checks": [],
+      "structure": [],
+      "packages": []
+    },
+    "versions": [],
+    "testsAsked": true
+  },
+  "test": {
+    "path": "test/cli-main.swarm-r1.test.ts",
+    "command": "npx vitest run test/cli-main.swarm-r1.test.ts",
+    "atBase": "\n  /opt/homebrew/bin/claude) for subscription-based auth — no API key\n  needed if you're already logged into Claude Code. To force per-token\n  API billing instead, export ANTHROPIC_API_KEY and ensure 'claude'\n  is not on your PATH.\n\"\n\n ❯ test/cli-main.swarm-r1.test.ts:158:26\n    156|   it(\"documents --reviewers in the help text\", async () => {\n    157|     await main([\"--help\"]);\n    158|     expect(stdoutText()).toMatch(/--reviewers/);\n       |                          ^\n    159|     expect(stdoutText()).toMatch(/tech-debt, docs and security/);\n    160|   });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯\n\n"
+  },
+  "judged": {
+    "reference": {
+      "exit": 1,
+      "tail": "docs and security/);\n       |        ^\n     91|   });\n     92| \n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯\n\n FAIL  test/cli-main.swarm-r1.test.ts > parseArgs() --reviewers > errors when value is empty\nAssertionError: expected [Function] to throw error matching /tech-debt, docs and security/ but got '--reviewers requires a comma-separate…'\n\n- Expected: \n/tech-debt, docs and security/\n\n+ Received: \n\"--reviewers requires a comma-separated list of: tech-debt, docs, security.\"\n\n ❯ test/cli-main.swarm-r1.test.ts:95:8\n     93|   it(\"errors when value is empty\", () => {\n     94|     expect(() => parseArgs([\"--reviewers\", \"\"]))\n     95|       .toThrow(/tech-debt, docs and security/);\n       |        ^\n     96|   });\n     97| \n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯\n\n FAIL  test/cli-main.swarm-r1.test.ts > parseArgs() --reviewers > errors when an invalid name is provided\nAssertionError: expected [Function] to throw error matching /invalid-name.*tech-debt, docs and sec…/ but got '--reviewers got an unknown reviewer \"…'\n\n- Expected: \n/invalid-name.*tech-debt, docs and security/\n\n+ Received: \n\"--reviewers got an unknown reviewer \\\"invalid-name\\\"; choose from: tech-debt, docs, security.\"\n\n ❯ test/cli-main.swarm-r1.test.ts:100:8\n     98|   it(\"errors when an invalid name is provided\", () => {\n     99|     expect(() => parseArgs([\"--reviewers\", \"invalid-name\"]))\n    100|       .toThrow(/invalid-name.*tech-debt, docs and security/);\n       |        ^\n    101|   });\n    102| });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯\n\n"
+    },
+    "swarm": {
+      "exit": 1,
+      "tail": "e publish-readiness gate\n                           (clean tree + npm run typecheck + npm test). Use\n                           when your project doesn't define those scripts or\n                           when you intentionally want the convergence agent\n                           to leave the working tree dirty for manual review.\n  --no-open-pr             Skip the final phase that pushes the convergence\n                           branch and opens a GitHub pull request via 'gh'.\n                           Use when you want to inspect the branch locally\n                           before publishing, or when 'gh' is unavailable.\n  --reviewers <list>       Run only a subset of reviewers. Comma-separated list\n                           of short names: tech-debt, docs, security.\n  -h, --help               Show this message.\n  -v, --version            Print the pubprep version.\n\nAuth:\n  Uses your locally-installed Claude Code (~/.local/bin/claude or\n  /opt/homebrew/bin/claude) for subscription-based auth — no API key\n  needed if you're already logged into Claude Code. To force per-token\n  API billing instead, export ANTHROPIC_API_KEY and ensure 'claude'\n  is not on your PATH.\n\"\n\n ❯ test/cli-main.swarm-r1.test.ts:159:26\n    157|     await main([\"--help\"]);\n    158|     expect(stdoutText()).toMatch(/--reviewers/);\n    159|     expect(stdoutText()).toMatch(/tech-debt, docs and security/);\n       |                          ^\n    160|   });\n    161| });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯\n\n"
+    },
+    "claude": {
+      "exit": 1,
+      "tail": "d as\n                           zero per call).\n  --no-max-budget-usd      Disable the budget cap.\n  --no-publish-gate        Skip the post-convergence publish-readiness gate\n                           (clean tree + npm run typecheck + npm test). Use\n                           when your project doesn't define those scripts or\n                           when you intentionally want the convergence agent\n                           to leave the working tree dirty for manual review.\n  --no-open-pr             Skip the final phase that pushes the convergence\n                           branch and opens a GitHub pull request via 'gh'.\n                           Use when you want to inspect the branch locally\n                           before publishing, or when 'gh' is unavailable.\n  -h, --help               Show this message.\n  -v, --version            Print the pubprep version.\n\nAuth:\n  Uses your locally-installed Claude Code (~/.local/bin/claude or\n  /opt/homebrew/bin/claude) for subscription-based auth — no API key\n  needed if you're already logged into Claude Code. To force per-token\n  API billing instead, export ANTHROPIC_API_KEY and ensure 'claude'\n  is not on your PATH.\n\"\n\n ❯ test/cli-main.swarm-r1.test.ts:159:26\n    157|     await main([\"--help\"]);\n    158|     expect(stdoutText()).toMatch(/--reviewers/);\n    159|     expect(stdoutText()).toMatch(/tech-debt, docs and security/);\n       |                          ^\n    160|   });\n    161| });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯\n\n"
+    }
+  }
+}

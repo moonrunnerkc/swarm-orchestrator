@@ -2,6 +2,7 @@ import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import type { AuthorKind } from "./author-prompt.ts";
+import { excludingCases, failingCases } from "./authored-cases.ts";
 import type { AuthoredTest } from "./check-author.ts";
 
 const excerpt = (text: string) => text.slice(-1500);
@@ -102,7 +103,14 @@ export async function runAtBase(
   test: Omit<AuthoredTest, "atBase">,
   task: string,
   kind: AuthorKind,
-): Promise<{ readonly reasons: string[]; readonly output: string }> {
+  narrowed = false,
+): Promise<{
+  readonly reasons: string[];
+  readonly output: string;
+  /** The command with the cases that fail on every tree left out, where any were. */
+  readonly command?: string;
+  readonly excluded?: readonly string[];
+}> {
   const absolute = join(workspace, test.path);
   await mkdir(dirname(absolute), { recursive: true });
   await writeFile(absolute, test.content);
@@ -127,7 +135,24 @@ export async function runAtBase(
       ],
       output,
     };
-  const foreign = kind === "feature" || kind === "other" ? foreignError(plain, task) : null;
+  // Cases that fail on every tree are left out where other cases fail at the base as they should;
+  // the check runs as narrowed, and is run again at the base so.
+  const own = kind === "feature" || kind === "other";
+  const cases = own && !narrowed ? failingCases(plain) : [];
+  const broken = cases.filter((one) => foreignError(one.error, task) !== null);
+  const command =
+    broken.length > 0 && broken.length < cases.length
+      ? excludingCases(
+          test.command,
+          broken.map((one) => one.title),
+        )
+      : null;
+  if (command !== null) {
+    const again = await runAtBase(chokepoint, workspace, { ...test, command }, task, kind, true);
+    if (again.reasons.length > 0) return again;
+    return { ...again, command, excluded: broken.map((one) => one.title) };
+  }
+  const foreign = own ? foreignError(plain, task) : null;
   if (foreign !== null)
     return {
       reasons: [

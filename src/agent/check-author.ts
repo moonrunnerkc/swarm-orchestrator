@@ -20,6 +20,8 @@ export interface AuthoredTest {
   readonly content: string;
   /** The end of what it printed at the base, where it failed as it should. */
   readonly atBase: string;
+  /** Its cases left out by name, since they failed at the base on errors of their own. */
+  readonly excluded?: readonly string[];
 }
 
 /** What the check-authoring stage produced for one requirement, and why where it produced nothing. */
@@ -197,7 +199,15 @@ export async function authorChecks(input: {
           parsed.kind,
         );
         reasons.push(...ran.reasons);
-        if (ran.reasons.length === 0) accepted = { test: { ...test, atBase: ran.output } };
+        if (ran.reasons.length === 0)
+          accepted = {
+            test: {
+              ...test,
+              command: ran.command ?? test.command,
+              atBase: ran.output,
+              ...(ran.excluded === undefined ? {} : { excluded: ran.excluded }),
+            },
+          };
       }
     }
     attempts.push(reasons);
