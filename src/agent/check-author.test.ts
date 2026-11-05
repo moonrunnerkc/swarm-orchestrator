@@ -10,7 +10,9 @@ import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.
 import { parseAuthor } from "./author-prompt.ts";
 import {
   authorChecks,
+  foreignError,
   ownUndefinedName,
+  plainOutput,
   raisedNotAsserted,
   unrelatedImport,
 } from "./check-author.ts";
@@ -100,7 +102,30 @@ describe("the check author", () => {
       turnTokens: 1000,
     });
     expect(authored.test).toBeNull();
-    expect(authored.failure).toMatch(/two attempts were rejected: the reply has no `kind/);
+    // The same reason twice: no third attempt.
+    expect(authored.failure).toMatch(/2 attempts were rejected: the reply has no `kind/);
+  });
+
+  it("tries a third time only where the second was refused for a new reason", async () => {
+    const { repo, evidence, chokepoint } = await base();
+    const model = scripted([], {
+      author: [
+        "I would test it.",
+        authorTest("fix", passing),
+        authorTest("fix", halfTest("half(4) is 2")),
+      ],
+    });
+    const authored = await authorChecks({
+      model,
+      chokepoint,
+      evidence,
+      workspace: repo,
+      requirement,
+      conventions: await testConventions(repo, task),
+      turnTokens: 1000,
+    });
+    expect(authored.attempts).toHaveLength(3);
+    expect(authored).toMatchObject({ kind: "fix", failure: null });
   });
 
   it("keeps only the refactor claims that fail at the base", async () => {
@@ -214,6 +239,33 @@ describe("a refactor claim about a file the base lacks", () => {
 // pubprep (2026-11-05, sealed-set run): the check called beforeEach without importing it, so it
 // failed at the base and on every tree after, and no change could satisfy R1.
 describe("a check that uses a name it never defines or imports", () => {
+  // Vitest's own colours, as the 17.0.0-rc.5 run recorded them: the rc.5 validation read the raw
+  // text, missed the name between the escapes, and accepted the check again.
+  it("is read through vitest's colours, as the run recorded them", () => {
+    const recorded =
+      "-main.swarm-r1.test.ts ]\u001b[22m\n\u001b[31m\u001b[1mReferenceError\u001b[22m: beforeEach is not defined\u001b[39m\n";
+    expect(ownUndefinedName(recorded, "x")).toBeNull();
+    expect(ownUndefinedName(plainOutput(recorded), "x")).toBe("beforeEach");
+  });
+
+  it("is caught in a runner's output at the base", async () => {
+    const { repo, evidence, chokepoint } = await base();
+    const coloured =
+      'import { test } from "node:test";\nbeforeEach(() => {});\ntest("x", () => {});\n';
+    const authored = await authorChecks({
+      model: scripted([], { author: [authorTest("feature", coloured)] }),
+      chokepoint,
+      evidence,
+      workspace: repo,
+      requirement,
+      conventions: await testConventions(repo, task),
+      turnTokens: 1000,
+    });
+    expect(authored.attempts[0]?.[0]).toMatch(
+      /^it uses beforeEach, which it neither defines nor imports/,
+    );
+  });
+
   it("is named, unless the task names it", () => {
     const vitest =
       "FAIL  test/cli-main.swarm-r1.test.ts\nReferenceError: beforeEach is not defined";
@@ -222,5 +274,27 @@ describe("a check that uses a name it never defines or imports", () => {
     expect(
       ownUndefinedName("ReferenceError: reviewers is not defined", "parseArgs returns `reviewers`"),
     ).toBeNull();
+  });
+});
+
+// pubprep (2026-11-05 trial): toThrow given a predicate, which vitest does not take, raised a
+// TypeError in the assertion itself, at the base and on the reference patch alike.
+describe("a feature's check failing at the base on an error about nothing the task names", () => {
+  const task = "parseArgs returns the choice as `reviewers`; a missing value is an error";
+  it("is named", () => {
+    const vitest =
+      "FAIL  test/a.test.ts > x\nTypeError: Cannot read properties of undefined (reading 'constructor')";
+    expect(foreignError(vitest, task)).toBe(
+      "TypeError: Cannot read properties of undefined (reading 'constructor')",
+    );
+  });
+  it("is not, where the error is an assertion's or about a name the task uses", () => {
+    expect(
+      foreignError("AssertionError: expected undefined to deeply equal [ 'a' ]", task),
+    ).toBeNull();
+    expect(
+      foreignError("TypeError: Cannot read properties of undefined (reading 'reviewers')", task),
+    ).toBeNull();
+    expect(foreignError("TypeError: parseArgs is not a function", task)).toBeNull();
   });
 });

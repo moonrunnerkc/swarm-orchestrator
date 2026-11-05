@@ -24,7 +24,9 @@ export interface AuthoredTest {
 
 /** What the check-authoring stage produced for one requirement, and why where it produced nothing. */
 export {
+  foreignError,
   ownUndefinedName,
+  plainOutput,
   raisedNotAsserted,
   removeLaid,
   unrelatedImport,
@@ -140,7 +142,10 @@ export async function authorChecks(input: {
     ...tokens,
     ...rest,
   });
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  // One retry with the reason, and a third only where the second was refused for a new one: a
+  // check that cannot run hides its next fault until the first is gone (pubprep, 2026-11-05).
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (attempt === 3 && attempts[0]?.join("; ") === attempts[1]?.join("; ")) break;
     let content: string;
     try {
       const reply = await input.model.complete(messages, {
@@ -210,7 +215,7 @@ export async function authorChecks(input: {
     );
   }
   const authored = done({
-    failure: `the check author's two attempts were rejected: ${attempts.at(-1)?.join("; ") ?? ""}`,
+    failure: `the check author's ${attempts.length} attempts were rejected: ${attempts.at(-1)?.join("; ") ?? ""}`,
   });
   await recordAuthored(input.evidence, authored);
   return authored;

@@ -5,6 +5,10 @@ import type { AuthorKind } from "./author-prompt.ts";
 import type { AuthoredTest } from "./check-author.ts";
 
 const excerpt = (text: string) => text.slice(-1500);
+const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/** A runner's output without its colour escapes, which split the words the rules look for. */
+export const plainOutput = (text: string) => text.replace(ansi, "");
 const notCollected =
   /No test files found|no tests ran|collected 0 items|file or directory not found|No tests found/i;
 // Node reports an export the base lacks as a SyntaxError too; that is the failure a feature's
@@ -69,6 +73,28 @@ export function ownUndefinedName(output: string, task: string): string | null {
   return null;
 }
 
+const errorLine = /\b([A-Z]\w*(?:Error|Exception))(?: \[\w+\])?: ([^\n]*)/g;
+
+/**
+ * The first error at the base that is neither an assertion's nor about anything the task names:
+ * the check's own misuse of its runner or its inputs, which fails every tree alike. A feature's
+ * check may fail on a name the base lacks ("parseArgs(...).reviewers is undefined"); pubprep
+ * (2026-11-05 trial) passed a predicate to vitest's toThrow, which raised "Cannot read properties
+ * of undefined (reading 'constructor')" on the reference patch and every other.
+ */
+export function foreignError(output: string, task: string): string | null {
+  const words = new Set((task.match(/[A-Za-z_][\w-]{3,}/g) ?? []).map((one) => one.toLowerCase()));
+  for (const match of output.matchAll(errorLine)) {
+    const [line, type = "", message = ""] = match;
+    if (/^Assertion/.test(type)) continue;
+    const named = (message.match(/[A-Za-z_][\w-]{3,}/g) ?? []).some((one) =>
+      words.has(one.toLowerCase()),
+    );
+    if (!named) return line.trim().slice(0, 300);
+  }
+  return null;
+}
+
 /** Runs an authored test file at the base: laid in, run by the harness, taken out again. */
 export async function runAtBase(
   chokepoint: Chokepoint,
@@ -83,15 +109,17 @@ export async function runAtBase(
   const ran = await chokepoint
     .check(test.command, `authored check for ${test.requirement}, at the base`)
     .finally(() => removeLaid(workspace, test.path));
-  const output = excerpt(ran.output);
+  // Runners colour their output; every rule here reads the text without the escapes.
+  const plain = plainOutput(ran.output);
+  const output = excerpt(plain);
   if (ran.decision !== "allowed") return { reasons: [`it could not run: ${output}`], output };
   if (ran.exitCode === 0)
     return { reasons: ["it passes at the base, so it cannot tell the change apart"], output };
-  if (notCollected.test(ran.output))
+  if (notCollected.test(plain))
     return { reasons: [`the runner did not collect it: ${output}`], output };
-  if (unparsable.test(ran.output) && ran.output.includes(basename(test.path)))
+  if (unparsable.test(plain) && plain.includes(basename(test.path)))
     return { reasons: [`it does not parse: ${output}`], output };
-  const undefinedHere = ownUndefinedName(ran.output, task);
+  const undefinedHere = ownUndefinedName(plain, task);
   if (undefinedHere !== null)
     return {
       reasons: [
@@ -99,7 +127,15 @@ export async function runAtBase(
       ],
       output,
     };
-  const crashed = kind === "fix" ? raisedNotAsserted(ran.output, task) : null;
+  const foreign = kind === "feature" || kind === "other" ? foreignError(plain, task) : null;
+  if (foreign !== null)
+    return {
+      reasons: [
+        `a case fails at the base with ${foreign}, which names nothing the task does: the check's own use of its runner or inputs fails on every tree; use the runner's API as the example test does`,
+      ],
+      output,
+    };
+  const crashed = kind === "fix" ? raisedNotAsserted(plain, task) : null;
   if (crashed !== null)
     return {
       reasons: [
@@ -107,7 +143,7 @@ export async function runAtBase(
       ],
       output,
     };
-  const missing = unrelatedImport(ran.output, task);
+  const missing = unrelatedImport(plain, task);
   if (missing !== null)
     return {
       reasons: [
