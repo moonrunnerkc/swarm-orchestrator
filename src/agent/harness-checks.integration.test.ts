@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { failureLine, testsTouched } from "./harness-turn.ts";
 import { asksForTests } from "./requirement-record.ts";
-import { bash, fixture, scripted, write } from "./test-doubles.ts";
+import { bash, fixture, noAuthoredCheck, scripted, write } from "./test-doubles.ts";
 
 const wrong = write("half.mjs", "export const half = (n) => n * 3;");
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
@@ -30,6 +30,19 @@ describe("the harness runs the checks, not the model", () => {
     );
     expect(ran.report.resources.harnessChecks).toBeGreaterThan(0);
     expect(ran.report.resources.modelTestCommands).toBe(0);
+  });
+
+  // depose (replayed 2026-11-05): the author wrote nothing usable, and the stop said only "the
+  // task still fails", though nothing had measured it.
+  it("says R1 had no independent check when a run with none stops for no progress", async () => {
+    const model = scripted([wrong, bash("cat half.mjs"), bash("ls"), bash("pwd")], {
+      author: [noAuthoredCheck],
+    });
+    const ran = await (await fixture()).run(model, { maxSteps: 20 });
+    expect(ran.stop).toBe("no-progress");
+    expect(ran.report.reason).toBe(
+      "3 turns changed neither the tree nor any check's result; R1 has no independent check here (see the report's independent checks), so nothing measured it",
+    );
   });
 
   it("completes on the checks alone when the model never runs a test or marks the task done", async () => {

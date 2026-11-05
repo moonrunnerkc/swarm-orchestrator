@@ -100,3 +100,25 @@ export function checksNote(now: Measured, before: Measured | null): string {
 }
 
 const indent = (text: string) => text.split("\n").map((line) => `  ${line}`);
+
+/**
+ * A stop for want of progress or turns says which requirement was left failing and why, from
+ * the harness's last measure, or that its check fails at the base where nothing changed it.
+ */
+export function withOpen(
+  why: string | null,
+  measured: Measured | null,
+  record: RequirementRecord,
+): string | null {
+  const failing = measured?.checks.find((one) => one.status === "failing");
+  if (failing !== undefined) {
+    if (why?.includes(`${failing.requirement} still fails`)) return why;
+    const line = failureLine(failing.detail);
+    return `${why ?? "the turns ran out"}; ${failing.requirement} still fails: ${line}`;
+  }
+  if (measured?.unchecked === true)
+    return `${why ?? "the turns ran out"}; R1 has no independent check here (see the report's independent checks), so nothing measured it`;
+  if (measured === null && record.held !== undefined)
+    return `${why ?? "the turns ran out"}; R1's independent check fails at the base, and the tree was never changed`;
+  return why;
+}

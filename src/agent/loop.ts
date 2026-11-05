@@ -3,7 +3,14 @@ import { diffSections, estimateTokens, movedFiles, unresolvedOf } from "./contex
 import { createConversation } from "./conversation.ts";
 import { commandExchange, noteExchange } from "./exchange.ts";
 import { circlingNote } from "./findings.ts";
-import { checksNote, failureLine, focusOf, type Measured, measureTree } from "./harness-turn.ts";
+import {
+  checksNote,
+  failureLine,
+  focusOf,
+  type Measured,
+  measureTree,
+  withOpen,
+} from "./harness-turn.ts";
 import { callModel } from "./loop-model.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage } from "./loop-types.ts";
 import { createVerifyStep } from "./loop-verify.ts";
@@ -13,26 +20,6 @@ import { treeCycles } from "./tree-cycles.ts";
 import { noUsage } from "./usage.ts";
 
 export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
-
-/**
- * A stop for want of progress or turns says which requirement was left failing and why, from
- * the harness's last measure, or that its check fails at the base where nothing changed it.
- */
-function withOpen(
-  why: string | null,
-  measured: Measured | null,
-  record: LoopOptions["record"],
-): string | null {
-  const failing = measured?.checks.find((one) => one.status === "failing");
-  if (failing !== undefined) {
-    if (why?.includes(`${failing.requirement} still fails`)) return why;
-    const line = failureLine(failing.detail);
-    return `${why ?? "the turns ran out"}; ${failing.requirement} still fails: ${line}`;
-  }
-  if (measured === null && record.held !== undefined)
-    return `${why ?? "the turns ran out"}; R1's independent check fails at the base, and the tree was never changed`;
-  return why;
-}
 
 /** The smallest reply worth asking for: one command and its fence. */
 const minimumReplyTokens = 256;
@@ -144,7 +131,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       const stuck = measured?.checks.find((one) => one.requirement === focus);
       return result(
         "no-progress",
-        `${quietStop} turns changed neither the tree nor any check's result; ${focus ?? "the task"} still fails${stuck === undefined ? "" : `: ${failureLine(stuck.detail)}`}`,
+        `${quietStop} turns changed neither the tree nor any check's result${focus === null ? "" : `; ${focus} still fails${stuck === undefined ? "" : `: ${failureLine(stuck.detail)}`}`}`,
       );
     }
     const stalled =
