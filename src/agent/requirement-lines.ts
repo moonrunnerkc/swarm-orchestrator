@@ -20,6 +20,15 @@ export function readingOf(one: RequirementOutcome): string {
     ...(checks.length === 0 ? [] : [`checks ${checks.join(", ")}`]),
     ...structure.map((claim) => {
       const by = claim.authority === "independently-generated" ? " (authored apart)" : "";
+      if (claim.symbol !== undefined) {
+        const form =
+          claim.provides === true
+            ? "provides"
+            : claim.absent === true
+              ? "no longer defines"
+              : "defines";
+        return `${claim.path} ${form} ${claim.symbol}${by}`;
+      }
       const text = JSON.stringify(claim.contains);
       if (claim.absent === true)
         return claim.contains === undefined

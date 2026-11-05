@@ -205,3 +205,27 @@ describe("an unchanged command and output", () => {
     expect(ran).toMatchObject({ stop: "step-budget", steps: 5 });
   });
 });
+
+describe("the time a turn may take", () => {
+  // A run's wall clock holds the check author and the base's tests before the first turn, which
+  // take longer on a loaded machine; the loop's own clock is what this rule reads, so it is faked.
+  it("starts no turn the time left cannot pay for, the longest turn so far the measure", async () => {
+    const quick = scripted(["ls", "pwd", "ls -a"].map(bash), { counts: "unreported" });
+    const slow: typeof quick = {
+      ...quick,
+      async complete(...args: Parameters<typeof quick.complete>) {
+        await new Promise((wait) => setTimeout(wait, 100));
+        return quick.complete(...args);
+      },
+    };
+    const left = [10_000, 50];
+    let asked = 0;
+    const ran = await runLoop({
+      ...(await loopOptions(slow, 65_536)),
+      turnTime: () => ({ leftMs: left[Math.min(asked++, left.length - 1)] ?? 0, wallMs: 60_000 }),
+    });
+    expect(ran.stop).toBe("time-budget");
+    expect(ran.steps).toBe(1);
+    expect(ran.reason).toMatch(/^the next turn may take 1 s, as the longest has, and 0 s remain/);
+  });
+});

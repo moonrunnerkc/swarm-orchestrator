@@ -37,6 +37,11 @@ export interface Authored {
 
 const claimSchema = z.strictObject({
   path: z.string().min(1),
+  symbol: z
+    .string()
+    .regex(/^[A-Za-z_$][\w$]*$/)
+    .optional(),
+  provides: z.boolean().optional(),
   contains: z.string().min(1).optional(),
   absent: z.boolean().optional(),
 });
@@ -119,7 +124,9 @@ async function claimsAtBase(
   for (const entry of raw) {
     const parsed = claimSchema.safeParse(entry);
     if (!parsed.success) {
-      reasons.push(`a claim is not {"path", "contains"?, "absent"?}: ${JSON.stringify(entry)}`);
+      reasons.push(
+        `a claim is not {"path", "symbol", "absent"?, "provides"?}: ${JSON.stringify(entry)}`,
+      );
       continue;
     }
     const claim = { ...parsed.data, authority: "independently-generated" as const };
