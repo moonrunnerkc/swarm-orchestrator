@@ -32,11 +32,13 @@ describe("swarm run", () => {
       stop: "complete",
       report: { state: "complete", verification: "reused" },
     });
+    // The check author's one turn is in the totals, apart from the loop's steps.
     expect(ran.report.resources).toMatchObject({
       steps: 2,
+      author: { turns: 1, inputTokens: 90, outputTokens: 10 },
       verifications: 1,
-      inputTokens: 180,
-      outputTokens: 20,
+      inputTokens: 270,
+      outputTokens: 30,
       estimatedTurns: 0,
       escalations: 0,
     });
@@ -72,7 +74,7 @@ describe("swarm run", () => {
       "half.mjs",
     );
     const call = (await ledger(ran.sessionDirectory)).find(
-      (record) => record.type === "model-call",
+      (record) => record.type === "model-call" && !("author" in record.payload),
     );
     expect(call?.payload).toMatchObject({ reasoning: fix, replyFromReasoning: true });
   });
@@ -287,7 +289,9 @@ describe("swarm run", () => {
 
   it("keeps the token count in the evidence instead of redacting it", async () => {
     const ran = await (await fixture()).run(scripted(["```bash\nls\n```"]), { maxSteps: 2 });
-    const stopped = (await ledger(ran.sessionDirectory)).find((one) => one.type === "model-call");
+    const stopped = (await ledger(ran.sessionDirectory)).find(
+      (one) => one.type === "model-call" && !("author" in one.payload),
+    );
     expect(stopped?.payload).toMatchObject({ inputTokens: 90, outputTokens: 10, estimated: false });
   });
 });

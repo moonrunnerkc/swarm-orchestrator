@@ -7,7 +7,7 @@ import type { Chokepoint } from "../tools/chokepoint.ts";
 import { applyReplacements } from "../tools/file-edit.ts";
 import { runLoop } from "./loop.ts";
 import { initialRecord } from "./requirement-record.ts";
-import { bash, scripted } from "./test-doubles.ts";
+import { bash, noChecks, scripted } from "./test-doubles.ts";
 import { treeCycles } from "./tree-cycles.ts";
 
 const one = 'import { runVitest, type VitestRunOptions } from "./vitest-run.js";';
@@ -27,6 +27,7 @@ function oneFile(): { readonly chokepoint: Chokepoint; readonly diff: () => Prom
   return {
     diff: async () => text,
     chokepoint: {
+      ...noChecks(),
       async run() {
         calls += 1;
         return { decision: "allowed", output: "", exitCode: 0, record: `sha256:${calls}` };

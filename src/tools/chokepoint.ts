@@ -36,6 +36,12 @@ export interface ShellOutcome {
 
 export interface Chokepoint {
   run(command: string): Promise<ShellOutcome>;
+  /**
+   * A command the harness itself runs (an authored check, a regression check), on the same
+   * ledger, environment and process groups as the model's, recorded as the harness's. The model
+   * never writes it, so neither the allowlist nor an approval applies.
+   */
+  check(command: string, purpose: string): Promise<ShellOutcome>;
   /** One file edit block, under the same path policy and on the same ledger as a command. */
   edit(edit: FileEdit): Promise<ShellOutcome>;
 }
@@ -72,13 +78,17 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
   let calls = 0;
 
   // The request is on the ledger before anything happens; what settles it is recorded after.
-  const open = async (tool: string, request: Record<string, string>) => {
+  const open = async (
+    tool: string,
+    request: Record<string, string>,
+    by: "model" | "harness" = "model",
+  ) => {
     calls += 1;
     const callId = `call-${calls}`;
     await options.evidence.record({
       type: "tool-call",
       actor: "harness",
-      provenance: ["model"],
+      provenance: [by],
       payload: { callId, tool, decision: "requested", ...request },
     });
     const settle = async (
@@ -90,7 +100,7 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
       const recorded = await options.evidence.record({
         type: "tool-call",
         actor: "harness",
-        provenance: ["model", "tool-output"],
+        provenance: [by, "tool-output"],
         payload: { callId, tool, decision, ...request, output, exitCode, ...detail },
       });
       return { decision, output, exitCode, record: recorded.record.payloadDigest };
@@ -113,6 +123,12 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
         beforeSha256: result.before === null ? null : sha256(result.before),
         afterSha256: sha256(result.after),
       });
+    },
+
+    async check(command: string, purpose: string): Promise<ShellOutcome> {
+      const { settle } = await open("harness-check", { command, purpose }, "harness");
+      if (options.signal?.aborted) return settle("failed", "cancelled before execution", null);
+      return execute(command, settle);
     },
 
     async run(command: string): Promise<ShellOutcome> {
@@ -154,22 +170,33 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
           );
         }
       }
-      const ran = await runProcessGroup("/bin/sh", ["-c", command], {
-        cwd: options.guard.workspaceRoot,
-        env: options.guard.childEnvironment.variables,
-        timeoutMs: options.timeoutMs,
-        maxOutputBytes,
-        signal: options.signal,
-      });
-      const output = `${ran.stdout}${ran.stderr}${ran.timedOut ? "\n[timed out]" : ""}`;
-      if (ran.startFailure !== null) return settle("failed", ran.startFailure, null);
-      return settle("allowed", output, ran.exitCode, {
-        timedOut: ran.timedOut,
-        truncated: ran.truncated,
-      });
+      return execute(command, settle);
     },
   };
+
+  async function execute(command: string, settle: Settle): Promise<ShellOutcome> {
+    const ran = await runProcessGroup("/bin/sh", ["-c", command], {
+      cwd: options.guard.workspaceRoot,
+      env: options.guard.childEnvironment.variables,
+      timeoutMs: options.timeoutMs,
+      maxOutputBytes,
+      signal: options.signal,
+    });
+    const output = `${ran.stdout}${ran.stderr}${ran.timedOut ? "\n[timed out]" : ""}`;
+    if (ran.startFailure !== null) return settle("failed", ran.startFailure, null);
+    return settle("allowed", output, ran.exitCode, {
+      timedOut: ran.timedOut,
+      truncated: ran.truncated,
+    });
+  }
 }
+
+type Settle = (
+  decision: ShellOutcome["decision"],
+  output: string,
+  exitCode: number | null,
+  detail?: Record<string, string | number | boolean | null>,
+) => Promise<ShellOutcome>;
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 

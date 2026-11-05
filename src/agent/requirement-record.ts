@@ -12,6 +12,50 @@ export interface RequirementRecord {
   readonly requirements: readonly Requirement[];
   /** Why parts of the last proposal were not taken, for the model to read. */
   readonly notes: readonly string[];
+  /**
+   * What the check-authoring stage fixed on R1 before the first edit: its kind and the structure
+   * claims written apart from the change. A proposal cannot change or drop either.
+   */
+  readonly held?: { readonly kind: Requirement["kind"]; readonly structure: readonly Claim[] };
+}
+
+type Claim = Requirement["evidence"]["structure"][number];
+
+/** R1 with what the authoring stage holds on it laid over whatever was proposed. */
+function holding(requirement: Requirement, held: RequirementRecord["held"]): Requirement {
+  if (held === undefined) return requirement;
+  const own = requirement.evidence.structure.filter(
+    (claim) => !held.structure.some((one) => JSON.stringify(one) === JSON.stringify(claim)),
+  );
+  return {
+    ...requirement,
+    kind: held.kind,
+    evidence: { ...requirement.evidence, structure: [...held.structure, ...own] },
+  };
+}
+
+/** The record with the authoring stage's kind and claims held on R1 from now on. */
+export function withAuthored(
+  record: RequirementRecord,
+  kind: Requirement["kind"],
+  structure: readonly Claim[],
+): RequirementRecord {
+  const held = { kind, structure };
+  return {
+    ...record,
+    held,
+    requirements: record.requirements.map((one) => (one.id === "R1" ? holding(one, held) : one)),
+  };
+}
+
+/** Claims the coding model proposed are its own, whatever authority the proposal names. */
+function stamped(evidence: Requirement["evidence"]): Requirement["evidence"] {
+  const own = "implementation-authored" as const;
+  return {
+    ...evidence,
+    structure: evidence.structure.map((claim) => ({ ...claim, authority: own })),
+    packages: evidence.packages.map((claim) => ({ ...claim, authority: own })),
+  };
 }
 
 const proposalSchema = z.array(
@@ -98,11 +142,29 @@ export function applyProposal(
       );
       continue;
     }
-    accepted.set(parsed.data.id, parsed.data);
+    accepted.set(parsed.data.id, { ...parsed.data, evidence: stamped(parsed.data.evidence) });
   }
-  const first = accepted.get("R1") ?? record.requirements.find((one) => one.id === "R1");
+  const proposedKind = accepted.get("R1")?.kind;
+  if (
+    record.held !== undefined &&
+    proposedKind !== undefined &&
+    proposedKind !== record.held.kind
+  ) {
+    notes.push(
+      `R1's kind is ${record.held.kind}, fixed when its checks were written; a proposal cannot change it`,
+    );
+  }
+  const proposedFirst = accepted.get("R1");
+  const first =
+    proposedFirst === undefined
+      ? record.requirements.find((one) => one.id === "R1")
+      : holding(proposedFirst, record.held);
   const rest = [...accepted.values()].filter((one) => one.id !== "R1");
-  return { requirements: first === undefined ? rest : [first, ...rest], notes };
+  return {
+    requirements: first === undefined ? rest : [first, ...rest],
+    notes,
+    ...(record.held === undefined ? {} : { held: record.held }),
+  };
 }
 
 /** A digest of the record, bound into the signed statement so a report cannot swap it. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyProposal, initialRecord, recordSha256 } from "./requirement-record.ts";
+import { applyProposal, initialRecord, recordSha256, withAuthored } from "./requirement-record.ts";
 
 const task = "Add a --json option to status. Keep the text output as it is.";
 
@@ -98,5 +98,63 @@ describe("the requirement record", () => {
     const a = recordSha256(initialRecord(task));
     expect(a).toMatch(/^[0-9a-f]{64}$/);
     expect(recordSha256(initialRecord(`${task} `))).not.toBe(a);
+  });
+});
+
+describe("what the check-authoring stage holds on R1", () => {
+  const task = "move _falsify into claims.py";
+  const authoredClaim = {
+    path: "src/claims.py",
+    contains: "def _falsify(",
+    authority: "independently-generated" as const,
+  };
+  const held = withAuthored(initialRecord(task), "refactor", [authoredClaim]);
+
+  it("keeps the authored kind and claims whatever a proposal says, and says so", () => {
+    const next = applyProposal(
+      task,
+      held,
+      JSON.stringify([
+        { id: "R1", text: task, kind: "other", evidence: { structure: [{ path: "x.py" }] } },
+      ]),
+    );
+    const r1 = next.requirements[0];
+    expect(r1?.kind).toBe("refactor");
+    expect(r1?.evidence.structure).toEqual([
+      authoredClaim,
+      { path: "x.py", authority: "implementation-authored" },
+    ]);
+    expect(next.notes).toContain(
+      "R1's kind is refactor, fixed when its checks were written; a proposal cannot change it",
+    );
+    expect(next.held).toEqual(held.held);
+  });
+
+  it("marks every claim a proposal names as the implementation's own, whatever authority it gives", () => {
+    const next = applyProposal(
+      task,
+      initialRecord(task),
+      JSON.stringify([
+        {
+          id: "R2",
+          text: "pin vitest",
+          kind: "upgrade",
+          evidence: {
+            packages: [{ name: "vitest", ecosystem: "npm", authority: "user-acceptance" }],
+          },
+        },
+      ]),
+    );
+    expect(next.requirements[1]?.evidence.packages[0]?.authority).toBe("implementation-authored");
+  });
+
+  it("says nothing about the kind when a proposal leaves R1 out", () => {
+    const next = applyProposal(
+      task,
+      held,
+      JSON.stringify([{ id: "R2", text: "also tidy", kind: "other" }]),
+    );
+    expect(next.notes).toEqual([]);
+    expect(next.requirements[0]?.kind).toBe("refactor");
   });
 });

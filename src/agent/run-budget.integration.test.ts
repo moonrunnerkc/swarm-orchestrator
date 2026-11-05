@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { authorPrompt } from "./author-prompt.ts";
 import { bash, fixture, recordAndComplete, scripted, write } from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
@@ -34,12 +35,15 @@ describe("a run's turn budget", () => {
     const slow = {
       ...quick,
       async complete(...args: Parameters<typeof quick.complete>) {
-        await new Promise((wait) => setTimeout(wait, 1_500));
+        // The loop's turns are slow; the check author's call before them is not what this tests.
+        if (args[0][0]?.content !== authorPrompt)
+          await new Promise((wait) => setTimeout(wait, 1_500));
         return quick.complete(...args);
       },
     };
-    // 120 s of the wall are the verification reserve; 2.5 s remain for 1.5 s turns.
-    const ran = await (await fixture()).run(slow, { maxSteps: 3, maxWallMs: 122_500 });
+    // 120 s of the wall are the verification reserve; 3.5 s remain, after the authored check's
+    // run at the base, for 1.5 s turns.
+    const ran = await (await fixture()).run(slow, { maxSteps: 3, maxWallMs: 123_500 });
     expect(ran.stop).toBe("time-budget");
     expect(ran.report.resources.steps).toBe(1);
     expect(ran.report.verification).toBe("fresh");
@@ -84,6 +88,8 @@ describe("a run's token accounting", () => {
       (total: number, turn: { inputTokens: number }) => total + turn.inputTokens,
       0,
     );
-    expect(unreported.ran.report.resources.inputTokens).toBe(sum);
+    // The loop's turns, and the check author's call before them.
+    const { author } = unreported.ran.report.resources;
+    expect(unreported.ran.report.resources.inputTokens).toBe(sum + author.inputTokens);
   });
 });

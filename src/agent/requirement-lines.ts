@@ -18,13 +18,17 @@ export function readingOf(one: RequirementOutcome): string {
           `tests ${tests.map((test) => (test.file === undefined ? test.name : `${test.file}::${test.name}`)).join(", ")}`,
         ]),
     ...(checks.length === 0 ? [] : [`checks ${checks.join(", ")}`]),
-    ...structure.map((claim) =>
-      claim.absent === true
-        ? `${claim.path} absent`
-        : claim.contains === undefined
-          ? `${claim.path} exists`
-          : `${claim.path} contains ${JSON.stringify(claim.contains)}`,
-    ),
+    ...structure.map((claim) => {
+      const by = claim.authority === "independently-generated" ? " (authored apart)" : "";
+      const text = JSON.stringify(claim.contains);
+      if (claim.absent === true)
+        return claim.contains === undefined
+          ? `${claim.path} absent${by}`
+          : `${claim.path} lacks ${text}${by}`;
+      return claim.contains === undefined
+        ? `${claim.path} exists${by}`
+        : `${claim.path} contains ${text}${by}`;
+    }),
     ...(one.assumptions.length === 0 ? [] : [`assumes ${one.assumptions.join("; ")}`]),
   ];
   return parts.length === 0
@@ -53,18 +57,18 @@ export function summaryRequirementLines(one: RequirementOutcome): string[] {
     `${label(one.id)} ${"asked".padEnd(8)} ${one.text}`,
     `${sub("read as")} ${readingOf(one)}`,
     ...(held === null ? [] : [`${sub("held to")} ${held}`]),
-    `${sub("status")} ${one.status}${one.limitation === null ? "" : `: ${one.limitation}`}`,
+    `${sub("status")} ${one.status}, witness ${one.witness}${one.limitation === null ? "" : `: ${one.limitation}`}`,
   ];
 }
 
 const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
 
 export const requirementTableHeader = [
-  "| Requirement | Source | Read as | Held to | Status | Evidence | Limitation |",
-  "| --- | --- | --- | --- | --- | --- | --- |",
+  "| Requirement | Source | Read as | Held to | Status | Witness | Evidence | Limitation |",
+  "| --- | --- | --- | --- | --- | --- | --- | --- |",
 ];
 
 export function requirementRow(one: RequirementOutcome): string {
   const evidence = one.evidence.map((ref) => `${ref.ref} (${ref.outcome}, ${ref.authority})`);
-  return `| ${one.id}: ${cell(one.text)} | ${one.source} | ${cell(readingOf(one))} | ${cell(heldTo(one) ?? "")} | ${one.status} | ${cell(evidence.join("; ") || "none")} | ${cell(one.limitation ?? "")} |`;
+  return `| ${one.id}: ${cell(one.text)} | ${one.source} | ${cell(readingOf(one))} | ${cell(heldTo(one) ?? "")} | ${one.status} | ${one.witness} | ${cell(evidence.join("; ") || "none")} | ${cell(one.limitation ?? "")} |`;
 }

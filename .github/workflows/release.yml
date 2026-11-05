@@ -47,5 +47,11 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match package.json $PKG; refusing to publish" >&2
             exit 1
           fi
+      - name: Check the verifier dependency is a release, not a candidate
+        run: |
+          DEP="$(node -p "require('./package.json').dependencies['swarm-verify']")"
+          case "$DEP" in
+            *-*) echo "swarm-verify $DEP is a prerelease; pin a released version before publishing" >&2; exit 1 ;;
+          esac
       - name: Publish
         run: npm publish --provenance --access public

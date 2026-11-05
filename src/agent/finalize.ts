@@ -49,6 +49,7 @@ function unmeasured(record: RequirementRecord, why: string): RequirementOutcome[
     expected: one.evidence,
     versions: one.versions,
     status: "unverified",
+    witness: "none",
     evidence: [],
     limitation: `final verification did not run: ${why}`,
     nextAction: "verify the delivered patch with swarm-verify",

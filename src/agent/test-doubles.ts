@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { authorPrompt } from "./author-prompt.ts";
 import type { Message, ModelClient } from "./model.ts";
 import { completionMarker } from "./prompt.ts";
 import { type RunOptions, runAgent } from "./run.ts";
@@ -15,20 +16,31 @@ export interface SplitReply {
 
 /**
  * A model that replies from a script, repeating its last reply, and keeps what it was shown. It
- * reports 90 input and 10 output tokens a turn, or no counts at all, as some runtimes do.
+ * reports 90 input and 10 output tokens a turn, or no counts at all, as some runtimes do. The
+ * check author's calls are answered from their own script, apart from the loop's, and kept apart:
+ * by default it writes the check an author would for the fixture's task, `authoredHalf`.
  */
 export function scripted(
   replies: readonly (string | SplitReply)[],
-  options: { readonly counts: "reported" | "unreported" } = { counts: "reported" },
-): ModelClient & { seen: Message[][] } {
+  options: {
+    readonly counts?: "reported" | "unreported";
+    readonly author?: readonly string[];
+  } = {},
+): ModelClient & { seen: Message[][]; authorSeen: Message[][] } {
   const seen: Message[][] = [];
-  const reported = options.counts === "reported";
+  const authorSeen: Message[][] = [];
+  const reported = (options.counts ?? "reported") === "reported";
+  const authorReplies = options.author ?? [authoredHalf];
   return {
     model: "scripted",
     seen,
+    authorSeen,
     async complete(messages) {
-      seen.push([...messages]);
-      const next = replies[seen.length - 1] ?? replies.at(-1) ?? "";
+      const authoring = messages[0]?.content === authorPrompt;
+      const log = authoring ? authorSeen : seen;
+      log.push([...messages]);
+      const script = authoring ? authorReplies : replies;
+      const next = script[log.length - 1] ?? script.at(-1) ?? "";
       return {
         ...(typeof next === "string" ? { content: next } : next),
         inputTokens: reported ? 90 : null,
@@ -41,14 +53,48 @@ export function scripted(
   };
 }
 
+/**
+ * A model a test wrote by hand, with the check author's call answered for it by `authoredHalf`,
+ * since what the test exercises is the loop and not the author.
+ */
+export function answeringAuthor(model: ModelClient): ModelClient {
+  return {
+    model: model.model,
+    complete: (messages, options) =>
+      messages[0]?.content === authorPrompt
+        ? Promise.resolve({
+            content: authoredHalf,
+            inputTokens: 90,
+            outputTokens: 10,
+            inferenceMs: null,
+            retries: 0,
+            truncated: false,
+          })
+        : model.complete(messages, options),
+  };
+}
+
+/** An author's reply that names a kind and writes nothing: no independent check results. */
+export const noAuthoredCheck = "kind: other";
+
+/** An author's reply that writes one test file, run beside the fixture's own test. */
+export const authorTest = (kind: string, test: string) =>
+  `kind: ${kind}\n\n\`\`\`test\n${test}\`\`\`\n`;
+
+/** The check an author would write for the fixture's task, apart from any change. */
+export const authoredHalf = authorTest("fix", halfTestText("half(4) is 2, written apart"));
+
 export const bash = (command: string) => `\`\`\`bash\n${command}\n\`\`\``;
 export const write = (path: string, body: string) => bash(`cat > ${path} <<'EOF'\n${body}\nEOF`);
 /** A requirement record proposal followed by the completion marker. */
 export const recordAndComplete = (requirements: readonly object[]) =>
   `\`\`\`requirements\n${JSON.stringify(requirements)}\n\`\`\`\n${completionMarker}`;
 
-export const halfTest = (name = "half") =>
-  `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { half } from "../half.mjs";\ntest("${name}", () => assert.equal(half(4), 2));\n`;
+export const halfTest = (name = "half") => halfTestText(name);
+
+function halfTestText(name: string): string {
+  return `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { half } from "../half.mjs";\ntest("${name}", () => assert.equal(half(4), 2));\n`;
+}
 
 export interface Fixture {
   readonly root: string;
@@ -110,7 +156,7 @@ export async function fixture(
       return runAgent({
         workspace: repo,
         task,
-        model,
+        model: "authorSeen" in model ? model : answeringAuthor(model),
         modelReason: "scripted for the test",
         cost: "none (scripted)",
         maxSteps: 10,
@@ -135,4 +181,21 @@ export const noEdits = {
   async edit(): Promise<never> {
     throw new Error("this test's model sends no edit block");
   },
+  ...noChecks(),
 };
+
+/** A harness check that passes, for doubles whose tests do not exercise the harness's checks. */
+export function noChecks() {
+  let calls = 0;
+  return {
+    async check() {
+      calls += 1;
+      return {
+        decision: "allowed" as const,
+        output: "",
+        exitCode: 0,
+        record: `sha256:check-${calls}`,
+      };
+    },
+  };
+}

@@ -1,0 +1,159 @@
+import { execFileSync } from "node:child_process";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { requirementSchema } from "swarm-verify";
+import { describe, expect, it } from "vitest";
+import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
+import { createChokepoint } from "../tools/chokepoint.ts";
+import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
+import { parseAuthor } from "./author-prompt.ts";
+import { authorChecks, unrelatedImport } from "./check-author.ts";
+import { testConventions } from "./test-conventions.ts";
+import { authorTest, halfTest, scripted } from "./test-doubles.ts";
+
+/** A node:test repository with half(n) broken, as the run's worktree is before the first edit. */
+async function base() {
+  const root = await mkdtemp(join(tmpdir(), "author-"));
+  const repo = join(root, "repo");
+  await mkdir(join(repo, "test"), { recursive: true });
+  await writeFile(join(repo, "swarm.toml"), '[checks]\ntest = "node --test"\n');
+  await writeFile(join(repo, "half.mjs"), "export const half = (n) => n;\n");
+  await writeFile(join(repo, "test", "half.test.mjs"), halfTest());
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("-c", "user.email=t@e", "-c", "user.name=t", "commit", "-qm", "base");
+  const home = join(root, "home");
+  await mkdir(join(home, "sessions"), { recursive: true });
+  const evidence = await openEvidenceSession({
+    root: join(home, "sessions"),
+    sessionId: createSessionId(Date.now()),
+    now: Date.now,
+  });
+  const guard = createPolicyGuard({
+    workspaceRoot: repo,
+    homeDir: root,
+    shellAllowlist: defaultShellAllowlist,
+    deniedRoots: [home],
+    childHomeDir: join(root, "child"),
+  });
+  const chokepoint = createChokepoint({
+    guard,
+    evidence,
+    approval: "auto",
+    confirm: null,
+    timeoutMs: 60_000,
+  });
+  return { repo, evidence, chokepoint };
+}
+
+const task = "Make half(n) return n / 2.";
+const requirement = requirementSchema.parse({
+  id: "R1",
+  text: task,
+  source: "user",
+  kind: "other",
+});
+const passing = `import { test } from "node:test";\ntest("always", () => {});\n`;
+
+describe("the check author", () => {
+  it("rejects a test that passes at the base and takes the second attempt that fails there", async () => {
+    const { repo, evidence, chokepoint } = await base();
+    const model = scripted([], {
+      author: [authorTest("fix", passing), authorTest("fix", halfTest("half(4) is 2"))],
+    });
+    const authored = await authorChecks({
+      model,
+      chokepoint,
+      evidence,
+      workspace: repo,
+      requirement,
+      conventions: await testConventions(repo, task),
+      turnTokens: 1000,
+    });
+    expect(authored.attempts).toEqual([
+      ["it passes at the base, so it cannot tell the change apart"],
+      [],
+    ]);
+    expect(authored).toMatchObject({ kind: "fix", failure: null });
+    expect(authored.test?.path).toBe("test/half.swarm-r1.test.mjs");
+    expect(model.authorSeen[1]?.at(-1)?.content).toContain("The harness rejected that");
+    // Laid in for its run and taken out again: the coding model never finds it in the tree.
+    expect(await readdir(join(repo, "test"))).toEqual(["half.test.mjs"]);
+  });
+
+  it("names why no check survives two rejected attempts", async () => {
+    const { repo, evidence, chokepoint } = await base();
+    const authored = await authorChecks({
+      model: scripted([], { author: ["I would test it."] }),
+      chokepoint,
+      evidence,
+      workspace: repo,
+      requirement,
+      conventions: await testConventions(repo, task),
+      turnTokens: 1000,
+    });
+    expect(authored.test).toBeNull();
+    expect(authored.failure).toMatch(/two attempts were rejected: the reply has no `kind/);
+  });
+
+  it("keeps only the refactor claims that fail at the base", async () => {
+    const { repo, evidence, chokepoint } = await base();
+    const claims = [
+      { path: "lib/half.mjs", contains: "export const half" },
+      { path: "half.mjs", contains: "export const half" },
+    ];
+    const authored = await authorChecks({
+      model: scripted([], {
+        author: [`kind: refactor\n\n\`\`\`claims\n${JSON.stringify(claims)}\n\`\`\`\n`],
+      }),
+      chokepoint,
+      evidence,
+      workspace: repo,
+      requirement,
+      conventions: await testConventions(repo, task),
+      turnTokens: 1000,
+    });
+    expect(authored.structure).toEqual([
+      { path: "lib/half.mjs", contains: "export const half", authority: "independently-generated" },
+    ]);
+  });
+});
+
+describe("an authored check failing at the base for a reason no change removes", () => {
+  it("names an import of a module the base lacks and the task never asks for", () => {
+    const vitest = "Error: Failed to load url ../src/index.js (resolved id: ../src/index.js)";
+    expect(unrelatedImport(vitest, "Add --reviewers to parseArgs in cli")).toBe("../src/index.js");
+  });
+
+  it("allows a module the task asks for, and a name a module lacks", () => {
+    const moved = "ModuleNotFoundError: No module named 'ironroot.verification.builtin_claims'";
+    expect(unrelatedImport(moved, "move them into builtin_claims.py")).toBeNull();
+    const export_ = "ImportError: cannot import name 'double' from 'half'";
+    expect(unrelatedImport(export_, "add double")).toBeNull();
+  });
+});
+
+describe("an author's reply", () => {
+  it("reads the kind, the test and the claims", () => {
+    const reply = 'kind: refactor\n\n```claims\n[{"path": "a.py", "contains": "def f("}]\n```';
+    expect(parseAuthor(reply)).toMatchObject({
+      kind: "refactor",
+      claims: [{ path: "a.py", contains: "def f(" }],
+      problem: null,
+    });
+    expect(parseAuthor("kind: feature\n```typescript\nit('x')\n```")).toMatchObject({
+      kind: "feature",
+      test: "it('x')\n",
+    });
+  });
+
+  it("says what is wrong with one it cannot use", () => {
+    expect(parseAuthor("a test")).toEqual({
+      kind: null,
+      problem: "the reply has no `kind: <fix|feature|...>` line",
+    });
+    expect(parseAuthor("kind: refactor\n```claims\n[oops\n```").problem).toMatch(/not JSON/);
+  });
+});
