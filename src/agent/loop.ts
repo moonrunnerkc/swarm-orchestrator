@@ -14,6 +14,26 @@ import { noUsage } from "./usage.ts";
 
 export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
 
+/**
+ * A stop for want of progress or turns says which requirement was left failing and why, from
+ * the harness's last measure, or that its check fails at the base where nothing changed it.
+ */
+function withOpen(
+  why: string | null,
+  measured: Measured | null,
+  record: LoopOptions["record"],
+): string | null {
+  const failing = measured?.checks.find((one) => one.status === "failing");
+  if (failing !== undefined) {
+    if (why?.includes(`${failing.requirement} still fails`)) return why;
+    const line = failing.detail.split("\n")[0] ?? "";
+    return `${why ?? "the turns ran out"}; ${failing.requirement} still fails: ${line}`;
+  }
+  if (measured === null && record.held !== undefined)
+    return `${why ?? "the turns ran out"}; R1's independent check fails at the base, and the tree was never changed`;
+  return why;
+}
+
 /** The smallest reply worth asking for: one command and its fence. */
 const minimumReplyTokens = 256;
 /** Turns in a row with the same command and output before the loop calls it no progress. */
@@ -65,9 +85,10 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let modelTests = 0;
   const turnsBy = new Map<string, number>();
   const required = Math.max(1, record.requirements.filter((one) => one.required).length);
-  const result = (stop: StopReason, reason: string | null = null): LoopResult => ({
+  const result = (stop: StopReason, why: string | null = null): LoopResult => ({
     stop,
-    reason,
+    reason:
+      stop === "no-progress" || stop === "step-budget" ? withOpen(why, measured, record) : why,
     record,
     verification: verifier.last(),
     steps,
