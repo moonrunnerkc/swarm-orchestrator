@@ -1,10 +1,8 @@
-import { access } from "node:fs/promises";
-import { join } from "node:path";
-import { type Requirement, type SealedFile, sealFiles, structureEvidence } from "swarm-verify";
-import { z } from "zod";
+import { type Requirement, type SealedFile, sealFiles } from "swarm-verify";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import { type AuthorKind, authorPrompt, authorRequest, parseAuthor } from "./author-prompt.ts";
+import { claimsAtBase } from "./authored-claims.ts";
 import { runAtBase } from "./authored-validation.ts";
 import { estimateTokens } from "./context.ts";
 import { type Message, type ModelClient, ModelError } from "./model.ts";
@@ -45,68 +43,6 @@ export interface Authored {
   readonly attempts: readonly (readonly string[])[];
   readonly inputTokens: number;
   readonly outputTokens: number;
-}
-
-const claimSchema = z.strictObject({
-  path: z.string().min(1),
-  symbol: z
-    .string()
-    .regex(/^[A-Za-z_$][\w$]*$/)
-    .optional(),
-  provides: z.boolean().optional(),
-  contains: z.string().min(1).optional(),
-  absent: z.boolean().optional(),
-});
-
-/** Claims that do not hold at the base tell the refactor apart; one that holds already does not. */
-async function claimsAtBase(
-  workspace: string,
-  raw: readonly unknown[],
-): Promise<{ readonly kept: StructureClaim[]; readonly reasons: string[] }> {
-  const kept: StructureClaim[] = [];
-  const reasons: string[] = [];
-  const misplaced: string[] = [];
-  for (const entry of raw) {
-    const parsed = claimSchema.safeParse(entry);
-    if (!parsed.success) {
-      reasons.push(
-        `a claim is not {"path", "symbol", "absent"?, "provides"?}: ${JSON.stringify(entry)}`,
-      );
-      continue;
-    }
-    const claim = { ...parsed.data, authority: "independently-generated" as const };
-    const placed = await placement(workspace, claim.path);
-    if (placed !== null) {
-      misplaced.push(placed);
-      continue;
-    }
-    const read = await structureEvidence(workspace, claim);
-    if (read.outcome === "observed") reasons.push(`${read.ref} already holds at the base`);
-    else kept.push(claim);
-  }
-  if (misplaced.length > 0) return { kept, reasons: misplaced };
-  if (kept.length === 0) reasons.unshift("no claim fails at the base");
-  return { kept, reasons: kept.length === 0 ? reasons : [] };
-}
-
-/**
- * Why a claim's path cannot be where a correct change puts the file: it is under a top-level
- * directory the repository does not have, named for a package it keeps under src/. tracemantle (replayed 2026-11-05): the wording says
- * tracemantle/history/, the source is under src/, and a claim on tracemantle/history/history_io.py
- * could never hold whatever the change did.
- */
-async function placement(workspace: string, path: string): Promise<string | null> {
-  const exists = (rel: string) =>
-    access(join(workspace, rel)).then(
-      () => true,
-      () => false,
-    );
-  if (await exists(path)) return null;
-  const top = path.split("/")[0] ?? path;
-  // A new top-level directory may be what the task asks for; one that shadows a package the
-  // repository keeps under src/ is the layout misread.
-  if (!path.includes("/") || (await exists(top)) || !(await exists(join("src", top)))) return null;
-  return `${path} is under ${top}/, which the repository does not have; its ${top} package is at src/${top}/`;
 }
 
 /**
