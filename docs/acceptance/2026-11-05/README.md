@@ -25,6 +25,12 @@ Swarm's November 4 patch. One trial each.
   everywhere. pubprep-9 (that misuse refused from the source): the first attempt was refused for
   it, the second passed the reference in the container, 9 of 9, and both patches on the host, and
   failed Swarm's November 4 patch.
+- `pubprep-10/` and `pubprep-11/`: rc.12's live pubprep run wrote yet another main() case, run
+  from /tmp, with a prompt within two tokens of trial 8's, so the author's output is not stable
+  enough for wording alone. With control cases asked for, trial 10's control passed at the base
+  with main() never reaching orchestrate (it printed "is not inside a git repository"), which
+  rc.13 now refuses; trial 11 wrote a control and a real repository, passed both patches on the
+  host and the reference in the container, 9 of 9, and failed Swarm's November 4 patch.
 - `ironroot-1/`: eight claims, all failing at the base, all holding on the reference and Claude
   Code's patch; the four "falsification.py lacks" claims fail on Swarm's copy. These were text
   claims; the author now writes symbol claims.

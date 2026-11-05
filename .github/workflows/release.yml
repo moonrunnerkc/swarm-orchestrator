@@ -53,5 +53,12 @@ jobs:
           case "$DEP" in
             *-*) echo "swarm-verify $DEP is a prerelease; pin a released version before publishing" >&2; exit 1 ;;
           esac
+      # A real sealed task through the packed install: a version that cannot complete feature-pubprep,
+      # as its own run reports and as the sealed judge finds, is not published.
+      - name: Run feature-pubprep through the packed install
+        run: |
+          mkdir -p "$RUNNER_TEMP/packs"
+          npm pack --silent --pack-destination "$RUNNER_TEMP/packs"
+          node scripts/release-smoke.mjs "$RUNNER_TEMP"/packs/swarm-orchestrator-*.tgz
       - name: Publish
         run: npm publish --provenance --access public
