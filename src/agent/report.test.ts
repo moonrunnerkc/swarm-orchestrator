@@ -29,6 +29,7 @@ const report: RunReportFile = {
     prefillMs: null,
     generationMs: null,
     harnessChecks: 0,
+    suiteRuns: 0,
     modelTestCommands: 0,
     turnsByRequirement: {},
     inputTokens: 1,

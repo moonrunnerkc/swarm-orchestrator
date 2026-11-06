@@ -84,6 +84,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     verifications: verifier.verifications(),
     turnsByRequirement: Object.fromEntries(turnsBy),
     harnessChecks: options.checks?.runs() ?? 0,
+    suiteRuns: options.checks?.suiteRuns() ?? 0,
     modelTestCommands: modelTests,
   });
 
@@ -109,7 +110,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     changedOnce ||= diff.trim().length > 0;
     if (options.checks && changedOnce && diff !== measuredDiff) {
       const before = measured;
-      measured = await measureTree(options.checks, record, diff);
+      measured = await measureTree(options.checks, record, diff, measuredDiff);
       measuredDiff = diff;
       checksText = checksNote(measured, before);
       options.log(

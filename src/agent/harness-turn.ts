@@ -1,10 +1,11 @@
+import { diffSections, movedFiles } from "./context.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 import type { RegressionCheck, RequirementCheck, TurnChecks } from "./turn-checks.ts";
 
 /** The tree measured by the harness after a change. */
 export interface Measured {
   readonly checks: readonly RequirementCheck[];
-  /** Null where the declared tests were not run because a requirement's checks still fail. */
+  /** The tests the change reaches, or the whole suite where a completion was at stake; null where neither could run. */
   readonly regression: RegressionCheck | null;
   /** Every required requirement has an independent check, each passes, nothing newly fails. */
   readonly ready: boolean;
@@ -14,11 +15,6 @@ export interface Measured {
   readonly key: string;
 }
 
-/**
- * Each requirement's independent checks, then, only once they all pass, the declared tests
- * against the base: running the whole suite while the requirement still fails would say nothing
- * the next edit does not change, and the verifier reruns everything before any completion.
- */
 const testFile = /(?:^|\/)(?:test_[^/]*\.py|[^/]*_test\.py|[^/]*\.(?:test|spec)\.[cm]?[jt]sx?)$/;
 
 /** The test files a diff adds or changes, outside the harness's own `.swarm/`. */
@@ -28,10 +24,17 @@ export function testsTouched(diff: string): string[] {
     .filter((path) => testFile.test(path) && !path.startsWith(".swarm/"));
 }
 
+/**
+ * Each requirement's independent checks and the tests the files changed since the last measure
+ * reach, after every change. The whole declared suite runs once, the first time everything else
+ * passes: that is the first completion, and every verification after it runs the suite again.
+ * Running the whole suite after every turn cost t6 and depose most of their wall time (17.0.0).
+ */
 export async function measureTree(
   checks: TurnChecks,
   record: RequirementRecord,
   diff = "",
+  previous: string | null = null,
 ): Promise<Measured> {
   const results = (await checks.requirements(record)).map((one) => {
     const asked = record.requirements.find((r) => r.id === one.requirement)?.testsAsked === true;
@@ -41,7 +44,11 @@ export async function measureTree(
   });
   const checked = results.filter((one) => one.status !== "none");
   const passing = checked.length > 0 && checked.every((one) => one.status === "passing");
-  const regression = passing ? await checks.regression() : null;
+  const changed = movedFiles(diffSections(previous ?? ""), diffSections(diff));
+  let regression = await checks.affected(changed);
+  // The base's run is the first; the first completion's is the second, and the last here.
+  if (passing && (regression?.newFailures.length ?? 0) === 0 && checks.suiteRuns() <= 1)
+    regression = await checks.suite();
   const ready =
     passing &&
     results.every((one) => one.status !== "none") &&
@@ -90,10 +97,14 @@ export function checksNote(now: Measured, before: Measured | null): string {
   }
   if (now.regression === null) {
     if (!now.unchecked)
-      lines.push("- The declared tests run once every requirement's checks pass.");
+      lines.push("- The whole declared suite runs once every requirement's checks pass.");
   } else {
     const ref = now.regression.evidence === null ? "" : ` [evidence ${now.regression.evidence}]`;
-    lines.push(`- Regression${ref}:`, ...indent(now.regression.detail));
+    const scope =
+      now.regression.scope === "suite"
+        ? "the whole declared suite"
+        : "the tests your change reaches";
+    lines.push(`- Regression, ${scope}${ref}:`, ...indent(now.regression.detail));
   }
   lines.push(
     now.ready

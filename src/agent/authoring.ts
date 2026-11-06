@@ -31,16 +31,9 @@ export async function authoringStage(input: {
   readonly checks: TurnChecks;
 }> {
   const requirement = input.record.requirements.find((one) => one.id === "R1");
+  const conventions = await testConventions(input.workspace, input.task);
   const authored =
-    requirement === undefined
-      ? []
-      : [
-          await authorChecks({
-            ...input,
-            requirement,
-            conventions: await testConventions(input.workspace, input.task),
-          }),
-        ];
+    requirement === undefined ? [] : [await authorChecks({ ...input, requirement, conventions })];
   await sealAuthored(input.workspace, authored, input.home);
   const first = authored[0];
   const record =
@@ -52,6 +45,7 @@ export async function authoringStage(input: {
     workspace: input.workspace,
     authored: authored.flatMap((one) => (one.test === null ? [] : [one.test])),
     scratch: input.scratch,
+    conventions,
   });
   // Still the base: what the declared tests do before any edit, for regressions to be read from.
   await checks.baseline();

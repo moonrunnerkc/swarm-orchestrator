@@ -96,6 +96,8 @@ export interface RunReportFile {
     readonly verifications: number;
     /** Check commands the harness ran after the model's changes, apart from its turns. */
     readonly harnessChecks: number;
+    /** Runs of the whole declared suite by the harness, the base's included; verifications apart. */
+    readonly suiteRuns: number;
     /** The model's own commands that ran a test runner. */
     readonly modelTestCommands: number;
     /** Where the loop's turns went: each charged to the requirement whose checks were failing. */
@@ -215,6 +217,7 @@ export function assembleReport(input: {
       escalations: input.escalated ? 1 : 0,
       verifications: sum((loop) => loop.verifications),
       harnessChecks: sum((loop) => loop.harnessChecks),
+      suiteRuns: Math.max(0, ...loops.map((loop) => loop.suiteRuns)),
       modelTestCommands: sum((loop) => loop.modelTestCommands),
       turnsByRequirement: turnsByRequirement(loops),
       cost: input.options.cost,
