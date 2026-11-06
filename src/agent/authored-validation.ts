@@ -3,7 +3,13 @@ import { basename, dirname, join } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import type { AuthorKind } from "./author-prompt.ts";
 import { controlsRefused, passingAlone } from "./authored-alone.ts";
-import { excludingCases, failingCases, plainOutput, removeLaid } from "./authored-cases.ts";
+import {
+  excludingCases,
+  failingCases,
+  plainOutput,
+  refusedName,
+  removeLaid,
+} from "./authored-cases.ts";
 import type { AuthoredTest } from "./check-author.ts";
 
 export { plainOutput, removeLaid } from "./authored-cases.ts";
@@ -184,7 +190,9 @@ export async function runAtBase(
   // An upgrade's behavior check is judged as a feature's: what the new versions make the code do.
   const own = kind === "feature" || kind === "other" || kind === "upgrade";
   const cases = own && !narrowed ? failingCases(plain) : [];
-  const foreignCases = cases.filter((one) => foreignError(one.error, task) !== null);
+  const foreignCases = cases.filter(
+    (one) => foreignError(one.error, task) !== null || refusedName(one.error, task) !== null,
+  );
   const leaning = await passingAlone(
     chokepoint,
     workspace,
