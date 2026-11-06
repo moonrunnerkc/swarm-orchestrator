@@ -133,6 +133,9 @@ export function withOpen(
     const line = failureLine(failing.detail);
     return `${why ?? "the turns ran out"}; ${failing.requirement} still fails: ${line}`;
   }
+  const broken = brokenLine(measured);
+  if (broken !== null)
+    return `${why ?? "the turns ran out"}; every requirement's checks pass, and the change breaks ${broken}`;
   if (measured?.unchecked === true)
     return `${why ?? "the turns ran out"}; R1 has no independent check here (see the report's independent checks), so nothing measured it`;
   if (measured === null && record.held !== undefined)
@@ -143,7 +146,16 @@ export function withOpen(
 /** What the nudge before a no-progress stop says is still failing, in the check's own words. */
 export function stillFailing(measured: Measured | null, focus: string | null): string {
   const failing = measured?.checks.find((one) => one.requirement === focus);
-  return failing === undefined
-    ? "Make the change the task asks for."
-    : `${failing.requirement} still fails: ${failureLine(failing.detail)}.`;
+  const broken = brokenLine(measured);
+  if (failing === undefined)
+    return broken === null ? "Make the change the task asks for." : `The change breaks ${broken}.`;
+  return `${failing.requirement} still fails: ${failureLine(failing.detail)}.`;
+}
+
+/** The tests that passed at the base and fail now, as the last measure read them; null for none. */
+function brokenLine(measured: Measured | null): string | null {
+  const failures = measured?.regression?.newFailures ?? [];
+  if (failures.length === 0) return null;
+  const more = failures.length > 3 ? ` and ${failures.length - 3} more` : "";
+  return `tests that passed at the base: ${failures.slice(0, 3).join(", ")}${more}`;
 }

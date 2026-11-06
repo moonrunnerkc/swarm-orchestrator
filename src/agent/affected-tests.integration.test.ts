@@ -56,4 +56,25 @@ describe("the declared suite runs whole only where a completion is at stake", ()
     expect(model.seen[1]?.at(-1)?.content).toMatch(/newly failing: test\/twice\.test\.mjs/);
     expect(ran.report.resources.suiteRuns).toBe(whole.length);
   });
+
+  // t6 (Arm B, 2026-11-06), and the 17.0.0 report's open item 8: R1's claims held, the change broke
+  // tests that passed at the base, and the stop said only that 3 turns changed nothing.
+  it("names the regression where a stop leaves every requirement passing", async () => {
+    const breakTwice = bash(
+      [
+        "cat > half.mjs <<'EOF'\nexport const half = (n) => n / 2;\nEOF",
+        "cat > twice.mjs <<'EOF'\nexport const twice = (n) => n * 3;\nEOF",
+      ].join("\n"),
+    );
+    const model = scripted([breakTwice, bash("cat twice.mjs"), bash("ls"), bash("pwd")]);
+    const ran = await (await fixture(modules)).run(model, { maxSteps: 25 });
+    expect(ran.stop).toBe("no-progress");
+    expect(ran.report.reason).toBe(
+      "3 turns changed neither the tree nor any check's result; every requirement's checks pass, and the change breaks tests that passed at the base: test/twice.test.mjs::twice holds",
+    );
+    // The nudge before it says the same.
+    expect(model.seen[3]?.at(-1)?.content).toContain(
+      "The change breaks tests that passed at the base: test/twice.test.mjs::twice holds.",
+    );
+  });
 });
