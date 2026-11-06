@@ -224,7 +224,7 @@ export async function testConventions(
   if (best === null) return null;
   const venv = join(workspace, ".venv", "bin", "python");
   const python = (await exists(venv)) ? ".venv/bin/python" : "python3";
-  const coverage = /addopts[^\n]*--cov/.test(pyproject);
+  const coverage = coverageAddopts(pyproject);
   const example = { path: best.path, content: best.content.slice(0, exampleBytes) };
   const roots = [...new Set(tests.map((path) => path.split("/")[0] ?? path))].sort();
   return {
@@ -236,4 +236,15 @@ export async function testConventions(
     pathFor: (requirement) => sibling(example.path, requirement, runner),
     commandFor: commandOf(runner, python, coverage),
   };
+}
+
+/**
+ * Whether pytest's addopts turn coverage on, read whole: on one line, or a TOML list over several.
+ * ironroot (2026-11-05, rc.19) lists them one a line, with --cov-fail-under=30, so a single
+ * authored check ran under the threshold and its control's run alone printed "ERROR: Coverage
+ * failure".
+ */
+export function coverageAddopts(config: string): boolean {
+  const value = /^\s*addopts\s*=\s*(\[[^\]]*\]|[^\n]*)/m.exec(config)?.[1] ?? "";
+  return /--cov\b/.test(value);
 }
