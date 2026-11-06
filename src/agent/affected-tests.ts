@@ -165,9 +165,30 @@ export const shellWord = (path: string) =>
 
 // Runners colour their output; the escape is built, since a literal one in a pattern hides.
 const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+/** A runner's own lines naming what failed: pytest's and vitest's summaries, an assertion. */
+const summaryLine = /^(?:FAILED|ERROR) |^\s*FAIL |^E\s+\S|AssertionError|^\s*[×✗] /;
+
+/**
+ * The end of a check's output, bounded, with the runner's failure summary kept ahead of it where
+ * the end alone would cut it: a warning printed after pytest's summary (ironroot, 2026-11-06)
+ * otherwise pushed out the one line that said what failed.
+ */
 export const excerpt = (text: string, bytes = 1800) => {
   const plain = text.replace(ansi, "");
-  return plain.length <= bytes ? plain : `...${plain.slice(-bytes)}`;
+  if (plain.length <= bytes) return plain;
+  const tail = plain.slice(-bytes);
+  const lines = plain.split("\n").filter((line) => summaryLine.test(line) && !tail.includes(line));
+  // The runner's one-line summaries first: each names a case and why it failed.
+  const first = (line: string) => (/^(?:FAILED|ERROR) |^\s*FAIL |^\s*[×✗] /.test(line) ? 0 : 1);
+  const missing = [...lines]
+    .sort((a, b) => first(a) - first(b))
+    .map((line) => (line.length > 300 ? `${line.slice(0, 300)}...` : line));
+  let kept = "";
+  for (const line of missing) {
+    if (kept.length + line.length > bytes / 3) break;
+    kept += `${line}\n`;
+  }
+  return kept.length === 0 ? `...${tail}` : `${kept}...${plain.slice(-(bytes - kept.length))}`;
 };
 
 export function failuresDetail(

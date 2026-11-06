@@ -1,4 +1,7 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { excerpt } from "./affected-tests.ts";
 import { failureLine, testsTouched } from "./harness-turn.ts";
 import { asksForTests } from "./requirement-record.ts";
 import { bash, fixture, noAuthoredCheck, scripted, write } from "./test-doubles.ts";
@@ -108,6 +111,25 @@ describe("reading the wording and the diff", () => {
 });
 
 describe("a failing check in one line", () => {
+  // ironroot (Arm B, 2026-11-06): pytest's summary was followed by a pytest-asyncio deprecation
+  // warning, the last 1,800 bytes held only the warning and two assertion reprs, so the model never
+  // read "falsification.py still defines _falsify_chain_seq_monotonic", and the stop named the
+  // warning, whose "unexpected" read as "expected".
+  it("keeps the runner's failure summary in what the model reads, whatever follows it", async () => {
+    const output = await readFile(
+      join(import.meta.dirname, "fixtures", "ironroot-held-out-2026-11-06.txt"),
+      "utf8",
+    );
+    const shown = excerpt(output);
+    expect(shown).toContain(
+      "FAILED tests/integrity/test_builtin_claims_held_out.py::test_falsification_no_longer_defines_them - AssertionError: falsification.py still defines _falsify_chain_seq_monotonic",
+    );
+    expect(shown.length).toBeLessThanOrEqual(2400);
+    expect(failureLine(`the user's check fails:\n${shown}`)).toMatch(
+      /^the user's check fails: FAILED tests\/integrity\/test_builtin_claims_held_out\.py::/,
+    );
+  });
+
   it("joins its summary to the first output line that names what failed", () => {
     expect(
       failureLine("its authored test fails:\n\n   x\nFAILED tests/a.py::t - assert 4 == 2\nmore"),
