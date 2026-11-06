@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { runnerOf, taskIdentifiers, testConventions } from "./test-conventions.ts";
+import { coverageAddopts, runnerOf, taskIdentifiers, testConventions } from "./test-conventions.ts";
 
 async function repository(files: Readonly<Record<string, string>>): Promise<string> {
   const repo = await mkdtemp(join(tmpdir(), "conventions-"));
@@ -72,5 +72,18 @@ describe("a repository's test conventions", () => {
     expect(
       taskIdentifiers("Add --reviewers (tech-debt, docs) to `parseArgs`; keep _BUILTIN_CLAIMS"),
     ).toEqual(["parseArgs", "_BUILTIN_CLAIMS"]);
+  });
+});
+
+describe("coverage in pytest's addopts", () => {
+  // ironroot (2026-11-05, rc.19): one option a line, so a check of one file ran under the threshold.
+  it("is read from a list over several lines, as from one line", () => {
+    const listed =
+      '[tool.pytest.ini_options]\naddopts = [\n    "-v",\n    "--cov=src/ironroot",\n    "--cov-fail-under=30",\n]\n';
+    expect(coverageAddopts(listed)).toBe(true);
+    expect(coverageAddopts('addopts = "-q --cov=src"\n')).toBe(true);
+    expect(coverageAddopts('addopts = ["-v"]\n[tool.coverage.report]\nfail_under = 30\n')).toBe(
+      false,
+    );
   });
 });
