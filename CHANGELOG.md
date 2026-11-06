@@ -3,7 +3,7 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 17.0.0 - 2026-11-05
 
 **What "complete" means changes.** A run is complete only when each requirement is shown met by
 evidence the coding model did not write: a test written for R1 from the task's wording by a
