@@ -36,8 +36,20 @@ const profileSchema = z.object({
     z.string(),
     z.object({ identity: z.record(z.string(), z.unknown()), result: probeSchema }),
   ),
-  /** Finished tasks by model digest: how often the run ended complete. */
-  outcomes: z.record(z.string(), z.object({ complete: z.number().int(), other: z.number().int() })),
+  /**
+   * Finished tasks by model digest: how often the run ended complete, and the same by the kind of
+   * task R1 was (fix, feature, refactor, upgrade, other), which escalation reads.
+   */
+  outcomes: z.record(
+    z.string(),
+    z.object({
+      complete: z.number().int(),
+      other: z.number().int(),
+      kinds: z
+        .record(z.string(), z.object({ complete: z.number().int(), other: z.number().int() }))
+        .optional(),
+    }),
+  ),
 });
 export type Profile = z.infer<typeof profileSchema>;
 
@@ -99,11 +111,23 @@ export function withProbe(profile: Profile, identity: ProbeIdentity, result: Pro
   };
 }
 
-export function withOutcome(profile: Profile, digest: string, complete: boolean): Profile {
+type Tally = { readonly complete: number; readonly other: number };
+const tallied = (before: Tally, complete: boolean): Tally =>
+  complete ? { ...before, complete: before.complete + 1 } : { ...before, other: before.other + 1 };
+
+export function withOutcome(
+  profile: Profile,
+  digest: string,
+  complete: boolean,
+  kind: string | null = null,
+): Profile {
   const before = profile.outcomes[digest] ?? { complete: 0, other: 0 };
-  const after = complete
-    ? { ...before, complete: before.complete + 1 }
-    : { ...before, other: before.other + 1 };
+  const known = before.kinds ?? {};
+  const kinds =
+    kind === null
+      ? known
+      : { ...known, [kind]: tallied(known[kind] ?? { complete: 0, other: 0 }, complete) };
+  const after = { ...tallied(before, complete), kinds };
   return { ...profile, outcomes: { ...profile.outcomes, [digest]: after } };
 }
 
@@ -129,7 +153,8 @@ export async function recordOutcome(
   home: string,
   digest: string,
   complete: boolean,
+  kind: string | null = null,
 ): Promise<void> {
   const path = profilePath(home);
-  await writeProfile(path, withOutcome(await readProfile(path), digest, complete));
+  await writeProfile(path, withOutcome(await readProfile(path), digest, complete, kind));
 }

@@ -72,7 +72,8 @@ describe("swarm run against the stub endpoint", () => {
     ]);
     await stub.close();
     expect(ran.stdout).toContain("stop         step-budget");
-    expect(stub.requests).toHaveLength(2);
+    // The check author's two attempts (its replies follow no form of its own), then two turns.
+    expect(stub.requests).toHaveLength(4);
     for (const body of stub.requests) expect(body).toMatchObject({ max_tokens: 512 });
   });
 
@@ -80,14 +81,15 @@ describe("swarm run against the stub endpoint", () => {
     const stub = await startStubModel({ status: 404 });
     const ran = await swarmRun(`http://127.0.0.1:${stub.port}/v1`);
     await stub.close();
-    expect(stub.requests).toHaveLength(1);
+    // The check author's call met the 404 first; the loop's first turn met it again and stopped.
+    expect(stub.requests).toHaveLength(2);
     // The fix was already in the working tree when the run began: part of its starting state, so
     // the run itself changed nothing and R1 is unverified.
     expect(ran.code).toBe(4);
     expect(ran.stdout).toMatch(/^stop {9}model-error: the model endpoint failed: HTTP 404/m);
     expect(ran.stdout).toMatch(/^state {8}incomplete$/m);
     expect(ran.stdout).toMatch(/^R1 {11}asked {4}Make half\(n\) return n \/ 2\.$/m);
-    expect(ran.stdout).toMatch(/^ {13}status {3}unverified: no change observed$/m);
+    expect(ran.stdout).toMatch(/^ {13}status {3}unverified, witness none: no change observed$/m);
     expect(ran.stdout).toMatch(/^regression {3}none$/m);
   });
 
@@ -133,9 +135,10 @@ describe("swarm run against the stub endpoint", () => {
   it("lets the step budget, not a fixed token count, end a run where no token budget is set", async () => {
     // 60 turns that each add some 4,000 tokens pass 1,000,000 prompt tokens in all, and every one
     // of them fits a budget of steps times context.
+    // Two more than the turns: the check author's two attempts take the first two replies.
     const stub = await startStubModel({
       replies: Array.from(
-        { length: 60 },
+        { length: 62 },
         (_, at) => `\`\`\`bash\necho ${at} ${"x".repeat(8000)}\n\`\`\``,
       ),
     });
@@ -199,6 +202,11 @@ describe("swarm run against the stub endpoint", () => {
     const profiles = join(root, "home", "profiles");
     const [file] = await readdir(profiles);
     const profile = JSON.parse(await readFile(join(profiles, file ?? ""), "utf8"));
-    expect(profile.outcomes[`${endpoint}#stub`]).toEqual({ complete: 0, other: 1 });
+    // And under R1's kind, here the default the check author's unusable reply left.
+    expect(profile.outcomes[`${endpoint}#stub`]).toEqual({
+      complete: 0,
+      other: 1,
+      kinds: { other: { complete: 0, other: 1 } },
+    });
   });
 });

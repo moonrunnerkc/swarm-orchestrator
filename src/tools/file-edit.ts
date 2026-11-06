@@ -110,7 +110,7 @@ export function applyReplacements(
     const which = pairs.length > 1 ? `SEARCH part ${index + 1}` : "the SEARCH part";
     if (found === 0) {
       return {
-        refused: `${which} matches nothing in the file; copy the lines exactly as the file has them, whitespace included`,
+        refused: `${which} matches nothing in the file; copy the lines exactly as the file has them, whitespace included${whereItDiffers(next, pair.search) ?? closestLines(next, pair.search)}`,
       };
     }
     if (found > 1) {
@@ -122,6 +122,95 @@ export function applyReplacements(
     next = `${next.slice(0, at)}${pair.replace}${next.slice(at + pair.search.length)}`;
   }
   return { text: next };
+}
+
+/**
+ * The file's lines nearest a SEARCH part that matched nothing: the run of as many lines, as
+ * numbered in the file, that shares the most lines with it (whitespace at their ends aside).
+ * pubprep (2026-11-04) sent the same unmatched SEARCH eight times to a refusal that said only to
+ * copy the lines exactly; this says what the lines are.
+ */
+export function closestLines(text: string, search: string): string {
+  const file = text.split("\n");
+  const wanted = new Set(
+    search
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== ""),
+  );
+  const size = Math.min(Math.max(search.split("\n").length, 3), 30);
+  let best = { at: -1, shared: 0 };
+  for (let at = 0; at + 1 <= file.length; at += 1) {
+    const window = file.slice(at, at + size);
+    const shared = window.filter((line) => wanted.has(line.trim())).length;
+    if (shared > best.shared) best = { at, shared };
+  }
+  if (best.at < 0) return "";
+  const shown = file
+    .slice(best.at, best.at + size)
+    .map((line, offset) => `${String(best.at + offset + 1).padStart(5)}  ${line}`)
+    .join("\n");
+  return `. The file's closest lines, numbered as in the file:\n${shown}\n`;
+}
+
+/** A SEARCH part longer than this is hard to copy exactly, and is better changed in parts. */
+const longSearch = 40;
+
+/**
+ * Where a SEARCH part that matched nothing parts from the file: its first lines aligned with the
+ * file where they match longest, then its first line that differs, beside the file's. ironroot
+ * (2026-11-05): a 147-line SEARCH was resent three times to a refusal that showed only a window
+ * of nearby lines, never which line was wrong. Null where no line of it starts a match.
+ */
+export function whereItDiffers(text: string, search: string): string | null {
+  const file = text.split("\n");
+  const wanted = search.split("\n");
+  let best = { at: -1, run: 0 };
+  for (let at = 0; at < file.length; at += 1) {
+    let run = 0;
+    while (run < wanted.length && file[at + run] === wanted[run]) run += 1;
+    if (run > best.run) best = { at, run };
+  }
+  if (best.run === 0) return startsLike(file, wanted);
+  const mine = wanted[best.run] ?? "";
+  const theirs = file[best.at + best.run];
+  const spacing =
+    theirs !== undefined && theirs.trim() === mine.trim()
+      ? " (they differ only in whitespace)"
+      : "";
+  const advice =
+    wanted.length > longSearch
+      ? ` A SEARCH of ${wanted.length} lines is hard to copy exactly: change the block in smaller parts, or write the whole file with a write block.`
+      : "";
+  return `. Its first ${best.run} line(s) match the file from line ${best.at + 1}; its line ${best.run + 1} reads ${JSON.stringify(mine)}, where the file's line ${best.at + best.run + 1} reads ${theirs === undefined ? "nothing (the file ends)" : JSON.stringify(theirs)}${spacing}.${advice}\n`;
+}
+
+/**
+ * Where no line of a SEARCH starts a match, the file's line that begins most like its first: a
+ * model that splits a long line the file keeps whole (ironroot, 2026-11-05: a signature the file
+ * has on one line, sent over three) is shown the line as the file has it.
+ */
+function startsLike(file: readonly string[], wanted: readonly string[]): string | null {
+  const first = wanted[0] ?? "";
+  const shared = (line: string) => {
+    let at = 0;
+    while (at < line.length && at < first.length && line[at] === first[at]) at += 1;
+    return at;
+  };
+  let best = { at: -1, length: 0 };
+  for (const [at, line] of file.entries()) {
+    const length = shared(line);
+    if (length > best.length) best = { at, length };
+  }
+  if (best.at < 0 || best.length < Math.min(12, first.trim().length)) return null;
+  const theirs = file[best.at] ?? "";
+  const whole =
+    theirs.length > first.length && theirs.startsWith(first)
+      ? " (the file has it on one line, longer)"
+      : first.startsWith(theirs)
+        ? " (the file breaks it over more lines)"
+        : "";
+  return `. No line of it matches the file; its line 1 reads ${JSON.stringify(first)}, where the file's line ${best.at + 1} reads ${JSON.stringify(theirs)}${whole}.\n`;
 }
 
 export type EditResult =

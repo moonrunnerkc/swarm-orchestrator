@@ -1,0 +1,106 @@
+{
+  "model": "gemma4:31b",
+  "seconds": 192,
+  "kind": "refactor",
+  "failure": null,
+  "attempts": [
+    []
+  ],
+  "tokens": [
+    3727,
+    3930
+  ],
+  "r1": {
+    "id": "R1",
+    "text": "In ironroot, move the three built-in falsifiers out of src/ironroot/verification/falsification.py into a new module, src/ironroot/verification/builtin_claims.py: _falsify_chain_seq_monotonic, _falsify_parent_hash_linkage, _falsify_artifact_hash_stability, and the _BUILTIN_CLAIMS tuple that registers them. falsification.py keeps the claim types, the registry, get_claim_registry, reset_claim_registry_for_testing and run_falsification, and no longer defines the falsifiers or the tuple. This is a pure move: behavior doesn't change, the registry still seeds the same three claims in the same order, existing imports keep working (the tests import _BUILTIN_CLAIMS from ironroot.verification.falsification), and the tests stay as they are.",
+    "source": "user",
+    "kind": "refactor",
+    "required": true,
+    "assumptions": [],
+    "evidence": {
+      "tests": [],
+      "checks": [],
+      "structure": [
+        {
+          "path": "src/ironroot/verification/falsification.py",
+          "contains": "async def _falsify_chain_seq_monotonic",
+          "absent": true,
+          "authority": "independently-generated"
+        },
+        {
+          "path": "src/ironroot/verification/builtin_claims.py",
+          "contains": "async def _falsify_chain_seq_monotonic",
+          "authority": "independently-generated"
+        },
+        {
+          "path": "src/ironroot/verification/falsification.py",
+          "contains": "async def _falsify_parent_hash_linkage",
+          "absent": true,
+          "authority": "independently-generated"
+        },
+        {
+          "path": "src/ironroot/verification/builtin_claims.py",
+          "contains": "async def _falsify_parent_hash_linkage",
+          "authority": "independently-generated"
+        },
+        {
+          "path": "src/ironroot/verification/falsification.py",
+          "contains": "async def _falsify_artifact_hash_stability",
+          "absent": true,
+          "authority": "independently-generated"
+        },
+        {
+          "path": "src/ironroot/verification/builtin_claims.py",
+          "contains": "async def _falsify_artifact_hash_stability",
+          "authority": "independently-generated"
+        },
+        {
+          "path": "src/ironroot/verification/falsification.py",
+          "contains": "_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (",
+          "absent": true,
+          "authority": "independently-generated"
+        },
+        {
+          "path": "src/ironroot/verification/builtin_claims.py",
+          "contains": "_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (",
+          "authority": "independently-generated"
+        }
+      ],
+      "packages": []
+    },
+    "versions": []
+  },
+  "test": null,
+  "judged": {
+    "reference": [
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_chain_seq_monotonic\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_chain_seq_monotonic\",\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_parent_hash_linkage\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_parent_hash_linkage\",\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_artifact_hash_stability\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_artifact_hash_stability\",\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (\",\"authority\":\"independently-generated\"}"
+    ],
+    "swarm": [
+      "not observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_chain_seq_monotonic\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_chain_seq_monotonic\",\"authority\":\"independently-generated\"}",
+      "not observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_parent_hash_linkage\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_parent_hash_linkage\",\"authority\":\"independently-generated\"}",
+      "not observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_artifact_hash_stability\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_artifact_hash_stability\",\"authority\":\"independently-generated\"}",
+      "not observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (\",\"authority\":\"independently-generated\"}"
+    ],
+    "claude": [
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_chain_seq_monotonic\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_chain_seq_monotonic\",\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_parent_hash_linkage\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_parent_hash_linkage\",\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"async def _falsify_artifact_hash_stability\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"async def _falsify_artifact_hash_stability\",\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/falsification.py\",\"contains\":\"_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (\",\"absent\":true,\"authority\":\"independently-generated\"}",
+      "observed {\"path\":\"src/ironroot/verification/builtin_claims.py\",\"contains\":\"_BUILTIN_CLAIMS: tuple[FalsifiableClaim, ...] = (\",\"authority\":\"independently-generated\"}"
+    ]
+  }
+}

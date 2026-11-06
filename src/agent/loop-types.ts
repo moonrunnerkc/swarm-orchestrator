@@ -2,6 +2,7 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import type { ModelClient } from "./model.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
+import type { TurnChecks } from "./turn-checks.ts";
 
 /** One verification of the working tree, as the loop reads it. */
 export interface Verification {
@@ -16,6 +17,11 @@ export interface Verification {
   readonly reused?: boolean;
   /** The verifier's reasons, the first of which says why a blocked verification is blocked. */
   readonly reasons?: readonly string[];
+  /**
+   * Nothing stands between the tree and completion but evidence the model cannot write: every
+   * required requirement satisfied or self-attested, nothing regressed.
+   */
+  readonly independenceMissing?: boolean;
 }
 
 export interface LoopOptions {
@@ -33,6 +39,8 @@ export interface LoopOptions {
   /** The working tree's change against the base, as the verifier would read it, every turn. */
   readonly diff: () => Promise<string>;
   readonly verify: (record: RequirementRecord) => Promise<Verification>;
+  /** The harness's own checks of the tree after every change; null runs none (a test's loop). */
+  readonly checks?: TurnChecks | null;
   readonly maxSteps: number;
   readonly maxTokens: number;
   /** The completion cap of one turn; a turn never asks for more than the run has left. */
@@ -51,6 +59,11 @@ export interface LoopOptions {
   readonly outputs: { readonly directory: string; readonly root: string };
   /** What a model taking over from another reads first, or null for a fresh start. */
   readonly handoff?: string | null;
+  /**
+   * The tree a reopened loop starts on, already judged complete before a review reopened it: the
+   * harness does not verify it again until it changes.
+   */
+  readonly settled?: string | null;
   readonly signal?: AbortSignal | undefined;
   readonly log: (line: string) => void;
 }
@@ -70,6 +83,9 @@ export type StopReason =
 export interface TurnUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
+  /** The runtime's time reading the prompt and writing the reply, where it reported them. */
+  readonly prefillMs?: number | null;
+  readonly generationMs?: number | null;
   readonly inputCount: "reported" | "estimated";
   readonly outputCount: "reported" | "estimated";
 }
@@ -101,4 +117,10 @@ export interface LoopResult {
   readonly steps: number;
   readonly usage: Usage;
   readonly verifications: number;
+  /** Where the turns went: each charged to the requirement whose checks were failing. */
+  readonly turnsByRequirement: Readonly<Record<string, number>>;
+  /** Check commands the harness ran, apart from the model's turns. */
+  readonly harnessChecks: number;
+  /** The model's own commands that ran a test runner. */
+  readonly modelTestCommands: number;
 }

@@ -1,0 +1,52 @@
+{
+  "model": "gemma4:31b",
+  "seconds": 831,
+  "kind": "feature",
+  "failure": null,
+  "attempts": [
+    [
+      "the reply has no ```test block"
+    ],
+    []
+  ],
+  "tokens": [
+    11705,
+    13034
+  ],
+  "r1": {
+    "id": "R1",
+    "text": "Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.",
+    "source": "user",
+    "kind": "feature",
+    "required": true,
+    "assumptions": [],
+    "evidence": {
+      "tests": [],
+      "checks": [],
+      "structure": [],
+      "packages": []
+    },
+    "versions": [],
+    "testsAsked": true,
+    "behaviorAsked": false
+  },
+  "test": {
+    "path": "test/cli-main.swarm-r1.test.ts",
+    "command": "npx vitest run test/cli-main.swarm-r1.test.ts",
+    "atBase": "de Code (~/.local/bin/claude or\n+   /opt/homebrew/bin/claude) for subscription-based auth — no API key\n+   needed if you're already logged into Claude Code. To force per-token\n+   API billing instead, export ANTHROPIC_API_KEY and ensure 'claude'\n+   is not on your PATH.\n+\n\n ❯ test/cli-main.swarm-r1.test.ts:211:28\n    209|     it(\"documents the --reviewers flag in the --help text\", async () =…\n    210|       await main([\"--help\"]);\n    211|       expect(stdoutText()).toContain(\"--reviewers\");\n       |                            ^\n    212|     });\n    213|   });\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯\n\n"
+  },
+  "judged": {
+    "reference": {
+      "exit": 0,
+      "tail": "\n RUN  v1.6.1 /Users/brad/projects/recovery-2026-10-31/trial-17/runs/pubprep-11/copy-reference\n\n ✓ test/cli-main.swarm-r1.test.ts  (9 tests) 210ms\n\n Test Files  1 passed (1)\n      Tests  9 passed (9)\n   Start at  15:03:54\n   Duration  329ms (transform 26ms, setup 0ms, collect 30ms, tests 210ms, environment 0ms, prepare 21ms)\n\n"
+    },
+    "claude": {
+      "exit": 0,
+      "tail": "\n RUN  v1.6.1 /Users/brad/projects/recovery-2026-10-31/trial-17/runs/pubprep-11/copy-claude\n\n ✓ test/cli-main.swarm-r1.test.ts  (9 tests) 219ms\n\n Test Files  1 passed (1)\n      Tests  9 passed (9)\n   Start at  15:03:56\n   Duration  344ms (transform 30ms, setup 0ms, collect 35ms, tests 219ms, environment 0ms, prepare 24ms)\n\n"
+    },
+    "swarm": {
+      "exit": 1,
+      "tail": ".test.ts > pubprep --reviewers > parseArgs() > returns reviewers as full agent names in the correct order\nAssertionError: expected [ 'readme-docs-reviewer', …(2) ] to deeply equal [ 'tech-debt-reviewer', …(2) ]\n\n- Expected\n+ Received\n\n  Array [\n-   \"tech-debt-reviewer\",\n    \"readme-docs-reviewer\",\n+   \"tech-debt-reviewer\",\n    \"security-reviewer\",\n  ]\n\n ❯ test/cli-main.swarm-r1.test.ts:128:32\n    126|       const args = [\"--reviewers\", \"docs,tech-debt,security\"];\n    127|       const parsed = parseArgs(args);\n    128|       expect(parsed.reviewers).toEqual([\n       |                                ^\n    129|         \"tech-debt-reviewer\",\n    130|         \"readme-docs-reviewer\",\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯\n\n FAIL  test/cli-main.swarm-r1.test.ts > pubprep --reviewers > parseArgs() > removes duplicate reviewers and maintains correct order\nAssertionError: expected [ 'security-reviewer', …(2) ] to deeply equal [ 'tech-debt-reviewer', …(2) ]\n\n- Expected\n+ Received\n\n  Array [\n-   \"tech-debt-reviewer\",\n-   \"readme-docs-reviewer\",\n    \"security-reviewer\",\n+   \"readme-docs-reviewer\",\n+   \"tech-debt-reviewer\",\n  ]\n\n ❯ test/cli-main.swarm-r1.test.ts:138:32\n    136|       const args = [\"--reviewers\", \"security,docs,security,tech-debt,d…\n    137|       const parsed = parseArgs(args);\n    138|       expect(parsed.reviewers).toEqual([\n       |                                ^\n    139|         \"tech-debt-reviewer\",\n    140|         \"readme-docs-reviewer\",\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯\n\n"
+    }
+  }
+}

@@ -1,0 +1,208 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseArgs, main } from "../src/cli.js";
+import { orchestrate } from "../src/orchestrate.js";
+
+// Behaviors to check:
+// 1. parseArgs: --reviewers takes comma-separated list: tech-debt, docs, security.
+// 2. parseArgs: maps short names to tech-debt-reviewer, readme-docs-reviewer, security-reviewer.
+// 3. parseArgs: returns reviewers in fixed order: tech-debt, docs, security, regardless of input order.
+// 4. parseArgs: deduplicates repeated short names.
+// 5. parseArgs: leaves reviewers unset if flag is absent.
+// 6. parseArgs: error naming valid short names if value is missing or empty.
+// 7. parseArgs: error naming the invalid name and valid short names if an unknown name is provided.
+// 8. main: passes the parsed reviewers list to orchestrate.
+// 9. main: documents --reviewers flag in --help text.
+// 10. orchestrate: takes optional reviewers param (all three when omitted).
+// 11. orchestrate: runs only the specified reviewers.
+
+vi.mock("../src/orchestrate.js", () => ({
+  orchestrate: vi.fn(),
+}));
+
+const orchestrateMock = vi.mocked(orchestrate);
+
+function makeCleanRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pubprep-cli-test-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+  writeFileSync(join(dir, ".gitignore"), ".pubprep/\n.env\n");
+  writeFileSync(join(dir, "README.md"), "# fixture\n");
+  execFileSync("git", ["add", "."], { cwd: dir });
+  execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: dir });
+  return dir;
+}
+
+describe("pubprep --reviewers", () => {
+  describe("parseArgs", () => {
+    it("maps short names to full names in the fixed order tech-debt, docs, security", () => {
+      const args = ["--reviewers", "docs,tech-debt,security"];
+      const result = parseArgs(args);
+      expect(result.reviewers).toEqual([
+        "tech-debt-reviewer",
+        "readme-docs-reviewer",
+        "security-reviewer",
+      ]);
+    });
+
+    it("maintains fixed order regardless of input order", () => {
+      const args = ["--reviewers", "security,docs"];
+      const result = parseArgs(args);
+      expect(result.reviewers).toEqual([
+        "readme-docs-reviewer",
+        "security-reviewer",
+      ]);
+    });
+
+    it("deduplicates repeated short names", () => {
+      const args = ["--reviewers", "docs,security,docs,tech-debt,security"];
+      const result = parseArgs(args);
+      expect(result.reviewers).toEqual([
+        "tech-debt-reviewer",
+        "readme-docs-reviewer",
+        "security-reviewer",
+      ]);
+    });
+
+    it("leaves reviewers unset when the flag is absent", () => {
+      const args = ["--dry-run"];
+      const result = parseArgs(args);
+      expect(result.reviewers).toBeUndefined();
+    });
+
+    it("throws an error naming valid short names when value is empty", () => {
+      const args = ["--reviewers", ""];
+      expect(() => parseArgs(args)).toThrow();
+      try {
+        parseArgs(args);
+      } catch (e: any) {
+        expect(e.message).toContain("tech-debt");
+        expect(e.message).toContain("docs");
+        expect(e.message).toContain("security");
+      }
+    });
+
+    it("throws an error naming valid short names when value is missing", () => {
+      const args = ["--reviewers"];
+      expect(() => parseArgs(args)).toThrow();
+      try {
+        parseArgs(args);
+      } catch (e: any) {
+        expect(e.message).toContain("tech-debt");
+        expect(e.message).toContain("docs");
+        expect(e.message).toContain("security");
+      }
+    });
+
+    it("throws an error naming the invalid name and valid short names", () => {
+      const invalid = "unknown-agent";
+      const args = ["--reviewers", `${invalid},docs`];
+      expect(() => parseArgs(args)).toThrow();
+      try {
+        parseArgs(args);
+      } catch (e: any) {
+        expect(e.message).toContain(invalid);
+        expect(e.message).toContain("tech-debt");
+        expect(e.message).toContain("docs");
+        expect(e.message).toContain("security");
+      }
+    });
+  });
+
+  describe("main", () => {
+    let stdoutSpy: MockInstance<(chunk: string) => boolean>;
+    let stderrSpy: MockInstance<(chunk: string) => boolean>;
+    let repo: string;
+    let fakeHome: string;
+
+    beforeEach(() => {
+      stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true) as any;
+      stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true) as any;
+      repo = makeCleanRepo();
+      fakeHome = mkdtempSync(join(tmpdir(), "pubprep-cli-home-"));
+      process.env.ANTHROPIC_API_KEY = "sk-ant-valid-key";
+      orchestrateMock.mockReset();
+      orchestrateMock.mockResolvedValue({
+        runDir: "/tmp/run",
+        manifestPath: "/tmp/run/manifest.json",
+        exitReason: "success",
+        manifest: {
+          run_id: "test",
+          started_at: "now",
+          finished_at: "now",
+          target_repo: "/tmp/run",
+          target_head_sha: "sha",
+          agents: [],
+          convergence_branch: null,
+          exit_reason: "success",
+          publish_gate: null,
+          pull_request: null,
+          warnings: [],
+        },
+      });
+    });
+
+    afterEach(() => {
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(fakeHome, { recursive: true, force: true });
+    });
+
+    it("passes the parsed reviewers list to orchestrate", async () => {
+      await main(["--reviewers", "docs,security"], { cwd: repo, home: fakeHome });
+      const call = orchestrateMock.mock.calls[0]?.[0];
+      expect(call?.reviewers).toEqual([
+        "readme-docs-reviewer",
+        "security-reviewer",
+      ]);
+    });
+
+    it("documents the --reviewers flag in the --help text", async () => {
+      await main(["--help"]);
+      const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+      expect(out).toContain("--reviewers");
+    });
+  });
+
+  describe("orchestrate", () => {
+    it("accepts an optional reviewers parameter", async () => {
+      const repo = makeCleanRepo();
+      try {
+        await orchestrate({
+          projectRoot: repo,
+          reviewers: ["tech-debt-reviewer"],
+        });
+      } catch (e) {
+        // We only care that it accepts the param; 
+        // actual execution might fail due to missing keys in this environment
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("accepts orchestrate call when reviewers is omitted", async () => {
+      const repo = makeCleanRepo();
+      try {
+        await orchestrate({
+          projectRoot: repo,
+        });
+      } catch (e) {
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+  });
+});

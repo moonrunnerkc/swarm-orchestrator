@@ -1,5 +1,12 @@
 # fix-claimcheck: acceptance criteria
 
+Corrected on 2026-11-05, the one criteria change the 17.0.0 contract permits: R1's tests were
+mapped by the path prefix `src::`, which leaves out `test/**`, a root claimcheck's vitest config
+also collects. They are now the fix commit's three tests, named by their identity as the runner
+reports them, which the sealed held-out run measures. The criteria as committed before either
+agent ran are kept beside this file as `criteria.original.md` and `requirements.original.json`;
+the reason is in `CORRECTION.md`.
+
 Sealed before either agent started. Neither agent sees this file, `requirements.json`, `judge.toml`
 or `held-out/`.
 
@@ -25,7 +32,13 @@ or `held-out/`.
   "evidence": {
    "tests": [
     {
-     "name": "src::"
+     "name": "src/checks/test-removed.held-out.test.ts::compareTestFile, held out > flags a deleted test as the ambiguous test-removed, not assertion-removed"
+    },
+    {
+     "name": "src/checks/test-removed.held-out.test.ts::compareTestFile, held out > still flags an assertion removed from a surviving test as assertion-removed"
+    },
+    {
+     "name": "src/core/test-removed-decision.held-out.test.ts::decide, held out > only warns when a whole test was removed, since deletion is ambiguous"
     }
    ],
    "checks": [

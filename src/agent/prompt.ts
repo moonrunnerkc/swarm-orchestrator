@@ -45,6 +45,9 @@ export const systemPrompt = [
   '   Each entry: {"id": "R1", "text": "...", "kind": "fix" | "feature" | "refactor" | "upgrade" | "other",',
   '   "assumptions": ["..."], "evidence": {"tests": [{"name": "test name"}], "checks": ["check name"],',
   '   "structure": [{"path": "file", "contains": "text"}], "packages": [{"name": "pkg", "ecosystem": "npm", "version": "x.y.z"}]}}.',
+  '   A structure claim may name a symbol instead of a text: {"path": "a.py", "symbol": "name"} (the',
+  '   module defines it), with "absent": true (it no longer does) or "provides": true (an importer',
+  '   still gets it). With "contains", "absent": true says the text left the file.',
   '   A test is named by its title, its suite, or a path such as "suite > title". A check is one',
   "   the project declares (package scripts such as test, lint, build); a command you ran is not.",
   "   A package's version is the one the task asks for: exact, or a range such as 9.x where the",
@@ -57,12 +60,16 @@ export const systemPrompt = [
   "",
   `4. ${completionMarker} on a line of its own, when the task is done.`,
   "",
-  "An independent verifier then runs the project's checks on your working tree in a clean checkout",
-  "and decides each requirement's status from executed results only: satisfied, failed,",
-  "unverified or blocked. Your own statements never decide it. A fix or feature needs a test that",
-  "fails before your change and passes after it; a refactor needs the existing tests to keep",
-  "passing; an upgrade needs the new version in the lockfile. If anything is not satisfied, the",
-  "verifier's findings come back to you and you continue.",
+  "After every change, the harness runs the task's checks on your tree and shows you the results:",
+  "a test written for R1 by someone who has not seen your change (you see what it prints, never its",
+  "source), any structure and version checks, and, once those pass, the project's own tests. You do",
+  "not need to run them yourself. When every check passes, the harness verifies the tree in a clean",
+  "checkout and the run ends. Mark the task complete only where no check reports otherwise; a",
+  "completion over failing checks is answered with them.",
+  "",
+  "The verifier decides each requirement's status from executed results only. Your own statements",
+  "never decide it, and neither do tests you write: R1 is satisfied by evidence you did not write.",
+  "R1 is the task; requirements you add (R2 and on) record how you split it and do not decide it.",
   "",
   "Write scratch files (helper scripts, notes) under .swarm/scratch/: nothing under .swarm/ is",
   "delivered, and paths outside the repository are refused.",
@@ -88,7 +95,18 @@ const markerCommand = new RegExp(`^(?:echo\\s+)?(["']?)${completionMarker}\\1$`)
 const shells = new Set(["", "bash", "sh", "shell"]);
 const editors = new Set(["edit", "write"]);
 
-export function parseReply(content: string): ParsedReply {
+/**
+ * The marker written as a fence of its own (```SWARM_TASK_COMPLETE, then a closing fence, or
+ * both on one line): read as the marker on a line of its own. qwen3.6 on the 2026-11-04 upgrade
+ * sent it so four times running, and the run ended as unusable replies with the work done.
+ */
+const markerFence = new RegExp(
+  `^[ \\t]*\`{3,}[ \\t]*${completionMarker}[ \\t]*(?:\\n[ \\t]*)?\`{3,}[ \\t]*$`,
+  "gm",
+);
+
+export function parseReply(reply: string): ParsedReply {
+  const content = reply.replace(markerFence, completionMarker);
   const blocks = [...content.matchAll(fenced)].map((match) => ({
     language: match[2] ?? "",
     info: match[3] ?? "",

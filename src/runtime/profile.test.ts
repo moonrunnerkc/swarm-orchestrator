@@ -22,9 +22,15 @@ describe("the record a model builds on this machine", () => {
 
   it("writes each finished run to the profile under the model's digest", async () => {
     const home = await mkdtemp(join(tmpdir(), "profile-"));
-    await recordOutcome(home, "sha256:abc", true);
+    await recordOutcome(home, "sha256:abc", true, "feature");
+    await recordOutcome(home, "sha256:abc", false, "refactor");
     await recordOutcome(home, "sha256:abc", false);
     const written = JSON.parse(await readFile(profilePath(home), "utf8"));
-    expect(written.outcomes["sha256:abc"]).toEqual({ complete: 1, other: 1 });
+    // And by the kind of task R1 was, where the run says, which escalation reads.
+    expect(written.outcomes["sha256:abc"]).toEqual({
+      complete: 1,
+      other: 2,
+      kinds: { feature: { complete: 1, other: 0 }, refactor: { complete: 0, other: 1 } },
+    });
   });
 });

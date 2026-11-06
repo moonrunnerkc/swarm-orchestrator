@@ -94,23 +94,25 @@ describe("the prompt over a long run", () => {
       const sent = ran.usage.perTurn.map((turn) => turn.inputTokens);
       expect(sent).toEqual(model.seen.map((turn) => estimateTokens(textOf(turn))));
       expect(ran.usage.perTurn.every((turn) => turn.inputCount === "estimated")).toBe(true);
-      expect(Math.max(...sent)).toBeLessThanOrEqual(16_000);
+      // Up to windowTurns + briefBlock - 1 turns whole: the window moves a block at a time.
+      expect(Math.max(...sent)).toBeLessThanOrEqual(20_000);
       expect(slopeOf(sent.slice(19))).toBeLessThanOrEqual(200);
       // Nothing pressed on the context, so nothing was compacted.
       expect(model.seen.some((turn) => textOf(turn).includes("were compacted"))).toBe(false);
     },
   );
 
-  it("keeps the instructions, the task and the record byte for byte at the front", async () => {
+  it("keeps the instructions and the task byte for byte at the front, and the record at the end", async () => {
     const replies = Array.from({ length: 12 }, (_, at) => bash(`cat src/module-${at}.ts`));
     const model = scripted(replies, { counts: "unreported" });
     await runLoop({ ...(await loopOptions(model, 65_536)), maxSteps: 12 });
     const [first, second, last] = [model.seen[0], model.seen[1], model.seen[11]];
     expect(last?.[0]).toEqual(first?.[0]);
     expect(last?.[1]).toEqual(second?.[1]);
-    expect(first?.[1]?.content.startsWith(second?.[1]?.content ?? "-")).toBe(true);
+    expect(first?.[1]).toEqual(second?.[1]);
     expect(second?.[1]?.content).toMatch(/^Task:\nMove the history modules/);
-    expect(second?.[1]?.content).toContain('"id":"R1"');
+    expect(second?.[1]?.content).not.toContain('"id":"R1"');
+    expect(last?.at(-1)?.content).toContain('"id":"R1"');
   });
 
   it("keeps the latest turns whole and older outputs as an excerpt naming the evidence and a readable copy", async () => {
@@ -120,7 +122,9 @@ describe("the prompt over a long run", () => {
     await runLoop({ ...options, maxSteps: 10 });
     const last = model.seen[9] ?? [];
     const whole = last.filter((one) => one.role === "user" && one.content.includes("line 60:"));
+    // Nine turns: the window last moved at eight, so the turns from the fifth on are whole.
     expect(whole.map((one) => one.content.split("\n")[1]?.split(" line")[0])).toEqual([
+      "cat src/module-4.ts",
       "cat src/module-5.ts",
       "cat src/module-6.ts",
       "cat src/module-7.ts",
@@ -147,8 +151,12 @@ describe("the prompt over a long run", () => {
     const contextTokens = 20_000;
     const ran = await runLoop({
       ...(await loopOptions(model, contextTokens)),
-      // The tree changes after the third command, so that turn edited the file.
-      diff: async () => (model.seen.length >= 3 ? changed : ""),
+      // The tree changes after the third command, so that turn edited the file; another file
+      // changes every turn after it, so the run keeps making progress.
+      diff: async () =>
+        model.seen.length >= 3
+          ? `${changed}\ndiff --git a/src/notes.ts b/src/notes.ts\n+// ${model.seen.length}`
+          : "",
       log: (line: string) => logged.push(line),
     });
     expect(ran.steps).toBe(40);
@@ -162,7 +170,7 @@ describe("the prompt over a long run", () => {
     );
     expect(digest).toContain("Files read or named, by step: src/module-0.ts (1, ");
     expect(digest).toContain(
-      "Files edited, by the step after which they changed: src/module-1.ts (3).",
+      "Files edited, by the step after which they changed: src/module-1.ts (3)",
     );
     expect(digest).toMatch(
       /- step 5: `npm test -- --run 4` exited 1: FAIL src\/module-3.ts \[evidence [0-9a-f]{16}\]/,
@@ -199,5 +207,29 @@ describe("an unchanged command and output", () => {
     const options = await loopOptions(model, 65_536);
     const ran = await runLoop({ ...options, chokepoint: changing, maxSteps: 5 });
     expect(ran).toMatchObject({ stop: "step-budget", steps: 5 });
+  });
+});
+
+describe("the time a turn may take", () => {
+  // A run's wall clock holds the check author and the base's tests before the first turn, which
+  // take longer on a loaded machine; the loop's own clock is what this rule reads, so it is faked.
+  it("starts no turn the time left cannot pay for, the longest turn so far the measure", async () => {
+    const quick = scripted(["ls", "pwd", "ls -a"].map(bash), { counts: "unreported" });
+    const slow: typeof quick = {
+      ...quick,
+      async complete(...args: Parameters<typeof quick.complete>) {
+        await new Promise((wait) => setTimeout(wait, 100));
+        return quick.complete(...args);
+      },
+    };
+    const left = [10_000, 50];
+    let asked = 0;
+    const ran = await runLoop({
+      ...(await loopOptions(slow, 65_536)),
+      turnTime: () => ({ leftMs: left[Math.min(asked++, left.length - 1)] ?? 0, wallMs: 60_000 }),
+    });
+    expect(ran.stop).toBe("time-budget");
+    expect(ran.steps).toBe(1);
+    expect(ran.reason).toMatch(/^the next turn may take 1 s, as the longest has, and 0 s remain/);
   });
 });

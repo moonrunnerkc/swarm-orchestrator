@@ -1,5 +1,5 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import { editText, type FileEdit } from "../tools/file-edit.ts";
 import { readShellCommand } from "../tools/shell-command.ts";
@@ -58,6 +58,8 @@ export async function runCommandStep(input: {
     readonly comparable: string;
     readonly repeats: number;
   };
+  /** The authored checks' paths: in the tree only while the harness runs them. */
+  readonly withheld?: readonly string[];
 }): Promise<CommandStep & { readonly output: string }> {
   const isEdit = "edit" in input.action;
   const command = "edit" in input.action ? editText(input.action.edit) : input.action.command;
@@ -88,8 +90,17 @@ export async function runCommandStep(input: {
   const where = saved !== null && bytes > outputCap ? `\n[full output: ${saved}]` : "";
   const lastLine = outcome.output.trimEnd().split("\n").at(-1)?.trim() ?? "";
   const ok = outcome.decision === "allowed" && exitCode === 0;
+  // claimcheck (2026-11-05, rc.13): the model read the authored test's path three times, was told
+  // no such file each time, and the run stopped there.
+  const named = isEdit
+    ? []
+    : (input.withheld ?? []).filter((path) => command.includes(basename(path)));
+  const withheld = named.map(
+    (path) =>
+      `\n[${path} is the independent check written apart from your change. The harness withholds its source and lays it in only while it runs it, so it is not in the tree. What it reports after each change, its failing cases and their errors, is in the checks note; change the code until they pass.]`,
+  );
   return {
-    note: `${again}${status}\n${truncate(outcome.output)}${where}`,
+    note: `${again}${status}\n${truncate(outcome.output)}${where}${withheld.join("")}`,
     fact: {
       step: input.step,
       command,

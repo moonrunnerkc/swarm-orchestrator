@@ -1,5 +1,4 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { snapshotWorkingTree, type VerifyResult } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
@@ -8,17 +7,17 @@ import {
   type ConfirmationPrompt,
   createChokepoint,
 } from "../tools/chokepoint.ts";
-import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
-import { type Progress, runAttempts } from "./attempts.ts";
+import { type Escalate, type Progress, runAttempts } from "./attempts.ts";
+import { authoringStage } from "./authoring.ts";
 import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
 import type { StopReason } from "./loop.ts";
 import type { ModelClient } from "./model.ts";
-import { preparePythonEnvironment } from "./python-environment.ts";
-import { assembleReport, type RunReportFile, writeReport } from "./report.ts";
+import { assembleReport, type RunReportFile, recordStopped, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
+import { runEnvironment } from "./run-environment.ts";
 import { stablePrefix } from "./stable-prefix.ts";
-import { behaviorChangeNote, createVerifier, dependencyPolicy, swarmHome } from "./verification.ts";
+import { behaviorChangeNote, createVerifier, swarmHome } from "./verification.ts";
 import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
 import { deliver, openWorkspace } from "./workspace.ts";
 
@@ -28,8 +27,11 @@ export interface RunOptions {
   readonly model: ModelClient;
   /** Why this model, in one line, for the report. */
   readonly modelReason: string;
-  /** A stronger model to hand the run to once, when this one stops making progress. */
-  readonly escalation?: ModelClient | null;
+  /**
+   * Whom to hand the run to once, when this model stops making progress on a task of a kind:
+   * a model with a better record on that kind here, or none, with why.
+   */
+  readonly escalation?: Escalate | null;
   /** The money a turn costs where it is known; "none (local runtime)" for a local model. */
   readonly cost: string;
   readonly contextTokens: number;
@@ -91,33 +93,14 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
   try {
     const workspace = managed.directory;
     const base = managed.start.base;
-    const childHome = join(evidence.directory, "home");
-    await mkdir(childHome, { recursive: true, mode: 0o700 });
-    const guard = createPolicyGuard({
-      workspaceRoot: workspace,
-      homeDir: homedir(),
-      shellAllowlist: defaultShellAllowlist,
-      // The session store, its verifications and the sealed held-out checks are never the agent's to read.
-      deniedRoots: [home],
-      childHomeDir: childHome,
-    });
-    const deadline =
-      options.maxWallMs === null ? Number.POSITIVE_INFINITY : started + options.maxWallMs;
-    const python = await preparePythonEnvironment({
-      worktree: workspace,
+    const { guard, deadline, python, execution } = await runEnvironment({
+      options,
+      workspace,
       repository,
-      env: guard.childEnvironment.variables,
-      deadline,
-      signal: options.signal,
+      home,
+      childHome: join(evidence.directory, "home"),
+      started,
     });
-    const execution =
-      options.isolation === "isolated"
-        ? ({ mode: "isolated", network: "closed", dependencies: "prepare" } as const)
-        : ({
-            mode: "host",
-            network: "open",
-            dependencies: options.dependencies ?? (await dependencyPolicy(repository)),
-          } as const);
     // After the Python environment, so the probe and the layout see the .venv the model will.
     const prefix = await stablePrefix({
       workspace,
@@ -181,7 +164,23 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
 
     let stop: RunReport["stop"] = "interrupted";
     let reason: string | null = null;
+    let authored: Awaited<ReturnType<typeof authoringStage>>["authored"] = [];
     try {
+      // Checks for R1 written apart from the change, before its first edit (check-author.ts).
+      const authoring = await authoringStage({
+        model: options.model,
+        chokepoint,
+        evidence,
+        workspace,
+        task: options.task,
+        record: progress.record,
+        home,
+        turnTokens: options.turnTokens,
+        scratch: join(evidence.directory, "checks"),
+        signal: options.signal,
+      });
+      progress.record = authoring.record;
+      authored = authoring.authored;
       ({ stop, reason } = await runAttempts({
         shared: {
           task: options.task,
@@ -198,6 +197,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
               "utf8",
             ),
           verify: verifier.tree,
+          checks: authoring.checks,
           turnTokens: options.turnTokens,
           turnTime: () => ({
             leftMs: deadline - Date.now() - verifier.reserveMs(),
@@ -211,7 +211,10 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         escalation: options.escalation ?? null,
         review: options.review === true,
         maxSteps: options.maxSteps,
-        maxTokens: options.maxTokens,
+        // One allowance for the run: the check author's calls came out of it first.
+        maxTokens:
+          options.maxTokens -
+          authored.reduce((sum, one) => sum + one.inputTokens + one.outputTokens, 0),
         verifier,
         evidence,
         base,
@@ -259,27 +262,24 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       digests,
       notes: [
         ...instructions.notes,
+        ...(progress.escalationNote === undefined
+          ? []
+          : [`Not escalated: ${progress.escalationNote}.`]),
         ...(options.behaviorChange === "authorized" ? [behaviorChangeNote(finalized.result)] : []),
       ],
       start: managed.start,
       python,
       delivery,
       startedAt: started,
+      authored,
     });
     const paths = await writeReport(final, report);
-    await evidence.record({
-      type: "session-stopped",
-      actor: "harness",
-      provenance: ["tool-output"],
-      payload: {
-        stop,
-        reason,
-        state: finalized.state,
-        patchSha256: finalized.snapshot.sha256,
-        verification: finalized.verification,
-        applied: delivery.applied,
-        report: paths.json,
-      },
+    await recordStopped(evidence, {
+      stop,
+      reason,
+      finalized,
+      applied: delivery.applied,
+      report: paths.json,
     });
     return {
       stop,

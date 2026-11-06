@@ -1,0 +1,161 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { parseArgs, main } from "../src/cli";
+import { orchestrate } from "../src/orchestrate";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+// Mock orchestrate to verify main() passes arguments correctly
+vi.mock("../src/orchestrate", () => ({
+  orchestrate: vi.fn(),
+}));
+
+import { orchestrate as orchestrateMock } from "../src/orchestrate";
+
+// Mock Claude binary check to avoid auth errors in main()
+vi.mock("../src/claude-code.js", () => ({
+  findClaudeCodeBinary: vi.fn(() => "/bin/claude"),
+}));
+
+function makeCleanRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pubprep-cli-test-"));
+  // We don't need a full git repo for parseArgs, but main() might check it.
+  // For these tests, we'll mock the environment or use a simple dir.
+  return dir;
+}
+
+describe("parseArgs()", () => {
+  it("returns full agent names when given valid short names", () => {
+    const args = parseArgs(["--reviewers", "tech-debt,docs,security"]);
+    expect(args.reviewers).toEqual([
+      "tech-debt-reviewer",
+      "readme-docs-reviewer",
+      "security-reviewer",
+    ]);
+  });
+
+  it("returns full agent names in fixed order regardless of input order", () => {
+    const args = parseArgs(["--reviewers", "security,docs,tech-debt"]);
+    expect(args.reviewers).toEqual([
+      "tech-debt-reviewer",
+      "readme-docs-reviewer",
+      "security-reviewer",
+    ]);
+  });
+
+  it("returns unique full agent names even when short names are repeated", () => {
+    const args = parseArgs(["--reviewers", "docs,docs,tech-debt,tech-debt"]);
+    expect(args.reviewers).toEqual([
+      "tech-debt-reviewer",
+      "readme-docs-reviewer",
+    ]);
+  });
+
+  it("leaves reviewers unset when the flag is absent", () => {
+    const args = parseArgs([]);
+    expect(args.reviewers).toBeUndefined();
+  });
+
+  it("throws an error naming valid short names when value is missing or empty", () => {
+    const run = () => parseArgs(["--reviewers", ""]);
+    try {
+      run();
+      throw new Error("should have thrown");
+    } catch (e: any) {
+      expect(e.message).toContain("tech-debt");
+      expect(e.message).toContain("docs");
+      expect(e.message).toContain("security");
+    }
+  });
+
+  it("throws an error naming the invalid name and valid short names when an unknown name is provided", () => {
+    const run = () => parseArgs(["--reviewers", "invalid-name"]);
+    try {
+      run();
+      throw new Error("should have thrown");
+    } catch (e: any) {
+      expect(e.message).toContain("invalid-name");
+      expect(e.message).toContain("tech-debt");
+      expect(e.message).toContain("docs");
+      expect(e.message).toContain("security");
+    }
+  });
+});
+
+describe("main()", () => {
+  let repo: string;
+  let fakeHome: string;
+
+  beforeEach(() => {
+    repo = makeCleanRepo();
+    fakeHome = mkdtempSync(join(tmpdir(), "pubprep-cli-home-"));
+    vi.mocked(orchestrateMock).mockResolvedValue({
+      runDir: "/tmp/run",
+      manifestPath: "/tmp/run/manifest.json",
+      exitReason: "success",
+      manifest: {
+        run_id: "test",
+        started_at: "now",
+        finished_at: "now",
+        target_repo: "/tmp/run",
+        target_head_sha: "sha",
+        agents: [],
+        convergence_branch: null,
+        exit_reason: "success",
+        publish_gate: null,
+        pull_request: null,
+        warnings: [],
+      },
+    });
+  });
+
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+    vi.clearAllMocks();
+  });
+
+  it("passes the parsed reviewers list to orchestrate", async () => {
+    await main(["--reviewers", "docs,security"], { cwd: repo, home: fakeHome });
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewers: ["readme-docs-reviewer", "security-reviewer"],
+      }),
+    );
+  });
+
+  it("control: calls orchestrate without reviewers when flag is absent", async () => {
+    await main([], { cwd: repo, home: fakeHome });
+    const call = orchestrateMock.mock.calls[0]?.[0];
+    expect(call?.reviewers).toBeUndefined();
+  });
+
+  it("documents the --reviewers flag in the --help text", async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await main(["--help"]);
+    const output = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(output).toContain("--reviewers");
+    stdoutSpy.mockRestore();
+  });
+});
+
+describe("orchestrate()", () => {
+  it("accepts the reviewers parameter in its options", async () => {
+    // We test that the function can be called with the reviewers parameter
+    // without throwing a TypeError, even if it fails later due to environment.
+    const repo = makeCleanRepo();
+    try {
+      await orchestrate({
+        projectRoot: repo,
+        reviewers: ["tech-debt-reviewer"],
+      });
+    } catch (e: any) {
+      // We ignore errors related to git/auth, but not TypeErrors regarding arguments
+      if (e instanceof TypeError) {
+        throw e;
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});

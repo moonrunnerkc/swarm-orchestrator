@@ -182,3 +182,21 @@ describe("the notice that the time is running out", () => {
     expect(timeLeftNotice(12 * minute, 60 * minute)).toContain("mark the task complete");
   });
 });
+
+// qwen3.6:35b-a3b on the 2026-11-04 upgrade (session 20261105T084220-e754a6, steps 44 to 48):
+// the marker as a fence of its own, alone or after a requirements block, read as no reply form
+// four times, and the run ended as unusable replies with the change done.
+describe("the completion marker written as a fence", () => {
+  it("reads it as the marker, alone or after a requirements block", () => {
+    expect(parseReply("```SWARM_TASK_COMPLETE\n```")).toEqual({ kind: "complete" });
+    expect(parseReply("The build succeeds.\n\n```SWARM_TASK_COMPLETE\n```")).toEqual({
+      kind: "complete",
+    });
+    expect(parseReply("```SWARM_TASK_COMPLETE```")).toEqual({ kind: "complete" });
+    expect(
+      parseReply(
+        '```requirements\n[{"id": "R1", "text": "x"}]\n```\n\n```SWARM_TASK_COMPLETE\n```',
+      ),
+    ).toEqual({ kind: "requirements", json: '[{"id": "R1", "text": "x"}]', complete: true });
+  });
+});

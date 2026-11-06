@@ -12,8 +12,8 @@ export interface Choice {
   readonly chosen: Candidate;
   /** One line: why this model. */
   readonly reason: string;
-  /** A stronger ready model to escalate to once, or null where the chosen is the strongest. */
-  readonly escalation: Candidate | null;
+  /** Every other ready model, best first: what an escalation may choose among, by record. */
+  readonly alternatives: readonly Candidate[];
 }
 
 const gib = 1024 ** 3;
@@ -98,10 +98,65 @@ export function choose(
     rate === null
       ? `${lead}${size}${speed}; ${history}`
       : `the best record here: ${Math.round(rate * 100)}% of its finished tasks complete${size}${speed}`;
-  const stronger = ranked.find(
-    (one) => (one.eligibility.model.parameters ?? 0) > (model.parameters ?? 0),
-  );
-  return { chosen, reason, escalation: stronger ?? null };
+  return { chosen, reason, alternatives: ranked.slice(1) };
+}
+
+/** A model's finished tasks of one kind here, complete and not. */
+export function kindRecord(profile: Profile, digest: string, kind: string) {
+  const tally = profile.outcomes[digest]?.kinds?.[kind] ?? { complete: 0, other: 0 };
+  return { ...tally, finished: tally.complete + tally.other };
+}
+
+/** Finished tasks of a kind a model needs here before its record can justify a switch to it. */
+const escalationEvidence = 2;
+
+/**
+ * Whom to hand a stalled run to, by the record of this kind of task on this machine: the
+ * alternative whose share of such tasks completed is the highest, and higher than the current
+ * model's, with at least two such tasks finished. A peer (as good, or no record) is never chosen:
+ * a stalled task handed between two models with the same record has not completed anything.
+ */
+export function escalationFor(
+  current: string,
+  alternatives: readonly { readonly name: string; readonly digest: string }[],
+  profile: Profile,
+  kind: string,
+): {
+  readonly to: { readonly name: string; readonly digest: string } | null;
+  readonly reason: string;
+} {
+  const rate = (digest: string) => {
+    const record = kindRecord(profile, digest, kind);
+    return record.finished === 0 ? null : record.complete / record.finished;
+  };
+  const mine = kindRecord(profile, current, kind);
+  const mineRate = rate(current);
+  const said = (record: { complete: number; finished: number }) =>
+    `${record.complete} of ${record.finished} ${kind} task(s) complete`;
+  const better = alternatives
+    .map((one) => ({ one, record: kindRecord(profile, one.digest, kind), rate: rate(one.digest) }))
+    .filter(
+      (one) =>
+        one.record.finished >= escalationEvidence &&
+        one.rate !== null &&
+        mineRate !== null &&
+        one.rate > mineRate,
+    )
+    .sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0));
+  const [best] = better;
+  if (best === undefined) {
+    return {
+      to: null,
+      reason:
+        mineRate === null
+          ? `no record of ${kind} tasks here for the current model, so no measured gap to escalate across`
+          : `no other model here has a better record on ${kind} tasks than the current one (${said(mine)})`,
+    };
+  }
+  return {
+    to: best.one,
+    reason: `${best.one.name} has the better record on ${kind} tasks here (${said(best.record)}, against ${said(mine)})`,
+  };
 }
 
 /**

@@ -2,7 +2,14 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyFileEdit, applyReplacements, readEditBlock, readWriteBlock } from "./file-edit.ts";
+import {
+  applyFileEdit,
+  applyReplacements,
+  closestLines,
+  readEditBlock,
+  readWriteBlock,
+  whereItDiffers,
+} from "./file-edit.ts";
 
 const pair = (search: string, replace: string) =>
   ["<<<<<<< SEARCH", search, "=======", replace, ">>>>>>> REPLACE"].join("\n");
@@ -122,5 +129,64 @@ describe("replacing exactly once", () => {
     const said = "refused" in refused ? refused.refused : "";
     expect(said).toContain('no file at "path=fs-walk.ts"');
     expect(said).toContain("```edit src/app.ts");
+  });
+});
+
+// ironroot (2026-11-04, session 20261105T081734-bfcef7): a SEARCH that joined a signature the
+// file spreads over two lines was refused four times with only "copy the lines exactly".
+describe("a SEARCH part that matches nothing", () => {
+  it("is refused with the file's line its first line was copied from", () => {
+    const file = [
+      "import x",
+      "",
+      "async def _falsify_artifact_hash_stability(",
+      "    session: AsyncSession, run_id: str",
+      ") -> FalsificationAttempt:",
+      '    """Every artifact hashes to its content hash."""',
+      "    return None",
+    ].join("\n");
+    const search = [
+      "async def _falsify_artifact_hash_stability(session: AsyncSession, run_id: str) -> FalsificationAttempt:",
+      '    """Every artifact hashes to its content hash."""',
+      "    return None",
+    ].join("\n");
+    const result = applyReplacements(file, [{ search, replace: "" }]);
+    expect(result).toEqual({
+      refused:
+        'the SEARCH part matches nothing in the file; copy the lines exactly as the file has them, whitespace included. No line of it matches the file; its line 1 reads "async def _falsify_artifact_hash_stability(session: AsyncSession, run_id: str) -> FalsificationAttempt:", where the file\'s line 3 reads "async def _falsify_artifact_hash_stability(" (the file breaks it over more lines).\n',
+    });
+    // With nothing to align, the window of the file's closest lines.
+    expect(closestLines(file, search)).toContain(
+      '    6      """Every artifact hashes to its content hash."""',
+    );
+    expect(closestLines("nothing alike", "zzz")).toBe("");
+  });
+});
+
+describe("where a SEARCH part parts from the file", () => {
+  it("names its first differing line beside the file's, and advises parts for a long one", () => {
+    const file = ["a", "def f(", "    x,", "):", "    return x", "z"].join("\n");
+    const search = ["def f(", "    x,", ") -> int:", "    return x"].join("\n");
+    expect(whereItDiffers(file, search)).toBe(
+      '. Its first 2 line(s) match the file from line 2; its line 3 reads ") -> int:", where the file\'s line 4 reads "):".\n',
+    );
+    const long = Array.from({ length: 50 }, (_, at) => `line ${at}`);
+    const drifted = [...long.slice(0, 45), "  line 45", ...long.slice(46)].join("\n");
+    expect(whereItDiffers(long.join("\n"), drifted)).toMatch(
+      /its line 46 reads " {2}line 45", where the file's line 46 reads "line 45" \(they differ only in whitespace\)\. A SEARCH of 50 lines is hard to copy exactly/,
+    );
+    expect(whereItDiffers("q", "nothing here")).toBeNull();
+  });
+});
+
+// ironroot (2026-11-05, rc.7 run): the file has the signature on one line; the model sent it over
+// three, so no line of its SEARCH started a match and the refusal showed a window elsewhere.
+describe("a SEARCH whose first line the file keeps longer", () => {
+  it("is shown the file's line as it is", () => {
+    const file = ["x", "async def _falsify(session: S, run_id: str) -> A:", "    pass"].join("\n");
+    const search = ["async def _falsify(", "    session: S, run_id: str", ") -> A:"].join("\n");
+    expect(whereItDiffers(file, search)).toBe(
+      '. No line of it matches the file; its line 1 reads "async def _falsify(", where the file\'s line 2 reads "async def _falsify(session: S, run_id: str) -> A:" (the file has it on one line, longer).\n',
+    );
   });
 });

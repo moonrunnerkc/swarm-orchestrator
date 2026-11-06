@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { RunReport } from "./run.ts";
 import {
+  authorTest,
   bash,
   type Fixture,
   halfTest,
@@ -54,27 +55,50 @@ describe("a task of each kind, end to end", () => {
       "Add an exported double(n) returning n * 2, with a test.",
     );
     const ran = await probe.run(
-      scripted([
-        write("half.mjs", "export const half = (n) => n / 2;\nexport const double = (n) => n * 2;"),
-        write(
-          "test/double.test.mjs",
-          'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { double } from "../half.mjs";\ntest("doubles", () => assert.equal(double(4), 8));',
-        ),
-        recordAndComplete([
-          { id: "R1", text: "x", kind: "feature", evidence: { tests: [{ name: "doubles" }] } },
-        ]),
-      ]),
+      scripted(
+        [
+          write(
+            "half.mjs",
+            "export const half = (n) => n / 2;\nexport const double = (n) => n * 2;",
+          ),
+          write("test/double.test.mjs", doubleTest("doubles")),
+          recordAndComplete([
+            { id: "R1", text: "x", kind: "feature", evidence: { tests: [{ name: "doubles" }] } },
+          ]),
+        ],
+        { author: [authorTest("feature", doubleTest("double(4) is 8, written apart"))] },
+      ),
+    );
+    console.log(
+      "DEBUG",
+      JSON.stringify(
+        {
+          a: ran.report.authoring,
+          r: ran.report.requirements,
+          reasons: ran.result?.reasons,
+          held: ran.result?.heldOut,
+        },
+        null,
+        1,
+      ),
     );
     expect(ran.report.state).toBe("complete");
     expect(ran.report.requirements[0]).toMatchObject({
       id: "R1",
       text: "Add an exported double(n) returning n * 2, with a test.",
       status: "satisfied",
+      witness: "independent",
     });
-    expect(ran.report.requirements[0]?.evidence[0]).toMatchObject({
-      outcome: "witness",
-      authority: "implementation-authored",
-    });
+    const evidence = ran.report.requirements[0]?.evidence ?? [];
+    expect(evidence.map((one) => [one.authority, one.outcome])).toEqual(
+      expect.arrayContaining([
+        ["implementation-authored", "witness"],
+        ["independently-generated", "fixed"],
+      ]),
+    );
+    expect(ran.report.authoring).toMatchObject([
+      { requirement: "R1", kind: "feature", test: "test/half.swarm-r1.test.mjs", failure: null },
+    ]);
     const bundle = ran.report.attestation ?? "";
     const checked = spawnSync(
       process.execPath,
@@ -119,29 +143,40 @@ describe("a task of each kind, end to end", () => {
       "Move half into lib/math.mjs.",
     );
     const ran = await probe.run(
-      scripted([
-        bash(
-          "mkdir -p lib test/lib && git mv half.mjs lib/math.mjs && git mv test/half.test.mjs test/lib/math.test.mjs",
-        ),
-        bash(
-          "sed -i.bak 's#../half.mjs#../../lib/math.mjs#' test/lib/math.test.mjs && rm test/lib/math.test.mjs.bak",
-        ),
-        recordAndComplete([
-          {
-            id: "R1",
-            text: "x",
-            kind: "refactor",
-            evidence: {
-              tests: [{ name: "half" }],
-              structure: [
-                { path: "lib/math.mjs", contains: "export const half" },
-                { path: "half.mjs", absent: true },
-              ],
+      scripted(
+        [
+          bash(
+            "mkdir -p lib test/lib && git mv half.mjs lib/math.mjs && git mv test/half.test.mjs test/lib/math.test.mjs",
+          ),
+          bash(
+            "sed -i.bak 's#../half.mjs#../../lib/math.mjs#' test/lib/math.test.mjs && rm test/lib/math.test.mjs.bak",
+          ),
+          recordAndComplete([
+            {
+              id: "R1",
+              text: "x",
+              kind: "refactor",
+              evidence: {
+                tests: [{ name: "half" }],
+                structure: [
+                  { path: "lib/math.mjs", contains: "export const half" },
+                  { path: "half.mjs", absent: true },
+                ],
+              },
             },
-          },
-        ]),
-      ]),
+          ]),
+        ],
+        {
+          author: [
+            `kind: refactor\n\n\`\`\`claims\n${JSON.stringify([
+              { path: "lib/math.mjs", contains: "export const half" },
+              { path: "half.mjs", contains: "export const half", absent: true },
+            ])}\n\`\`\`\n`,
+          ],
+        },
+      ),
     );
+    expect(ran.report.requirements[0]?.witness).toBe("independent");
     expect(ran.result?.testFiles.moved).toEqual([
       { from: "test/half.test.mjs", to: "test/lib/math.test.mjs" },
     ]);
@@ -214,21 +249,29 @@ async function dependingOnDep(task: string): Promise<Fixture> {
 
 /** A model that moves to dep 2.0.0, adapts half, and claims 2.0.0 for its upgrade. */
 const upgradedToTwo = () =>
-  scripted([
-    bash("npm install --save-exact --no-audit --no-fund ./vendor/dep-2.0.0.tgz"),
-    write(
-      "half.mjs",
-      'import { quotient } from "dep";\nexport const half = (n) => quotient({ dividend: n, divisor: 2 });',
-    ),
-    recordAndComplete([
-      {
-        id: "R1",
-        text: "x",
-        kind: "upgrade",
-        evidence: {
-          tests: [{ name: "half" }],
-          packages: [{ name: "dep", ecosystem: "npm", version: "2.0.0" }],
+  scripted(
+    [
+      bash("npm install --save-exact --no-audit --no-fund ./vendor/dep-2.0.0.tgz"),
+      write(
+        "half.mjs",
+        'import { quotient } from "dep";\nexport const half = (n) => quotient({ dividend: n, divisor: 2 });',
+      ),
+      recordAndComplete([
+        {
+          id: "R1",
+          text: "x",
+          kind: "upgrade",
+          evidence: {
+            tests: [{ name: "half" }],
+            packages: [{ name: "dep", ecosystem: "npm", version: "2.0.0" }],
+          },
         },
-      },
-    ]),
-  ]);
+      ]),
+    ],
+    { author: ["kind: upgrade"] },
+  );
+
+/** A test of double(n), as the model or an author apart from it would write one. */
+function doubleTest(title: string): string {
+  return `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { double } from "../half.mjs";\ntest(${JSON.stringify(title)}, () => assert.equal(double(4), 8));\n`;
+}

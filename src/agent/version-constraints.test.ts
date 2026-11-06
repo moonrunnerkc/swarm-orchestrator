@@ -138,3 +138,34 @@ describe("the workspace's declared dependencies", () => {
     ]);
   });
 });
+
+// claimcheck's upgrade (2026-11-05, rc.7 sealed-set run): only the name nearest "to" was held,
+// so vitest and @stryker-mutator/core went unchecked.
+describe("names joined in one version phrase", () => {
+  it("are each held to its range, with the whole phrase as the wording", () => {
+    const deps = [
+      "vitest",
+      "@vitest/coverage-v8",
+      "@stryker-mutator/core",
+      "@stryker-mutator/vitest-runner",
+    ].map((name) => ({ name, ecosystem: "npm" as const }));
+    const read = versionConstraintsOf(
+      "Upgrade claimcheck to vitest 5: vitest and @vitest/coverage-v8 to ^5, then move @stryker-mutator/core and @stryker-mutator/vitest-runner to ^10 as well.",
+      deps,
+    );
+    expect(read.constraints.map((one) => [one.name, one.range, one.wording])).toEqual([
+      ["vitest", "^5", "vitest and @vitest/coverage-v8 to ^5"],
+      ["@vitest/coverage-v8", "^5", "vitest and @vitest/coverage-v8 to ^5"],
+      [
+        "@stryker-mutator/core",
+        "^10",
+        "@stryker-mutator/core and @stryker-mutator/vitest-runner to ^10",
+      ],
+      [
+        "@stryker-mutator/vitest-runner",
+        "^10",
+        "@stryker-mutator/core and @stryker-mutator/vitest-runner to ^10",
+      ],
+    ]);
+  });
+});

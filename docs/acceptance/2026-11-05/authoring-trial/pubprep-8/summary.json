@@ -1,0 +1,49 @@
+{
+  "model": "gemma4:31b",
+  "seconds": 460,
+  "kind": "feature",
+  "failure": null,
+  "attempts": [
+    []
+  ],
+  "tokens": [
+    5010,
+    8015
+  ],
+  "r1": {
+    "id": "R1",
+    "text": "Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.",
+    "source": "user",
+    "kind": "feature",
+    "required": true,
+    "assumptions": [],
+    "evidence": {
+      "tests": [],
+      "checks": [],
+      "structure": [],
+      "packages": []
+    },
+    "versions": [],
+    "testsAsked": true,
+    "behaviorAsked": false
+  },
+  "test": {
+    "path": "test/cli-main.swarm-r1.test.ts",
+    "command": "npx vitest run test/cli-main.swarm-r1.test.ts",
+    "atBase": "ally-installed Claude Code (~/.local/bin/claude or\n  /opt/homebrew/bin/claude) for subscription-based auth — no API key\n  needed if you're already logged into Claude Code. To force per-token\n  API billing instead, export ANTHROPIC_API_KEY and ensure 'claude'\n  is not on your PATH.\n\"\n\n ❯ test/cli-main.swarm-r1.test.ts:184:17\n    182|     await main([\"--help\"]);\n    183|     const out = stdoutText();\n    184|     expect(out).toMatch(/--reviewers/);\n       |                 ^\n    185|     expect(out).toMatch(/tech-debt/);\n    186|     expect(out).toMatch(/docs/);\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯\n\n"
+  },
+  "judged": {
+    "reference": {
+      "exit": 1,
+      "tail": "Args() > throws an error naming valid short names when value is empty\nAssertionError: expected error to match asymmetric matcher\n\n- Expected: \nStringMatching /tech-debt.*docs.*security/\n\n+ Received: \n[Error: --reviewers requires a comma-separated list of: tech-debt, docs, security.]\n\n ❯ test/cli-main.swarm-r1.test.ts:107:50\n    105| \n    106|   it(\"throws an error naming valid short names when value is empty\", (…\n    107|     expect(() => parseArgs([\"--reviewers\", \"\"])).toThrow(\n       |                                                  ^\n    108|       expect.stringMatching(/tech-debt.*docs.*security/)\n    109|     );\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯\n\n FAIL  test/cli-main.swarm-r1.test.ts > parseArgs() > throws an error naming the invalid name and valid short names when an invalid name is provided\nAssertionError: expected error to match asymmetric matcher\n\n- Expected: \nStringMatching /unknown-reviewer.*tech-debt.*docs.*security/\n\n+ Received: \n[Error: --reviewers got an unknown reviewer \"unknown-reviewer\"; choose from: tech-debt, docs, security.]\n\n ❯ test/cli-main.swarm-r1.test.ts:114:55\n    112|   it(\"throws an error naming the invalid name and valid short names wh…\n    113|     const invalid = \"unknown-reviewer\";\n    114|     expect(() => parseArgs([\"--reviewers\", invalid])).toThrow(\n       |                                                       ^\n    115|       expect.stringMatching(new RegExp(`${invalid}.*tech-debt.*docs.*s…\n    116|     );\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯\n\n"
+    },
+    "claude": {
+      "exit": 1,
+      "tail": "or naming valid short names when value is empty\nAssertionError: expected error to match asymmetric matcher\n\n- Expected: \nStringMatching /tech-debt.*docs.*security/\n\n+ Received: \n[Error: --reviewers requires a comma-separated list of reviewers. Valid names: tech-debt, docs, security.]\n\n ❯ test/cli-main.swarm-r1.test.ts:107:50\n    105| \n    106|   it(\"throws an error naming valid short names when value is empty\", (…\n    107|     expect(() => parseArgs([\"--reviewers\", \"\"])).toThrow(\n       |                                                  ^\n    108|       expect.stringMatching(/tech-debt.*docs.*security/)\n    109|     );\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯\n\n FAIL  test/cli-main.swarm-r1.test.ts > parseArgs() > throws an error naming the invalid name and valid short names when an invalid name is provided\nAssertionError: expected error to match asymmetric matcher\n\n- Expected: \nStringMatching /unknown-reviewer.*tech-debt.*docs.*security/\n\n+ Received: \n[Error: --reviewers got an unknown reviewer: unknown-reviewer. Valid names: tech-debt, docs, security.]\n\n ❯ test/cli-main.swarm-r1.test.ts:114:55\n    112|   it(\"throws an error naming the invalid name and valid short names wh…\n    113|     const invalid = \"unknown-reviewer\";\n    114|     expect(() => parseArgs([\"--reviewers\", invalid])).toThrow(\n       |                                                       ^\n    115|       expect.stringMatching(new RegExp(`${invalid}.*tech-debt.*docs.*s…\n    116|     );\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯\n\n"
+    },
+    "swarm": {
+      "exit": 1,
+      "tail": "Args() > throws an error naming valid short names when value is empty\nAssertionError: expected error to match asymmetric matcher\n\n- Expected: \nStringMatching /tech-debt.*docs.*security/\n\n+ Received: \n[Error: The --reviewers list cannot be empty. Valid short names: tech-debt, docs, security.]\n\n ❯ test/cli-main.swarm-r1.test.ts:107:50\n    105| \n    106|   it(\"throws an error naming valid short names when value is empty\", (…\n    107|     expect(() => parseArgs([\"--reviewers\", \"\"])).toThrow(\n       |                                                  ^\n    108|       expect.stringMatching(/tech-debt.*docs.*security/)\n    109|     );\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯\n\n FAIL  test/cli-main.swarm-r1.test.ts > parseArgs() > throws an error naming the invalid name and valid short names when an invalid name is provided\nAssertionError: expected error to match asymmetric matcher\n\n- Expected: \nStringMatching /unknown-reviewer.*tech-debt.*docs.*security/\n\n+ Received: \n[Error: Invalid reviewer name: unknown-reviewer. Valid short names: tech-debt, docs, security.]\n\n ❯ test/cli-main.swarm-r1.test.ts:114:55\n    112|   it(\"throws an error naming the invalid name and valid short names wh…\n    113|     const invalid = \"unknown-reviewer\";\n    114|     expect(() => parseArgs([\"--reviewers\", invalid])).toThrow(\n       |                                                       ^\n    115|       expect.stringMatching(new RegExp(`${invalid}.*tech-debt.*docs.*s…\n    116|     );\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯\n\n"
+    }
+  }
+}

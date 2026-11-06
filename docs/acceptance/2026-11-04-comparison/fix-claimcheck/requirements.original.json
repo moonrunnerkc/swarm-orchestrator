@@ -1,0 +1,25 @@
+[
+ {
+  "id": "R1",
+  "text": "claimcheck blocks a change that deletes a whole test. compareTestFile in src/checks/test-weakening.ts reports assertion-removed whenever a test file's expect() count drops, so deleting an obsolete test or splitting a file reads as stripping an assertion, and the decision BLOCKs. Deleting a test is ambiguous, not the strip-an-assertion cheat. When the expect() count drops and the file also has fewer test cases (it/test calls, including variants such as it.skip, it.only, test.each and xit), report a new test-weakening kind, test-removed, which the decision only WARNs on, like expected-value-changed. A drop in expect() calls with the test count unchanged is still assertion-removed and still blocks. Fix it, with a test.",
+  "source": "user",
+  "kind": "fix",
+  "required": true,
+  "assumptions": [],
+  "versions": [],
+  "evidence": {
+   "tests": [
+    {
+     "name": "src::"
+    }
+   ],
+   "checks": [
+    "test",
+    "typecheck",
+    "build"
+   ],
+   "structure": [],
+   "packages": []
+  }
+ }
+]

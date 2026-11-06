@@ -25,6 +25,7 @@ export const recordTypes = [
   "confirmation",
   "verification",
   "requirements",
+  "authored-checks",
   "session-stopped",
 ] as const;
 
@@ -32,7 +33,7 @@ export type RecordType = (typeof recordTypes)[number];
 
 const digestSchema = z.string().regex(digestPattern, "expected a sha256:<hex> digest");
 
-const provenanceTagSchema = z.enum(["user", "model", "tool-output", "file"]);
+const provenanceTagSchema = z.enum(["user", "model", "harness", "tool-output", "file"]);
 
 /** Where an input came from: a person, the model, tool output or a file. */
 export type ProvenanceTag = z.infer<typeof provenanceTagSchema>;

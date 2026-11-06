@@ -1,0 +1,161 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+
+vi.mock("../src/claude-code.js", () => ({
+  findClaudeCodeBinary: vi.fn(() => null),
+}));
+
+vi.mock("../src/orchestrate.js", () => ({
+  orchestrate: vi.fn(),
+}));
+
+import { findClaudeCodeBinary } from "../src/claude-code.js";
+import { main, parseArgs, USAGE } from "../src/cli.js";
+import { orchestrate } from "../src/orchestrate.js";
+
+const findBinaryMock = vi.mocked(findClaudeCodeBinary);
+const orchestrateMock = vi.mocked(orchestrate);
+
+function makeCleanRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pubprep-cli-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+  writeFileSync(join(dir, ".gitignore"), ".pubprep/\n.env\n");
+  writeFileSync(join(dir, "README.md"), "# fixture\n");
+  execFileSync("git", ["add", "."], { cwd: dir });
+  execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: dir });
+  return dir;
+}
+
+function successfulOrchestrate() {
+  return {
+    runDir: "/tmp/run",
+    manifestPath: "/tmp/run/manifest.json",
+    exitReason: "success",
+    manifest: {
+      run_id: "test-run",
+      started_at: "2026-05-22T00:00:00Z",
+      finished_at: "2026-05-22T00:01:00Z",
+      target_repo: "/tmp/run",
+      target_head_sha: "deadbeef",
+      agents: [],
+      convergence_branch: null,
+      exit_reason: "success",
+      publish_gate: null,
+      pull_request: null,
+      warnings: [],
+    },
+  };
+}
+
+describe("parseArgs() --reviewers", () => {
+  it("returns full agent names in fixed order: tech-debt, docs, security", () => {
+    const args = parseArgs(["--reviewers", "security,docs,tech-debt"]);
+    expect(args.reviewers).toEqual([
+      "tech-debt-reviewer",
+      "readme-docs-reviewer",
+      "security-reviewer",
+    ]);
+  });
+
+  it("returns only requested reviewers in fixed order", () => {
+    const args = parseArgs(["--reviewers", "docs,tech-debt"]);
+    expect(args.reviewers).toEqual(["tech-debt-reviewer", "readme-docs-reviewer"]);
+  });
+
+  it("removes duplicates and maintains fixed order", () => {
+    const args = parseArgs(["--reviewers", "docs,tech-debt,docs"]);
+    expect(args.reviewers).toEqual(["tech-debt-reviewer", "readme-docs-reviewer"]);
+  });
+
+  it("leaves reviewers unset when flag is absent", () => {
+    const args = parseArgs([]);
+    expect(args.reviewers).toBeUndefined();
+  });
+
+  it("errors when value is missing", () => {
+    expect(() => parseArgs(["--reviewers"]))
+      .toThrow(/tech-debt, docs and security/);
+  });
+
+  it("errors when value is empty", () => {
+    expect(() => parseArgs(["--reviewers", ""]))
+      .toThrow(/tech-debt, docs and security/);
+  });
+
+  it("errors when an invalid name is provided", () => {
+    expect(() => parseArgs(["--reviewers", "invalid-name"]))
+      .toThrow(/invalid-name.*tech-debt, docs and security/);
+  });
+});
+
+describe("main() --reviewers", () => {
+  let stdoutSpy: MockInstance<(chunk: string) => boolean>;
+  let stderrSpy: MockInstance<(chunk: string) => boolean>;
+  let repo: string | null;
+  let fakeHome: string;
+
+  beforeEach(() => {
+    stdoutSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true) as MockInstance<(chunk: string) => boolean>;
+    stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true) as MockInstance<(chunk: string) => boolean>;
+    findBinaryMock.mockReset();
+    findBinaryMock.mockReturnValue(null);
+    orchestrateMock.mockReset();
+    orchestrateMock.mockResolvedValue(successfulOrchestrate());
+    repo = null;
+    fakeHome = mkdtempSync(join(tmpdir(), "pubprep-cli-home-"));
+    process.env.ANTHROPIC_API_KEY = `sk-ant-${"x".repeat(100)}`;
+  });
+
+  afterEach(() => {
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    if (repo !== null) {
+      rmSync(repo, { recursive: true, force: true });
+    }
+    rmSync(fakeHome, { recursive: true, force: true });
+  });
+
+  function stdoutText(): string {
+    return stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+  }
+
+  it("passes the parsed reviewers list to orchestrate", async () => {
+    repo = makeCleanRepo();
+    await main(["--reviewers", "docs,tech-debt"], { cwd: repo, home: fakeHome });
+    expect(orchestrateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewers: ["tech-debt-reviewer", "readme-docs-reviewer"],
+      }),
+    );
+  });
+
+  it("calls orchestrate without reviewers param when flag is absent", async () => {
+    repo = makeCleanRepo();
+    await main([], { cwd: repo, home: fakeHome });
+    const call = orchestrateMock.mock.calls[0]?.[0];
+    expect(call?.reviewers).toBeUndefined();
+  });
+
+  it("documents --reviewers in the help text", async () => {
+    await main(["--help"]);
+    expect(stdoutText()).toMatch(/--reviewers/);
+    expect(stdoutText()).toMatch(/tech-debt, docs and security/);
+  });
+});

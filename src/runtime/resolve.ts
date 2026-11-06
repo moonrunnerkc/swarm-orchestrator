@@ -1,6 +1,6 @@
-import { z } from "zod";
 import { type ModelClient, openAiCompatible } from "../agent/model.ts";
 import { capacityAdvice, eligibility } from "./capacity.ts";
+import { endpointCandidate, endpointModels, single } from "./endpoint.ts";
 import {
   type InstalledModel,
   listOllama,
@@ -27,12 +27,12 @@ export interface ResolvedModel {
   /** One line: why this model. */
   readonly reason: string;
   readonly cost: string;
-  /** A stronger ready model for one escalation, or null. */
-  readonly escalation: {
+  /** Every other ready model, best first, for an escalation to choose among by record. */
+  readonly alternatives: readonly {
     readonly client: ModelClient;
     readonly name: string;
     readonly digest: string;
-  } | null;
+  }[];
 }
 
 /** No model can run the agent here, with the exact step that would change that. */
@@ -81,27 +81,6 @@ export interface ResolveInput {
   readonly contextTokens: number;
   readonly home: string;
   readonly log: (line: string) => void;
-}
-
-const modelsSchema = z.object({ data: z.array(z.object({ id: z.string() })) });
-
-/** The models an OpenAI-compatible endpoint serves; it states no weights, digests or shapes. */
-async function endpointModels(endpoint: string, apiKey: string | null): Promise<string[]> {
-  const response = await fetch(`${endpoint.replace(/\/+$/, "")}/models`, {
-    headers: apiKey === null ? {} : { authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(10_000),
-  }).catch((error: unknown) => {
-    throw new NoModelError(
-      `nothing answers at ${endpoint} (${error instanceof Error ? error.message : String(error)})`,
-      "Start the server, or check the address passed with --endpoint",
-    );
-  });
-  if (!response.ok)
-    throw new NoModelError(
-      `${endpoint}/models answered HTTP ${response.status}`,
-      "Check the address passed with --endpoint",
-    );
-  return modelsSchema.parse(await response.json()).data.map((one) => one.id);
 }
 
 /** Probes each candidate not already in the profile for its exact identity, strongest first. */
@@ -160,10 +139,10 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
       runtime: "openai-compatible",
       reason: "named by --model",
       cost: "unknown: the endpoint reports no price",
-      escalation: null,
+      alternatives: [],
     };
   }
-  if (input.endpoint !== null) {
+  if (input.endpoint !== null && input.model !== "auto") {
     const endpoint = input.endpoint;
     const served = await endpointModels(endpoint, input.apiKey);
     const name = input.model === "auto" ? served[0] : input.model;
@@ -184,11 +163,15 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
       runtime: "openai-compatible",
       reason,
       cost: "unknown: the endpoint reports no price",
-      escalation: null,
+      alternatives: [],
     };
   }
   const base = ollamaBase();
   const version = await ollamaVersion(base);
+  // The configured endpoint's model is one more candidate under auto, when it answers.
+  const served = input.endpoint === null ? null : await endpointCandidate(input.endpoint, input);
+  if (version === null && served !== null)
+    return single(served, "the configured endpoint's model; Ollama is not answering");
   if (version === null) {
     throw new NoModelError(
       `Ollama is not answering at ${base}`,
@@ -214,7 +197,7 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
       runtime: "ollama",
       reason: "named by --model",
       cost: "none (local runtime)",
-      escalation: null,
+      alternatives: [],
     };
   }
   const identityOf = (model: InstalledModel): ProbeIdentity => ({
@@ -234,11 +217,10 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
   const candidates = await probed(installed, identityOf, probeClient, input, (found, rest) =>
     probedEnough(found, rest, profile),
   );
-  const choice = choose(candidates, profile, input.contextTokens);
+  const all = served === null ? candidates : [...candidates, served.candidate];
+  const choice = choose(all, profile, input.contextTokens);
   if (choice === null) {
-    const tried = candidates
-      .map((one) => `${one.eligibility.model.name}: ${one.probe.reason}`)
-      .join("; ");
+    const tried = all.map((one) => `${one.eligibility.model.name}: ${one.probe.reason}`).join("; ");
     // Nothing fit: say what would. Something fit and failed its probe: say which, and how to look.
     const advice = capacityAdvice(installed, input.contextTokens);
     throw new NoFittingModelError(
@@ -248,18 +230,25 @@ export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> 
         : `${advice[0]?.toUpperCase()}${advice.slice(1)}`,
     );
   }
+  const clientFor = (one: Candidate) =>
+    one.eligibility.model.runtime === "openai-compatible" && served !== null
+      ? served.client
+      : clientOf(one.eligibility.model);
   const model = choice.chosen.eligibility.model;
-  const escalation = choice.escalation === null ? null : choice.escalation.eligibility.model;
   return {
-    client: clientOf(model),
+    client: clientFor(choice.chosen),
     name: model.name,
     digest: model.digest,
-    runtime: "ollama",
+    runtime: model.runtime,
     reason: choice.reason,
-    cost: "none (local runtime)",
-    escalation:
-      escalation === null
-        ? null
-        : { client: clientOf(escalation), name: escalation.name, digest: escalation.digest },
+    cost:
+      model.runtime === "ollama"
+        ? "none (local runtime)"
+        : "unknown: the endpoint reports no price",
+    alternatives: choice.alternatives.map((one) => ({
+      client: clientFor(one),
+      name: one.eligibility.model.name,
+      digest: one.eligibility.model.digest,
+    })),
   };
 }

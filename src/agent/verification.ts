@@ -132,6 +132,7 @@ export function createVerifier(input: {
         feedback: feedbackOf(result),
         reused: same,
         reasons: result.reasons,
+        independenceMissing: onlyIndependenceMissing(result),
       };
     },
     held: () => held,
@@ -143,4 +144,24 @@ export function createVerifier(input: {
 export function behaviorChangeNote(result: VerifyResult | null): string {
   const superseded = (result?.checks ?? []).flatMap((check) => check.tests?.superseded ?? []);
   return `The user authorized a change of tested behavior (--authorize-behavior-change); expectations it superseded: ${superseded.length === 0 ? "none" : superseded.join(", ")}.`;
+}
+
+/**
+ * Whether the result is incomplete for nothing but independent evidence: every required
+ * requirement satisfied or self-attested, nothing regressed, the policy met. The model can do
+ * nothing more about that; the run says so instead of asking it to.
+ */
+export function onlyIndependenceMissing(result: VerifyResult): boolean {
+  const required = result.requirements.filter((one) => one.required);
+  return (
+    result.state === "incomplete" &&
+    required.some((one) => one.witness === "self-attested") &&
+    required.every(
+      (one) =>
+        one.status === "satisfied" ||
+        (one.status === "unverified" && one.witness === "self-attested"),
+    ) &&
+    result.regression.status === "none" &&
+    result.execution.policyMet
+  );
 }

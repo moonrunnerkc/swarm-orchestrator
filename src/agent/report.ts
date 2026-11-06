@@ -1,18 +1,18 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RequirementOutcome } from "swarm-verify";
+import type { EvidenceRecorder } from "../evidence/session.ts";
+import type { Authored } from "./check-author.ts";
 import type { Finalized } from "./finalize.ts";
 import type { LoadedInstruction } from "./instructions.ts";
 import type { LoopResult } from "./loop.ts";
 import type { TurnUsage } from "./loop-types.ts";
-import { describePythonEnvironment, type PythonEnvironment } from "./python-environment.ts";
-import {
-  requirementRow,
-  requirementTableHeader,
-  summaryRequirementLines,
-} from "./requirement-lines.ts";
+import type { PythonEnvironment } from "./python-environment.ts";
+import { renderMarkdown } from "./report-render.ts";
 import type { ReviewOutcome } from "./review.ts";
 import type { Delivery, StartingState } from "./workspace.ts";
+
+export { renderMarkdown, summaryLines } from "./report-render.ts";
 
 export const reportVersion = "swarm-orchestrator.report/v1";
 
@@ -37,6 +37,18 @@ export interface RunReportFile {
   /** Every file the delivered patch changes, as the verifier read it. */
   readonly changed: readonly { readonly path: string; readonly status: string }[];
   readonly requirements: readonly RequirementOutcome[];
+  /**
+   * The checks written for each requirement apart from the change, before the first edit: where
+   * they are run from, never their source, and why none survived where none did.
+   */
+  readonly authoring: readonly {
+    readonly requirement: string;
+    readonly kind: string | null;
+    readonly test: string | null;
+    readonly claims: number;
+    readonly failure: string | null;
+    readonly attempts: number;
+  }[];
   readonly regression: string | null;
   readonly execution: string | null;
   readonly attestation: string | null;
@@ -61,6 +73,12 @@ export interface RunReportFile {
   > | null;
   readonly resources: {
     readonly steps: number;
+    /** The check author's model calls, before the loop's; their tokens are in the totals. */
+    readonly author: {
+      readonly turns: number;
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    };
     readonly inputTokens: number;
     readonly outputTokens: number;
     /** Turns whose counts were estimated from the text because the runtime reported none. */
@@ -69,118 +87,24 @@ export interface RunReportFile {
     readonly inferenceMs: number;
     /** Turns whose inference time the runtime reported. */
     readonly inferenceTurns: number;
+    /** Of the loop's inference, the time reading prompts and writing replies, where reported. */
+    readonly prefillMs: number | null;
+    readonly generationMs: number | null;
     readonly wallMs: number;
     readonly retries: number;
     readonly escalations: number;
     readonly verifications: number;
+    /** Check commands the harness ran after the model's changes, apart from its turns. */
+    readonly harnessChecks: number;
+    /** The model's own commands that ran a test runner. */
+    readonly modelTestCommands: number;
+    /** Where the loop's turns went: each charged to the requirement whose checks were failing. */
+    readonly turnsByRequirement: Readonly<Record<string, number>>;
     /** The money the run cost where it is known; a local runtime's is none. */
     readonly cost: string;
     /** Every loop turn's counts in order, each reported by the runtime or estimated. */
     readonly turns: readonly TurnUsage[];
   };
-}
-
-const pad = (text: string, width: number) => text.padEnd(width);
-
-/** The terminal's closing summary: the state, each requirement, and where the rest is. */
-export function summaryLines(
-  report: RunReportFile,
-  paths: { readonly markdown: string },
-): string[] {
-  const lines = [
-    `${pad("state", 12)} ${report.state}`,
-    `${pad("stop", 12)} ${report.stop}${report.reason === null ? "" : `: ${report.reason}`}`,
-    ...(report.blocked === null ? [] : [`${pad("blocked", 12)} ${report.blocked}`]),
-    ...(report.unchecked === null ? [] : [`${pad("not checked", 12)} ${report.unchecked}`]),
-  ];
-  const python = report.startingState.python;
-  if (python?.state === "not-prepared")
-    lines.push(`${pad("python env", 12)} not prepared: ${python.limitation}`);
-  for (const one of report.requirements) lines.push(...summaryRequirementLines(one));
-  if (report.changed.length > 0) {
-    const deleted = report.changed.filter((one) => one.status === "deleted").map((one) => one.path);
-    const also = deleted.length === 0 ? "" : `, deleting ${deleted.join(", ")}`;
-    lines.push(`${pad("changed", 12)} ${report.changed.length} file(s)${also}`);
-  }
-  if (report.regression !== null) lines.push(`${pad("regression", 12)} ${report.regression}`);
-  if (report.execution !== null) lines.push(`${pad("execution", 12)} ${report.execution}`);
-  lines.push(
-    `${pad("patch", 12)} ${report.snapshot.patch} (sha256 ${report.snapshot.patchSha256})`,
-  );
-  const applied = report.delivery.applied ? "yes" : `no: ${report.delivery.reason}`;
-  lines.push(`${pad("applied", 12)} ${applied}`);
-  lines.push(`${pad("report", 12)} ${paths.markdown}`);
-  return lines;
-}
-
-/** Inference time as measured: never a zero for turns whose runtime reported none. */
-function inferenceOf(resources: RunReportFile["resources"]): string {
-  if (resources.inferenceTurns === 0) return "inference time not reported by the runtime";
-  const seconds = `${Math.round(resources.inferenceMs / 1000)} s of inference`;
-  return resources.inferenceTurns < resources.steps
-    ? `${seconds} over the ${resources.inferenceTurns} of ${resources.steps} turn(s) that reported it`
-    : seconds;
-}
-
-/** What the review did, said as what was executed: a finding stands only on its own check. */
-function reviewLine(review: NonNullable<RunReportFile["review"]>): string {
-  const ran =
-    review.command === null
-      ? ""
-      : ` (\`${review.command.split("\n")[0]}\` exited ${review.exitCode ?? "without running"}${review.restored ? "; it changed the tree, which was put back" : ""})`;
-  switch (review.outcome) {
-    case "confirmed":
-      return `a finding its own check confirmed, which reopened the work: ${review.finding}${ran}`;
-    case "refuted":
-      return `a finding its own check refuted: ${review.finding}${ran}`;
-    case "no-finding":
-      return "no finding";
-    case "unusable":
-      return `no usable finding${ran}`;
-    case "model-error":
-      return `not done: ${review.finding}`;
-  }
-}
-
-/** The patch's files, deletions last so they are not lost in the middle of the list. */
-function changedLine(changed: RunReportFile["changed"]): string {
-  const ordered = [
-    ...changed.filter((one) => one.status !== "deleted"),
-    ...changed.filter((one) => one.status === "deleted"),
-  ];
-  return ordered.map((one) => `${one.path} (${one.status})`).join("; ");
-}
-
-export function renderMarkdown(report: RunReportFile): string {
-  return [
-    `# swarm run: ${report.state}`,
-    "",
-    `Task: ${report.task}`,
-    "",
-    `Model: ${report.model.name} (${report.model.reason}). Stopped: ${report.stop}${report.reason === null ? "" : `, ${report.reason}`}.`,
-    "",
-    ...requirementTableHeader,
-    ...report.requirements.map(requirementRow),
-    "",
-    `- Delivered patch: \`${report.snapshot.patch}\`, sha256 ${report.snapshot.patchSha256}, against base ${report.snapshot.base}.`,
-    `- Verification of that patch: ${report.verification}.`,
-    ...(report.changed.length === 0 ? [] : [`- Changed: ${changedLine(report.changed)}.`]),
-    ...(report.blocked === null ? [] : [`- Blocked: ${report.blocked}.`]),
-    ...(report.unchecked === null ? [] : [`- Not checked: ${report.unchecked}.`]),
-    `- Starting state: HEAD ${report.startingState.head}${report.startingState.edits.length > 0 ? ` with your uncommitted edits to ${report.startingState.edits.join(", ")}` : ", no uncommitted edits"}.`,
-    ...(report.startingState.python === null
-      ? []
-      : [`- Python environment: ${describePythonEnvironment(report.startingState.python)}.`]),
-    `- Applied to the workspace: ${report.delivery.applied ? "yes" : `no, ${report.delivery.reason}`}.`,
-    `- Regression: ${report.regression ?? "not measured"}.`,
-    `- Execution: ${report.execution ?? "not measured"}.`,
-    `- Attestation: ${report.attestation ?? "none"}.`,
-    `- Instructions loaded: ${report.instructions.map((one) => `${one.path} (sha256 ${one.sha256})`).join(", ") || "none"}.`,
-    `- Resources: ${report.resources.steps} model turn(s); ${report.resources.inputTokens} input and ${report.resources.outputTokens} output token(s)${report.resources.estimatedTurns > 0 ? ` (${report.resources.estimatedTurns} turn(s) estimated from text)` : " (reported by the runtime)"}; ${inferenceOf(report.resources)} and ${Math.round(report.resources.wallMs / 1000)} s of wall time; ${report.resources.retries} retried request(s); ${report.resources.escalations} escalation(s); ${report.resources.verifications} verification(s) in the loop; cost: ${report.resources.cost}.`,
-    ...(report.review === null ? [] : [`- Review: ${reviewLine(report.review)}.`]),
-    ...report.notes.map((note) => `- Note: ${note}`),
-    "",
-  ].join("\n");
 }
 
 /** The report from what the run did: its loops, its finalization and its delivery. */
@@ -203,6 +127,7 @@ export function assembleReport(input: {
   readonly python: PythonEnvironment | null;
   readonly delivery: Delivery;
   readonly startedAt: number;
+  readonly authored: readonly Authored[];
 }): RunReportFile {
   const { finalized, loops, review } = input;
   const result = finalized.result;
@@ -210,6 +135,10 @@ export function assembleReport(input: {
   const sum = (pick: (loop: LoopResult) => number) =>
     loops.reduce((total, loop) => total + pick(loop), 0);
   const inherited = result?.regression.inherited.length ?? 0;
+  // The check author's calls are model turns of this run like the loop's.
+  const authorTurns = input.authored.reduce((total, one) => total + one.attempts.length, 0);
+  const authorIn = input.authored.reduce((total, one) => total + one.inputTokens, 0);
+  const authorOut = input.authored.reduce((total, one) => total + one.outputTokens, 0);
   return {
     version: reportVersion,
     task: input.options.task,
@@ -236,6 +165,14 @@ export function assembleReport(input: {
         : null,
     changed: (result?.change.files ?? []).map(({ path, status }) => ({ path, status })),
     requirements: finalized.requirements,
+    authoring: input.authored.map((one) => ({
+      requirement: one.requirement,
+      kind: one.kind,
+      test: one.test?.path ?? null,
+      claims: one.structure.length,
+      failure: one.failure,
+      attempts: one.attempts.length,
+    })),
     regression:
       result === null
         ? null
@@ -264,16 +201,22 @@ export function assembleReport(input: {
     resources: {
       // The review's model turn counts like any other.
       steps: sum((loop) => loop.steps) + reviewed,
-      inputTokens: sum((loop) => loop.usage.inputTokens) + (review?.inputTokens ?? 0),
-      outputTokens: sum((loop) => loop.usage.outputTokens) + (review?.outputTokens ?? 0),
+      author: { turns: authorTurns, inputTokens: authorIn, outputTokens: authorOut },
+      inputTokens: sum((loop) => loop.usage.inputTokens) + (review?.inputTokens ?? 0) + authorIn,
+      outputTokens:
+        sum((loop) => loop.usage.outputTokens) + (review?.outputTokens ?? 0) + authorOut,
       estimatedTurns: sum((loop) => loop.usage.estimatedTurns),
       inferenceMs: sum((loop) => loop.usage.inferenceMs) + (review?.inferenceMs ?? 0),
       inferenceTurns:
         sum((loop) => loop.usage.inferenceTurns) + (review?.inferenceMs == null ? 0 : 1),
+      ...timings(loops),
       wallMs: Date.now() - input.startedAt,
       retries: sum((loop) => loop.usage.retries),
       escalations: input.escalated ? 1 : 0,
       verifications: sum((loop) => loop.verifications),
+      harnessChecks: sum((loop) => loop.harnessChecks),
+      modelTestCommands: sum((loop) => loop.modelTestCommands),
+      turnsByRequirement: turnsByRequirement(loops),
       cost: input.options.cost,
       // The review's turn is in the totals above; these are the loop's turns.
       turns: loops.flatMap((loop) => loop.usage.perTurn),
@@ -290,4 +233,56 @@ export async function writeReport(
   await writeFile(json, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   await writeFile(markdown, renderMarkdown(report), { mode: 0o600 });
   return { json, markdown };
+}
+
+/** The loops' turns by requirement, summed across an escalation. */
+function turnsByRequirement(loops: readonly LoopResult[]): Record<string, number> {
+  const total: Record<string, number> = {};
+  for (const loop of loops)
+    for (const [id, turns] of Object.entries(loop.turnsByRequirement))
+      total[id] = (total[id] ?? 0) + turns;
+  return total;
+}
+
+/** The loop turns' prefill and generation time, where every one of them reported it; else null. */
+function timings(loops: readonly LoopResult[]): {
+  prefillMs: number | null;
+  generationMs: number | null;
+} {
+  const turns = loops.flatMap((loop) => loop.usage.perTurn);
+  const total = (pick: (turn: (typeof turns)[number]) => number | null | undefined) =>
+    turns.length > 0 && turns.every((turn) => pick(turn) != null)
+      ? turns.reduce((sum, turn) => sum + (pick(turn) ?? 0), 0)
+      : null;
+  return {
+    prefillMs: total((turn) => turn.prefillMs),
+    generationMs: total((turn) => turn.generationMs),
+  };
+}
+
+/** The ledger's last record: how the run stopped, the delivered patch and where the report is. */
+export async function recordStopped(
+  evidence: EvidenceRecorder,
+  input: {
+    readonly stop: string;
+    readonly reason: string | null;
+    readonly finalized: Finalized;
+    readonly applied: boolean;
+    readonly report: string;
+  },
+): Promise<void> {
+  await evidence.record({
+    type: "session-stopped",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      stop: input.stop,
+      reason: input.reason,
+      state: input.finalized.state,
+      patchSha256: input.finalized.snapshot.sha256,
+      verification: input.finalized.verification,
+      applied: input.applied,
+      report: input.report,
+    },
+  });
 }

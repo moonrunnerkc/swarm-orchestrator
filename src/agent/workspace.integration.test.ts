@@ -45,7 +45,8 @@ describe("the managed workspace", () => {
       model: "interfering",
       async complete() {
         turns += 1;
-        if (turns === 2)
+        // The user edits their own tree while the model's one turn is out.
+        if (turns === 1)
           await writeFile(join(probe.repo, "half.mjs"), "export const half = (n) => n >> 1;\n");
         return {
           content: turns === 1 ? fix : mapped,
@@ -85,19 +86,38 @@ describe("escalating once to a stronger model", () => {
     const strong = scripted([fix, mapped]);
     const ran = await probe.run(
       { ...weak, model: "weak" },
-      { escalation: { ...strong, model: "strong" } },
+      { escalation: () => ({ client: { ...strong, model: "strong" }, reason: "a better record" }) },
     );
     expect(ran.stop).toBe("complete");
     expect(ran.report.resources.escalations).toBe(1);
-    expect(strong.seen[0]?.at(-1)?.content).toContain(
+    // The handoff opens the new conversation, in the task's message.
+    expect(strong.seen[0]?.[1]?.content).toContain(
       "Another model worked on this task before you and stopped (unusable-replies",
+    );
+  });
+
+  it("finishes with the current model, and says why, where none has a better record", async () => {
+    const probe = await fixture();
+    const ran = await probe.run(scripted(["I would fix half by dividing by two."]), {
+      escalation: () => ({
+        client: null,
+        reason: "no other model here has a better record on fix tasks",
+      }),
+    });
+    expect(ran.stop).toBe("unusable-replies");
+    expect(ran.report.resources.escalations).toBe(0);
+    expect(ran.report.notes).toContain(
+      "Not escalated: no other model here has a better record on fix tasks.",
     );
   });
 
   it("does not escalate when the stop says nothing about the model", async () => {
     const probe = await fixture();
     const strong = scripted([fix, mapped]);
-    const ran = await probe.run(scripted([completionMarker]), { escalation: strong, maxSteps: 1 });
+    const ran = await probe.run(scripted([completionMarker]), {
+      escalation: () => ({ client: strong, reason: "a better record" }),
+      maxSteps: 1,
+    });
     expect(ran.stop).toBe("step-budget");
     expect(ran.report.resources.escalations).toBe(0);
     expect(strong.seen).toHaveLength(0);

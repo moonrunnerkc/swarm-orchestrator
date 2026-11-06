@@ -1,0 +1,47 @@
+{
+  "model": "gemma4:31b",
+  "seconds": 176,
+  "kind": "feature",
+  "failure": null,
+  "attempts": [
+    []
+  ],
+  "tokens": [
+    4521,
+    3722
+  ],
+  "r1": {
+    "id": "R1",
+    "text": "Add a --reviewers option to pubprep so a run can use only some of the three reviewers. It takes a comma-separated list of short names: tech-debt, docs and security, for tech-debt-reviewer, readme-docs-reviewer and security-reviewer. parseArgs returns the choice as `reviewers`, the full agent names in the order tech-debt, docs, security whatever order they were typed, each once even when repeated. Without the flag, leave `reviewers` unset; a run then uses all three, as now. A missing or empty value is an error naming the valid short names, and a name that isn't one of the three is an error naming it and the valid short names. orchestrate takes the same list as an optional `reviewers` param (all three when omitted) and runs only those reviewers, in parallel or in sequence, so only their reports are written and concatenated into combined-review.md; main passes the parsed list through. Document the flag in the --help text. Add tests.",
+    "source": "user",
+    "kind": "feature",
+    "required": true,
+    "assumptions": [],
+    "evidence": {
+      "tests": [],
+      "checks": [],
+      "structure": [],
+      "packages": []
+    },
+    "versions": []
+  },
+  "test": {
+    "path": "test/cli-main.swarm-r1.test.ts",
+    "command": "npx vitest run test/cli-main.swarm-r1.test.ts",
+    "atBase": " \u001b[90m158| \u001b[39m    \u001b[34mexpect\u001b[39m(code)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m159| \u001b[39m    \u001b[35mconst\u001b[39m err \u001b[33m=\u001b[39m \u001b[34mstderrText\u001b[39m()\u001b[33m;\u001b[39m\n    \u001b[90m160| \u001b[39m    \u001b[34mexpect\u001b[39m(err)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m\"unknown\"\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m   | \u001b[39m                \u001b[31m^\u001b[39m\n    \u001b[90m161| \u001b[39m    \u001b[34mexpect\u001b[39m(err)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m\"tech-debt\"\u001b[39m)\u001b[33m;\u001b[39m\n    \u001b[90m162| \u001b[39m    \u001b[34mexpect\u001b[39m(err)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m\"docs\"\u001b[39m)\u001b[33m;\u001b[39m\n\n\u001b[31m\u001b[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯\u001b[22m\u001b[39m\n\n"
+  },
+  "judged": {
+    "reference": {
+      "exit": 0,
+      "tail": "\n RUN  v1.6.1 /Users/brad/projects/recovery-2026-10-31/trial-17/runs/pubprep-2/copy-reference\n\n ✓ test/cli-main.swarm-r1.test.ts  (8 tests) 642ms\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  07:59:07\n   Duration  765ms (transform 26ms, setup 0ms, collect 30ms, tests 642ms, environment 0ms, prepare 21ms)\n\n"
+    },
+    "swarm": {
+      "exit": 1,
+      "tail": "ers\", \"docs,tech-debt\"], { cwd: repo, home: f…\n    106|     expect(orchestrateMock).toHaveBeenCalledWith(\n       |                             ^\n    107|       expect.objectContaining({\n    108|         reviewers: [\"tech-debt-reviewer\", \"readme-docs-reviewer\"],\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯\n\n FAIL  test/cli-main.swarm-r1.test.ts > pubprep --reviewers > handles repeated reviewers and maintains the fixed order\nAssertionError: expected \"spy\" to be called with arguments: [ ObjectContaining{…} ]\n\nReceived: \n\n  1st spy call:\n\n  Array [\n-   ObjectContaining {\n+   Object {\n+     \"dryRun\": false,\n+     \"log\": [Function log],\n+     \"maxBudgetUsd\": 20,\n+     \"openPr\": true,\n+     \"parallelReviewers\": false,\n+     \"projectRoot\": \"/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/pubprep-cli-d5M0MI\",\n+     \"publishGate\": true,\n      \"reviewers\": Array [\n+       \"security-reviewer\",\n        \"tech-debt-reviewer\",\n        \"readme-docs-reviewer\",\n-       \"security-reviewer\",\n      ],\n+     \"warnings\": Array [],\n    },\n  ]\n\n\nNumber of calls: 1\n\n ❯ test/cli-main.swarm-r1.test.ts:115:29\n    113|   it(\"handles repeated reviewers and maintains the fixed order\", async…\n    114|     await main([\"--reviewers\", \"security,tech-debt,security,docs,tech-…\n    115|     expect(orchestrateMock).toHaveBeenCalledWith(\n       |                             ^\n    116|       expect.objectContaining({\n    117|         reviewers: [\"tech-debt-reviewer\", \"readme-docs-reviewer\", \"sec…\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯\n\n"
+    },
+    "claude": {
+      "exit": 0,
+      "tail": "\n RUN  v1.6.1 /Users/brad/projects/recovery-2026-10-31/trial-17/runs/pubprep-2/copy-claude\n\n ✓ test/cli-main.swarm-r1.test.ts  (8 tests) 612ms\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  07:59:11\n   Duration  735ms (transform 26ms, setup 0ms, collect 31ms, tests 612ms, environment 0ms, prepare 21ms)\n\n"
+    }
+  }
+}

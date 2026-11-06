@@ -99,7 +99,10 @@ describe("the packed agent against the packed verifier", () => {
     const record = [{ id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "half" }] } }];
     const reply = `\`\`\`requirements\n${JSON.stringify(record)}\n\`\`\`\n${completionMarker}`;
     const fix = "```bash\ncat > half.mjs <<'EOF'\nexport const half = (n) => n / 2;\nEOF\n```";
-    const stub = await startStubModel({ replies: [fix, reply] });
+    // The check author's call comes first: a test of the task, written apart from the change.
+    const authored =
+      'kind: fix\n\n```test\nimport { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { half } from "../half.mjs";\ntest("half(4) is 2", () => assert.equal(half(4), 2));\n```\n';
+    const stub = await startStubModel({ replies: [authored, fix, reply] });
     const swarm = join(prefix, "node_modules", ".bin", "swarm");
     const child = spawn(
       swarm,
@@ -128,7 +131,7 @@ describe("the packed agent against the packed verifier", () => {
     await stub.close();
     expect(stdout).toMatch(/^stop {9}complete$/m);
     expect(stdout).toMatch(/^state {8}complete$/m);
-    expect(stdout).toMatch(/^ {13}status {3}satisfied$/m);
+    expect(stdout).toMatch(/^ {13}status {3}satisfied, witness independent$/m);
     expect(stdout).toMatch(/^applied {6}yes$/m);
     expect(await readFile(join(repo, "half.mjs"), "utf8")).toBe(
       "export const half = (n) => n / 2;\n",

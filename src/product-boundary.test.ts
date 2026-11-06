@@ -48,7 +48,9 @@ describe("the agent and the verifier it consumes", () => {
   });
 
   it("depends on one exact swarm-verify version, with no workspace copy of it", () => {
-    expect(orchestrator.dependencies["swarm-verify"]).toMatch(/^\d+\.\d+\.\d+$/);
+    // Exact: a release candidate while the two are developed together, never a range. The
+    // release workflow refuses to publish against a prerelease.
+    expect(orchestrator.dependencies["swarm-verify"]).toMatch(/^\d+\.\d+\.\d+(?:-rc\.\d+)?$/);
     expect(orchestrator.workspaces).toBeUndefined();
     expect(existsSync(join(root, "packages"))).toBe(false);
     expect(existsSync(join(root, "src", "verify"))).toBe(false);
