@@ -63,6 +63,7 @@ export async function checkGate(input: {
   readonly scratch: string;
   readonly supplied: readonly Supplied[];
   readonly mode: ChecksMode;
+  readonly behaviorChangeAuthorized: boolean;
   readonly signal?: AbortSignal | undefined;
 }): Promise<CheckGate> {
   const conventions = await testConventions(input.workspace, input.task);
@@ -126,6 +127,26 @@ export async function checkGate(input: {
   if (blocked !== null) return { record, authored, user, trusted, checks, blocked };
   // Still the base: what the declared tests do before any edit, for regressions to be read from.
   await checks.baseline();
+  input.signal?.throwIfAborted();
+  const held = record.requirements.find((one) => one.id === "R1");
+  const independent =
+    user.some((one) => one.requirement === "R1") ||
+    unreviewed.length > 0 ||
+    (held?.evidence.structure ?? []).some(
+      (claim) => claim.authority !== "implementation-authored",
+    ) ||
+    ((held?.versions.length ?? 0) > 0 && held?.behaviorAsked !== true);
+  // A failing base test a change makes pass is independent, as is, where the user authorized a
+  // behavior change, a passing one whose expectation the change supersedes.
+  if (
+    r1 !== undefined &&
+    !independent &&
+    !checks.baseFailing() &&
+    !input.behaviorChangeAuthorized
+  ) {
+    const why = first?.failure ?? "the reviewed checks were all rejected";
+    blocked = `no independent check for R1 (${why}), and no test fails at the base for a change to make pass; supply one that fails today: ${runAgain(input.task, "--accept <test file>")} or --accept-cmd "<command>"`;
+  }
   return { record, authored, user, trusted, checks, blocked };
 }
 

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CheckReviewer } from "./check-gate.ts";
 import { readSupplied } from "./supplied.ts";
-import { authoredHalf, bash, fixture, scripted, write } from "./test-doubles.ts";
+import { authoredHalf, bash, fixture, noAuthoredCheck, scripted, write } from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
 const acceptance = (expected: string) =>
@@ -118,7 +118,9 @@ describe("authored checks are shown, written out, or used as written", () => {
     });
     expect(problems[0]).toBeNull();
     expect(problems[1]).toMatch(/it passes at the base, so it cannot show the change/);
-    expect(ran.report.accepted).toEqual([]);
+    // Rejected, R1 is left with no independent check, and the run stops before any edit.
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
   });
 
   it("writes the authored checks out and stops, naming the command that supplies them back", async () => {
@@ -142,5 +144,29 @@ describe("authored checks are shown, written out, or used as written", () => {
     expect(back).toEqual([
       { kind: "file", requirement: "R1", path: "test/half.swarm-r1.test.mjs", content: written },
     ]);
+  });
+});
+
+describe("a run with no independent check stops before its first edit", () => {
+  // upgrade-claimcheck, fix-tracemantle-f69ad0c58, fix-claimcheck-d2f136c and c4dc276c4's rerun
+  // (17.0.0 sealed set): every author attempt was refused, and each run spent its turns on a task
+  // whose completion nothing could witness.
+  it("says so, and how to supply one", async () => {
+    const model = scripted([fix], { author: [noAuthoredCheck] });
+    const ran = await (await fixture(passingBase)).run(model);
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.stop).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
+    expect(model.seen).toHaveLength(0);
+    expect(ran.report.reason).toMatch(/^no independent check for R1 \(/);
+    expect(ran.report.reason).toContain(
+      'swarm run "Make half(n) return n / 2." --accept <test file>',
+    );
+  });
+
+  it("goes on where a test fails at the base, which a change could make pass", async () => {
+    const model = scripted([fix], { author: [noAuthoredCheck] });
+    const ran = await (await fixture()).run(model);
+    expect(ran.report.resources.steps).toBeGreaterThan(0);
   });
 });

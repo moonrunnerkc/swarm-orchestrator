@@ -30,8 +30,6 @@ beforeEach(async () => {
   );
   git("add", "-A");
   git("commit", "-qm", "base");
-  // The fix is already in the working tree, so a verdict on it can only come from the verifier.
-  await writeFile(join(repo, "half.mjs"), "export const half = (n) => n / 2;\n");
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
@@ -83,14 +81,13 @@ describe("swarm run against the stub endpoint", () => {
     await stub.close();
     // The check author's call met the 404 first; the loop's first turn met it again and stopped.
     expect(stub.requests).toHaveLength(2);
-    // The fix was already in the working tree when the run began: part of its starting state, so
-    // the run itself changed nothing and R1 is unverified.
+    // The run changed nothing, so R1 is unverified and the base's failing test is inherited.
     expect(ran.code).toBe(4);
     expect(ran.stdout).toMatch(/^stop {9}model-error: the model endpoint failed: HTTP 404/m);
     expect(ran.stdout).toMatch(/^state {8}incomplete$/m);
     expect(ran.stdout).toMatch(/^R1 {11}asked {4}Make half\(n\) return n \/ 2\.$/m);
     expect(ran.stdout).toMatch(/^ {13}status {3}unverified, witness none: no change observed$/m);
-    expect(ran.stdout).toMatch(/^regression {3}none$/m);
+    expect(ran.stdout).toMatch(/^regression {3}unresolved \(1 inherited failure\(s\)\)$/m);
   });
 
   it("stops on a refused connection the same way", async () => {
@@ -101,7 +98,7 @@ describe("swarm run against the stub endpoint", () => {
     expect(ran.stdout).toMatch(
       /^stop {9}model-error: the model endpoint failed: connection refused at/m,
     );
-    expect(ran.stdout).toMatch(/^regression {3}none$/m);
+    expect(ran.stdout).toMatch(/^regression {3}unresolved \(1 inherited failure\(s\)\)$/m);
   });
 
   it("finalizes a run stopped by SIGINT, SIGTERM or SIGHUP as cancelled and removes its worktree", async () => {

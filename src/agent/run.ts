@@ -141,6 +141,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         scratch: join(evidence.directory, "checks"),
         supplied: options.supplied ?? [],
         mode: options.checksMode ?? { kind: "accept-authored" },
+        behaviorChangeAuthorized: options.behaviorChange === "authorized",
         signal: options.signal,
       });
       progress.record = gate.record;
