@@ -72,6 +72,7 @@ export function createTurnChecks(input: {
   const withheld = [
     ...input.authored.map((one) => one.path),
     ...user.flatMap((one) => (one.path === null ? [] : [one.path])),
+    ...(user.find((one) => one.support !== undefined)?.support ?? []).map((one) => one.path),
   ];
   /** The user's behavior-preservation checks that fail now, which passed at the base. */
   const keptFailures = async () => {

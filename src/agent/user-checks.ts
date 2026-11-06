@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { type Requirement, sealFiles, structureEvidence, type TrustedCheck } from "swarm-verify";
 import type { Chokepoint } from "../tools/chokepoint.ts";
+import { testPattern } from "./affected-tests.ts";
 import { plainOutput, removeLaid } from "./authored-cases.ts";
 import type { Supplied } from "./supplied.ts";
 import type { TestConventions } from "./test-conventions.ts";
@@ -17,8 +18,15 @@ export interface UserCheck {
   /** The file laid at this path while it runs, and taken out again; null for a command. */
   readonly path: string | null;
   readonly content: string | null;
+  /** Files supplied beside the tests that are not tests (fixtures they read), laid with every run. */
+  readonly support?: readonly LaidFile[];
   /** The end of what it printed at the base. */
   readonly atBase: string;
+}
+
+export interface LaidFile {
+  readonly path: string;
+  readonly content: string;
 }
 
 export interface Validated {
@@ -35,19 +43,24 @@ export interface Validated {
  */
 export async function laid<T>(
   workspace: string,
-  path: string,
-  content: string,
+  files: readonly LaidFile[],
   run: () => Promise<T>,
 ): Promise<T> {
-  const absolute = join(workspace, path);
-  const before = await readFile(absolute).catch(() => null);
-  await mkdir(dirname(absolute), { recursive: true });
-  await writeFile(absolute, content);
+  const before: (Buffer | null)[] = [];
+  for (const file of files) {
+    const absolute = join(workspace, file.path);
+    before.push(await readFile(absolute).catch(() => null));
+    await mkdir(dirname(absolute), { recursive: true });
+    await writeFile(absolute, file.content);
+  }
   try {
     return await run();
   } finally {
-    if (before === null) await removeLaid(workspace, path);
-    else await writeFile(absolute, before);
+    for (const [at, file] of files.entries()) {
+      const was = before[at] ?? null;
+      if (was === null) await removeLaid(workspace, file.path);
+      else await writeFile(join(workspace, file.path), was);
+    }
   }
 }
 
@@ -59,13 +72,13 @@ const unparsable = /(?:SyntaxError|IndentationError)(?!: The requested module)|T
 export async function runUserCheck(
   chokepoint: Chokepoint,
   workspace: string,
-  check: Pick<UserCheck, "command" | "path" | "content" | "name">,
+  check: Pick<UserCheck, "command" | "path" | "content" | "name" | "support">,
   purpose: string,
 ) {
   const go = () => chokepoint.check(check.command, `${purpose}: ${check.name}`);
   return check.path === null || check.content === null
     ? go()
-    : laid(workspace, check.path, check.content, go);
+    : laid(workspace, [{ path: check.path, content: check.content }, ...(check.support ?? [])], go);
 }
 
 /**
@@ -83,7 +96,18 @@ export async function validateSupplied(input: {
   const checks: UserCheck[] = [];
   const claims: Claim[] = [];
   const refused: string[] = [];
-  for (const [at, one] of input.supplied.entries()) {
+  // A supplied file the runner would not collect is a fixture its tests read, not a check.
+  const isTest = (path: string) =>
+    input.conventions !== null && testPattern(input.conventions).test(path);
+  const support = input.supplied.flatMap((one) =>
+    one.kind === "file" && input.conventions !== null && !isTest(one.path)
+      ? [{ path: one.path, content: one.content }]
+      : [],
+  );
+  let at = 0;
+  for (const one of input.supplied) {
+    if (one.kind === "file" && support.some((file) => file.path === one.path)) continue;
+    at += 1;
     if (one.kind === "claims") {
       const read = await Promise.all(
         one.claims.map((claim) => structureEvidence(input.workspace, claim)),
@@ -105,10 +129,11 @@ export async function validateSupplied(input: {
     }
     const check = {
       requirement: one.requirement,
-      name: `accept-${one.requirement ?? "keep"}-${at + 1}`,
+      name: `accept-${one.requirement ?? "keep"}-${at}`,
       command: one.kind === "file" ? (input.conventions?.commandFor(one.path) ?? "") : one.command,
       path: one.kind === "file" ? one.path : null,
       content: one.kind === "file" ? one.content : null,
+      ...(one.kind === "file" && support.length > 0 ? { support } : {}),
     };
     const ran = await runUserCheck(
       input.chokepoint,
@@ -156,7 +181,10 @@ export async function sealUserChecks(
       workspace,
       home,
       authority: "user-acceptance",
-      files: files.map((one) => ({ path: one.path, content: one.content })),
+      files: [
+        ...files.map((one) => ({ path: one.path, content: one.content })),
+        ...(files[0]?.support ?? []),
+      ],
       checks: files.map((one) => ({
         name: one.name,
         command: one.command,

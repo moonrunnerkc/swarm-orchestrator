@@ -48,6 +48,29 @@ describe("the user supplies the oracle", () => {
     );
   });
 
+  // fix-tracemantle-f69ad0c58 (Arm B, 2026-11-06): the held-out set is a test and the fixture
+  // files it reads; each fixture was taken for a test of its own and refused as not collected.
+  it("lays a supplied directory's other files beside its tests, as fixtures, never as checks", async () => {
+    const probe = await fixture(passingBase);
+    const reads = `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { readFileSync } from "node:fs";\nimport { half } from "../half.mjs";\ntest("half of the fixture", () => assert.equal(half(Number(readFileSync(new URL("./fixtures/ten.txt", import.meta.url), "utf8"))), 5));\n`;
+    const outside = join(probe.root, "held");
+    await probe.put("../held/test/half.held.test.mjs", reads);
+    await probe.put("../held/test/fixtures/ten.txt", "10");
+    const given = await readSupplied({
+      repository: probe.repo,
+      cwd: probe.root,
+      files: [outside],
+      commands: [],
+    });
+    const model = scripted([bash("ls test/fixtures"), fix]);
+    const ran = await probe.run(model, { supplied: given });
+    expect(ran.report.state).toBe("complete");
+    expect(ran.report.accepted).toEqual([
+      { name: "accept-R1-1", requirement: "R1", runs: "test/half.held.test.mjs" },
+    ]);
+    expect(model.seen[1]?.at(-1)?.content).not.toContain("ten.txt");
+  });
+
   it("refuses a supplied check that passes at the base, saying why and how to keep it", async () => {
     const probe = await fixture(passingBase);
     const supplied = [
