@@ -14,6 +14,9 @@
  *
  *   node scripts/release-smoke.mjs <swarm-orchestrator-x.y.z.tgz> [swarm-verify checkout] [swarm-verify tgz]
  *
+ * A second run supplies the corpus's held-out test with `--accept` in place of the author's check,
+ * and must report complete with R1 witnessed by it, without the model ever being shown its source.
+ *
  * Before the verifier is published and tagged, a checkout of it stands in for the clone at its
  * tag and its packed tarball is installed beside the agent's.
  */
@@ -181,6 +184,59 @@ async function main() {
       `the sealed judge found the delivered patch ${statement.predicate.state}, not complete`,
     );
   console.log(`release smoke: ${entryId} complete, self-reported and judged`);
+
+  // The user's oracle: the corpus's held-out test supplied with --accept, laid in the user's tree
+  // where they would write it. No check is authored; the model never sees the test's source.
+  if (entry.heldOut === null) return;
+  const own = join(scratch, "accept");
+  await clone(own);
+  await cp(join(entryDir, "held-out"), own, { recursive: true });
+  const supplied = run("git", ["ls-files", "--others", "--exclude-standard"], { cwd: own })
+    .trim()
+    .split("\n");
+  const replay = await startStubModel({ replies: [...writes, "SWARM_TASK_COMPLETE"] });
+  const accepted = await streamed(
+    bin("swarm"),
+    [
+      "run",
+      task,
+      "--endpoint",
+      `http://127.0.0.1:${replay.port}/v1`,
+      "--model",
+      "replay",
+      "--approve",
+      "auto",
+      "--max-steps",
+      "20",
+      ...supplied.flatMap((path) => ["--accept", path]),
+    ],
+    { cwd: own, env },
+  );
+  await replay.close();
+  const acceptedState = /^state +(\S+)/m.exec(accepted.out)?.[1];
+  if (accepted.code !== 0 || acceptedState !== "complete")
+    throw new Error(`swarm run --accept reported ${acceptedState ?? "no state"}, not complete`);
+  const report = JSON.parse(
+    await readFile(
+      /^report +(\S+)/m.exec(accepted.out)?.[1]?.replace(/\.md$/, ".json") ?? "",
+      "utf8",
+    ),
+  );
+  const r1 = report.requirements.find((one) => one.id === "R1");
+  if (!r1?.evidence.some((one) => one.authority === "user-acceptance"))
+    throw new Error("R1 has no user-acceptance witness under --accept");
+  const sources = await Promise.all(supplied.map((path) => readFile(join(own, path), "utf8")));
+  const marker = sources
+    .flatMap((text) => text.split("\n"))
+    .find((line) => line.trim().length > 40);
+  if (
+    marker !== undefined &&
+    JSON.stringify(replay.requests).includes(JSON.stringify(marker.trim()).slice(1, -1))
+  )
+    throw new Error("the model was shown the source of a supplied check");
+  console.log(
+    `release smoke: ${entryId} complete under --accept, R1 witnessed by the user's check`,
+  );
 }
 
 main().catch((error) => {
