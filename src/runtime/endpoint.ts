@@ -2,14 +2,7 @@ import { z } from "zod";
 import { type ModelClient, openAiCompatible } from "../agent/model.ts";
 import { type InstalledModel, parameterCount } from "./ollama.ts";
 import { probeModel } from "./probe.ts";
-import {
-  cachedProbe,
-  type ProbeIdentity,
-  profilePath,
-  readProfile,
-  withProbe,
-  writeProfile,
-} from "./profile.ts";
+import { cachedProbe, modelRecord, type ProbeIdentity, withProbe } from "./profile.ts";
 import { NoModelError, type ResolvedModel, type ResolveInput } from "./resolve.ts";
 import type { Candidate } from "./select.ts";
 
@@ -74,13 +67,13 @@ export async function endpointCandidate(
     quantization: null,
     contextTokens: input.contextTokens,
   };
-  const path = profilePath(input.home);
-  const profile = await readProfile(path);
+  const record = input.record ?? modelRecord(input.home);
+  const profile = await record.read();
   let probe = cachedProbe(profile, identity);
   if (probe === null) {
     input.log(`probing ${name} at ${endpoint} at a ${input.contextTokens}-token context`);
     probe = await probeModel(client, input.contextTokens);
-    await writeProfile(path, withProbe(profile, identity, probe));
+    await record.write(withProbe(profile, identity, probe));
   }
   // Served already: its weights are resident in the server, so no capacity is estimated.
   const eligibility = { model, eligible: true, reason: `served at ${endpoint}`, need: null };

@@ -7,14 +7,9 @@ import { type RunReport, runAgent } from "./agent/run.ts";
 import { swarmHome } from "./agent/verification.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
+import { recordFor } from "./cli-record.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
-import {
-  finishedOutcome,
-  type Profile,
-  profilePath,
-  readProfile,
-  recordOutcome,
-} from "./runtime/profile.ts";
+import { finishedOutcome, type Profile, recordOutcome } from "./runtime/profile.ts";
 import {
   NoModelError,
   type ResolvedModel,
@@ -73,6 +68,8 @@ export async function run(args: readonly string[]): Promise<number> {
       review: { type: "boolean" },
       "linked-dependencies": { type: "boolean" },
       approve: { type: "string" },
+      profile: { type: "string" },
+      "no-record": { type: "boolean" },
     },
   });
   const task = positionals.join(" ").trim();
@@ -106,7 +103,9 @@ export async function run(args: readonly string[]): Promise<number> {
         ? discoveredContexts
         : [defaultContextTokens];
 
+  const record = recordFor(values.profile, values["no-record"] === true);
   write(`task         ${task}`);
+  write(`record       ${record.name}${record.writes ? "" : ", read only (--no-record)"}`);
   let model: ResolvedModel;
   let contextTokens: number;
   try {
@@ -117,6 +116,7 @@ export async function run(args: readonly string[]): Promise<number> {
         apiKey: process.env[keyName] ?? null,
         contextTokens: context,
         home: swarmHome(),
+        record,
         log: (line) => process.stderr.write(`${line}\n`),
       }),
     ));
@@ -134,7 +134,7 @@ export async function run(args: readonly string[]): Promise<number> {
     model: model.client,
     modelReason: model.reason,
     // Once, and only to a model whose record on R1's kind of task is better here.
-    escalation: escalateAmong(model, await readProfile(profilePath(swarmHome()))),
+    escalation: escalateAmong(model, await record.read()),
     contextTokens,
     apply: values["no-apply"] !== true,
     // Only the user changes what existing tests may expect; nothing the model says can.
@@ -164,7 +164,7 @@ export async function run(args: readonly string[]): Promise<number> {
     escalated: ran.report.resources.escalations > 0,
   });
   const kind = ran.report.requirements.find((one) => one.id === "R1")?.kind ?? null;
-  if (finished !== null) await recordOutcome(swarmHome(), model.digest, finished, kind);
+  if (finished !== null) await recordOutcome(record, model.digest, finished, kind);
   for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
   write(`evidence     ${ran.sessionDirectory}`);
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);

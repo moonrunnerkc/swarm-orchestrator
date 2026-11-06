@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { swarmHome } from "./agent/verification.ts";
 import { describeRunningVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
+import { recordFor } from "./cli-record.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
@@ -100,6 +101,7 @@ async function modelsReport(contextTokens: number): Promise<number> {
   const { runtime, rows } = await surveyModels({
     contextTokens,
     home: swarmHome(),
+    record: recordFor(undefined, false),
     log: (line) => process.stderr.write(`${line}\n`),
   });
   process.stdout.write(`${runtime}, ${contextTokens}-token context\n\n`);

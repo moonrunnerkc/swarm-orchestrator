@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { hostname, totalmem } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -26,6 +26,8 @@ const probeSchema = z.object({
 
 const profileSchema = z.object({
   version: z.literal(1),
+  /** The namespace this record belongs to: `default` for ordinary runs, or the one named. */
+  profile: z.string().optional(),
   machine: z.object({
     hostname: z.string(),
     platform: z.string(),
@@ -56,9 +58,62 @@ export type Profile = z.infer<typeof profileSchema>;
 export const identityKey = (identity: ProbeIdentity) =>
   createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 
-/** This machine's profile under the swarm home: one file, keyed by host name. */
-export function profilePath(home: string): string {
-  return join(home, "profiles", `${hostname()}.json`);
+/**
+ * This machine's profile under the swarm home: one file, keyed by host name, and one more for each
+ * named profile (`<host>@<name>.json`), which measured, CI and development runs write instead.
+ */
+export function profilePath(home: string, name = defaultProfile): string {
+  const suffix = name === defaultProfile ? "" : `@${name}`;
+  return join(home, "profiles", `${hostname()}${suffix}.json`);
+}
+
+export const defaultProfile = "default";
+const profileName = /^[A-Za-z0-9][\w.-]{0,63}$/;
+
+export class ProfileNameError extends Error {
+  constructor(name: string) {
+    super(
+      `"${name}" is not a profile name: use letters, digits, dots, dashes and underscores, as in --profile dev`,
+    );
+    this.name = "ProfileNameError";
+  }
+}
+
+/** The model record a run reads and writes: which profile, and whether anything is written. */
+export interface ModelRecord {
+  readonly name: string;
+  readonly writes: boolean;
+  read(): Promise<Profile>;
+  write(profile: Profile): Promise<void>;
+}
+
+/**
+ * A named profile starts as a copy of the default one, so selection begins where the machine's
+ * record stands, and from then on only it is written. `--no-record` reads and writes nothing.
+ */
+export function modelRecord(
+  home: string,
+  choice: { readonly profile?: string | undefined; readonly write?: boolean } = {},
+): ModelRecord {
+  const name = choice.profile ?? defaultProfile;
+  if (!profileName.test(name)) throw new ProfileNameError(name);
+  const path = profilePath(home, name);
+  const writes = choice.write !== false;
+  return {
+    name,
+    writes,
+    async read() {
+      const own = await access(path).then(
+        () => true,
+        () => false,
+      );
+      const profile = await readProfile(own ? path : profilePath(home));
+      return { ...profile, profile: name };
+    },
+    async write(profile) {
+      if (writes) await writeProfile(path, { ...profile, profile: name });
+    },
+  };
 }
 
 const empty = (): Profile => ({
@@ -150,11 +205,10 @@ export function finishedOutcome(run: {
 
 /** Adds one finished run to the model's record in this machine's profile. */
 export async function recordOutcome(
-  home: string,
+  record: ModelRecord,
   digest: string,
   complete: boolean,
   kind: string | null = null,
 ): Promise<void> {
-  const path = profilePath(home);
-  await writeProfile(path, withOutcome(await readProfile(path), digest, complete, kind));
+  await record.write(withOutcome(await record.read(), digest, complete, kind));
 }

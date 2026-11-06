@@ -11,11 +11,10 @@ import {
 import { probeModel } from "./probe.ts";
 import {
   cachedProbe,
+  type ModelRecord,
+  modelRecord,
   type ProbeIdentity,
-  profilePath,
-  readProfile,
   withProbe,
-  writeProfile,
 } from "./profile.ts";
 import { type Candidate, choose, probedEnough } from "./select.ts";
 
@@ -80,6 +79,8 @@ export interface ResolveInput {
   readonly apiKey: string | null;
   readonly contextTokens: number;
   readonly home: string;
+  /** The model record to read and write; the home's default profile where none is given. */
+  readonly record?: ModelRecord;
   readonly log: (line: string) => void;
 }
 
@@ -91,8 +92,8 @@ async function probed(
   input: ResolveInput,
   enough: (candidates: readonly Candidate[], rest: readonly InstalledModel[]) => boolean,
 ): Promise<Candidate[]> {
-  const path = profilePath(input.home);
-  let profile = await readProfile(path);
+  const record = input.record ?? modelRecord(input.home);
+  let profile = await record.read();
   const listed = eligibility(models, input.contextTokens).filter((one) => one.eligible);
   listed.sort((a, b) => (b.model.parameters ?? 0) - (a.model.parameters ?? 0));
   const candidates: Candidate[] = [];
@@ -103,7 +104,7 @@ async function probed(
       input.log(`probing ${one.model.name} at a ${input.contextTokens}-token context`);
       result = await probeModel(clientOf(one.model), input.contextTokens);
       profile = withProbe(profile, identity, result);
-      await writeProfile(path, profile);
+      await record.write(profile);
     }
     candidates.push({ eligibility: one, probe: result });
     if (
@@ -124,7 +125,7 @@ async function probed(
  * picks by the profile's policy. Nothing is downloaded, and nothing remote is chosen.
  */
 export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> {
-  const profile = await readProfile(profilePath(input.home));
+  const profile = await (input.record ?? modelRecord(input.home)).read();
   if (input.endpoint !== null && input.model !== "auto") {
     // Named on both counts: used as named, and a failure to answer ends the run like any other.
     const client = openAiCompatible({

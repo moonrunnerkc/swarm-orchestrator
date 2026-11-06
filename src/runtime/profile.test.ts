@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { finishedOutcome, profilePath, recordOutcome } from "./profile.ts";
+import { finishedOutcome, modelRecord, profilePath, recordOutcome } from "./profile.ts";
 
 describe("the record a model builds on this machine", () => {
   it("counts a run the model finished, and not one the environment or the user ended", () => {
@@ -22,9 +22,10 @@ describe("the record a model builds on this machine", () => {
 
   it("writes each finished run to the profile under the model's digest", async () => {
     const home = await mkdtemp(join(tmpdir(), "profile-"));
-    await recordOutcome(home, "sha256:abc", true, "feature");
-    await recordOutcome(home, "sha256:abc", false, "refactor");
-    await recordOutcome(home, "sha256:abc", false);
+    const record = modelRecord(home);
+    await recordOutcome(record, "sha256:abc", true, "feature");
+    await recordOutcome(record, "sha256:abc", false, "refactor");
+    await recordOutcome(record, "sha256:abc", false);
     const written = JSON.parse(await readFile(profilePath(home), "utf8"));
     // And by the kind of task R1 was, where the run says, which escalation reads.
     expect(written.outcomes["sha256:abc"]).toEqual({

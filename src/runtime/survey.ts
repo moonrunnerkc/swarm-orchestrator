@@ -1,7 +1,7 @@
 import { eligibility } from "./capacity.ts";
 import { listOllama, ollamaBase, ollamaChat, ollamaVersion } from "./ollama.ts";
 import { type ProbeResult, probeModel } from "./probe.ts";
-import { cachedProbe, profilePath, readProfile, withProbe, writeProfile } from "./profile.ts";
+import { cachedProbe, type ModelRecord, modelRecord, withProbe } from "./profile.ts";
 
 export interface SurveyRow {
   readonly name: string;
@@ -21,14 +21,15 @@ const gib = 1024 ** 3;
 export async function surveyModels(input: {
   readonly contextTokens: number;
   readonly home: string;
+  readonly record?: ModelRecord;
   readonly log: (line: string) => void;
 }): Promise<{ readonly runtime: string; readonly rows: readonly SurveyRow[] }> {
   const base = ollamaBase();
   const version = await ollamaVersion(base);
   if (version === null)
     throw new Error(`Ollama is not answering at ${base}: start it with \`ollama serve\``);
-  const path = profilePath(input.home);
-  let profile = await readProfile(path);
+  const record = input.record ?? modelRecord(input.home);
+  let profile = await record.read();
   const rows: SurveyRow[] = [];
   for (const one of eligibility(await listOllama(base), input.contextTokens)) {
     const model = one.model;
@@ -60,7 +61,7 @@ export async function surveyModels(input: {
         input.contextTokens,
       );
       profile = withProbe(profile, identity, result);
-      await writeProfile(path, profile);
+      await record.write(profile);
     }
     rows.push({ name: model.name, eligible: true, capacity: one.reason, probe: result });
   }

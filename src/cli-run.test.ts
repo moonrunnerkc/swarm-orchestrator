@@ -1,7 +1,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startStubModel } from "../eval/stub-model.mjs";
@@ -208,5 +208,41 @@ describe("swarm run against the stub endpoint", () => {
       other: 1,
       kinds: { other: { complete: 0, other: 1 } },
     });
+  });
+
+  // 2026-11-05: the day's development runs moved gemma4:31b under the prior for untried models
+  // in the machine's record, and `auto` then chose a worse model for the measured pass.
+  it("keeps a run under a named profile out of the machine's default record", async () => {
+    const profiles = join(root, "home", "profiles");
+    await mkdir(profiles, { recursive: true });
+    const host = hostname();
+    const machine = {
+      hostname: host,
+      platform: process.platform,
+      arch: process.arch,
+      totalMemory: totalmem(),
+    };
+    const seeded = `${JSON.stringify({ version: 1, machine, probes: {}, outcomes: { kept: { complete: 12, other: 2 } } }, null, 2)}\n`;
+    await writeFile(join(profiles, `${host}.json`), seeded);
+    const stub = await startStubModel();
+    const endpoint = `http://127.0.0.1:${stub.port}/v1`;
+    const ran = await swarmRun(endpoint, ["--max-steps", "1", "--profile", "dev"]);
+    await stub.close();
+    expect(ran.stdout).toContain("record       dev");
+    expect(await readFile(join(profiles, `${host}.json`), "utf8")).toBe(seeded);
+    const dev = JSON.parse(await readFile(join(profiles, `${host}@dev.json`), "utf8"));
+    // Seeded from the default, so selection starts where the machine's record stands.
+    expect(dev.profile).toBe("dev");
+    expect(dev.outcomes.kept).toEqual({ complete: 12, other: 2 });
+    expect(dev.outcomes[`${endpoint}#stub`]).toMatchObject({ complete: 0, other: 1 });
+  });
+
+  it("writes no record at all under --no-record", async () => {
+    const stub = await startStubModel();
+    const endpoint = `http://127.0.0.1:${stub.port}/v1`;
+    const ran = await swarmRun(endpoint, ["--max-steps", "1", "--no-record"]);
+    await stub.close();
+    expect(ran.stdout).toContain("record       default, read only (--no-record)");
+    await expect(readdir(join(root, "home", "profiles"))).rejects.toThrow();
   });
 });
