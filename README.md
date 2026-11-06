@@ -6,9 +6,26 @@ failures, and returns the patch with evidence of what is complete and what remai
 [![ci](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=v13-main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![license: ISC](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
 
+You supply the check that says the task is done; Swarm does the work until it passes.
+
 ```sh
-swarm run "Add a --json option to the status command and keep the text output as it is"
+# 1. A test that fails today and passes once the task is done (yours, or one Swarm drafts).
+swarm run "Add a --json option to the status command" --write-checks ../status-checks
+#    read and edit ../status-checks, then:
+# 2. Run the task against it.
+swarm run "Add a --json option to the status command" --accept ../status-checks
 ```
+
+`--accept` takes test files, a directory, or a JSON array of structure claims; `--accept-cmd`
+takes a command. Each runs at the base before any edit: a check for the task must fail there,
+and one marked `keep=` (behavior that must not change) must pass. The model sees what your checks
+print, never their source, and the report names each by the requirement it witnesses.
+
+Without `--accept`, a separate call writes a check from the task's wording before the first
+edit. At a terminal you approve, edit or reject it (`--review-checks`); with nobody there it is
+written out for you and the run stops (`--write-checks`); `--accept-authored` uses it as
+written. Where no independent check exists at all, the run stops before its first edit and says
+how to supply one, rather than work toward a completion nothing could confirm.
 
 Features, fixes, refactors and upgrades are all ordinary work. Source, tests, manifests and
 lockfiles may change together when the task needs it; what the change cannot touch is the
@@ -61,7 +78,7 @@ With no model named, Swarm asks Ollama what is installed, leaves out cloud entri
 models and anything that would not fit in memory at the context (weights plus KV cache), probes
 the strongest candidates until one follows its shell protocol, and prints the one it chose and
 why. It tries a 65,536-token context first and 32,768 where nothing fits there; `--context` sets
-one, and a named model or server gets 32,768 unless you set it. Probe results are kept per machine and model digest under `~/.swarm/profiles`.
+one, and a named model or server gets 32,768 unless you set it. Probe results and finished runs are kept per machine and model digest under `~/.swarm/profiles`; `--profile <name>` (or `SWARM_PROFILE`) keeps a run's results in a record of their own, so experiments and development runs leave the one `auto` chooses by untouched, and `--no-record` writes nothing.
 `swarm doctor --models` shows every installed model's verdict. Name a model with `--model`, or
 any OpenAI-compatible server (Rapid-MLX, vLLM, llama.cpp) with `--endpoint`. Nothing is
 downloaded and nothing remote is chosen for you.
