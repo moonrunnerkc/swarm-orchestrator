@@ -141,7 +141,7 @@ export async function checkGate(input: {
   if (
     r1 !== undefined &&
     !independent &&
-    !checks.baseFailing() &&
+    !checks.baseFailing(bearsOn(input.task)) &&
     !input.behaviorChangeAuthorized
   ) {
     const why = first?.failure ?? "the reviewed checks were all rejected";
@@ -262,4 +262,29 @@ function claimsOf(text: string, source: string): Authored["structure"] | string 
   } catch (error) {
     return (error as Error).message;
   }
+}
+
+const commonParts = new Set(
+  "test tests spec specs src lib unit integration e2e index main util utils helpers fixtures core packages js mjs cjs ts mts tsx jsx py".split(
+    " ",
+  ),
+);
+
+/**
+ * Whether a test file's path shares a word with the task: a failing base test the task bears on.
+ * A README test-count claim failing at tracemantle's base shares none with a template fix.
+ */
+export function bearsOn(task: string): (path: string) => boolean {
+  const words = new Set(
+    task
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .toLowerCase()
+      .match(/[a-z][a-z0-9]{3,}/g) ?? [],
+  );
+  return (path) =>
+    path
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .some((part) => part.length >= 4 && !commonParts.has(part) && words.has(part));
 }

@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import type { Escalate } from "./agent/attempts.ts";
@@ -115,6 +115,11 @@ export async function run(args: readonly string[]): Promise<number> {
   const record = recordFor(values.profile, values["no-record"] === true);
   const supplied = await suppliedChecks(workspace, values.accept ?? [], values["accept-cmd"] ?? []);
   const checksMode = modeOf(values);
+  const top = await gitText(workspace, ["rev-parse", "--show-toplevel"]);
+  if (checksMode.kind === "write" && !relative(top, checksMode.directory).startsWith(".."))
+    throw new UsageError(
+      `--write-checks needs a directory outside the repository, which is the tree the model works in: ${checksMode.directory}`,
+    );
   write(`task         ${task}`);
   write(`record       ${record.name}${record.writes ? "" : ", read only (--no-record)"}`);
   let model: ResolvedModel;

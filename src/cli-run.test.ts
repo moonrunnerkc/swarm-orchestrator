@@ -172,6 +172,26 @@ describe("swarm run against the stub endpoint", () => {
     expect(linked.stdout).toMatch(/^execution {4}host, not isolated/m);
   });
 
+  it("refuses to write the author's checks into the tree the model works in", async () => {
+    const ran = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "run",
+        "task",
+        "--write-checks",
+        "checks",
+        "--endpoint",
+        "http://127.0.0.1:9/v1",
+        "--model",
+        "stub",
+      ],
+      { cwd: repo, encoding: "utf8", env: { ...process.env, SWARM_HOME: join(root, "home") } },
+    );
+    expect(ran.stderr).toContain("--write-checks needs a directory outside the repository");
+    expect(ran.status).not.toBe(0);
+  });
+
   it("refuses linked dependencies in a container, which the verifier would refuse", async () => {
     const ran = spawnSync(
       process.execPath,

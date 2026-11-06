@@ -162,3 +162,20 @@ export function livesIn(file: string | null, path: string): boolean {
 
 export const shellWord = (path: string) =>
   /^[\w./@+-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
+
+// Runners colour their output; the escape is built, since a literal one in a pattern hides.
+const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+export const excerpt = (text: string, bytes = 1800) => {
+  const plain = text.replace(ansi, "");
+  return plain.length <= bytes ? plain : `...${plain.slice(-bytes)}`;
+};
+
+export function failuresDetail(
+  newFailures: readonly string[],
+  output: string,
+  none: string,
+): string {
+  if (newFailures.length === 0) return none;
+  const more = newFailures.length > 12 ? ` and ${newFailures.length - 12} more` : "";
+  return `newly failing: ${newFailures.slice(0, 12).join(", ")}${more}\n${output}`;
+}

@@ -12,6 +12,8 @@ import {
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import {
   affectedTests,
+  excerpt,
+  failuresDetail,
   importGraph,
   livesIn,
   shellWord,
@@ -42,13 +44,6 @@ export interface RegressionCheck {
   readonly detail: string;
   readonly evidence: string | null;
 }
-
-// Runners colour their output; the escape is built, since a literal one in a pattern hides.
-const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-const excerpt = (text: string, bytes = 1800) => {
-  const plain = text.replace(ansi, "");
-  return plain.length <= bytes ? plain : `...${plain.slice(-bytes)}`;
-};
 
 /**
  * The checks the harness runs on the working tree between the model's turns: each requirement's
@@ -277,12 +272,20 @@ export function createTurnChecks(input: {
       };
     },
 
-    /** Whether any declared test failed at the base: a change could make it pass, and witness R1. */
-    baseFailing: () =>
+    /**
+     * Whether a declared test the task bears on failed at the base: a change could make it pass,
+     * and witness R1. A failing run with no per-test report cannot say which, so it counts.
+     */
+    baseFailing: (related: (path: string) => boolean) =>
       base.some((one) =>
         typeof one === "number"
           ? one !== 0
-          : one !== null && Object.values(one).some((entry) => entry.status === "fail"),
+          : one !== null &&
+            Object.entries(one).some(
+              ([id, entry]) =>
+                entry.status === "fail" &&
+                related(entry.file === null ? id : testPathOf(entry.file)),
+            ),
       ),
     /** How many check commands the harness has run. */
     runs: () => runs,
@@ -292,9 +295,3 @@ export function createTurnChecks(input: {
 }
 
 export type TurnChecks = ReturnType<typeof createTurnChecks>;
-
-function failuresDetail(newFailures: readonly string[], output: string, none: string): string {
-  if (newFailures.length === 0) return none;
-  const more = newFailures.length > 12 ? ` and ${newFailures.length - 12} more` : "";
-  return `newly failing: ${newFailures.slice(0, 12).join(", ")}${more}\n${output}`;
-}

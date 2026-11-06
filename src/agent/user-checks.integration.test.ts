@@ -164,6 +164,20 @@ describe("a run with no independent check stops before its first edit", () => {
     );
   });
 
+  // tracemantle (f69ad0c58, c4dc276c4, replayed 2026-11-06): the base's only failing test was a
+  // README test-count claim, which no fix of the task's would make pass.
+  it("is not kept going by a failing base test that has nothing to do with the task", async () => {
+    const model = scripted([fix], { author: [noAuthoredCheck] });
+    const unrelated = {
+      ...passingBase,
+      "test/readme-count.test.mjs":
+        'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("readme count", () => assert.equal(786, 789));\n',
+    };
+    const ran = await (await fixture(unrelated)).run(model);
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
+  });
+
   it("goes on where a test fails at the base, which a change could make pass", async () => {
     const model = scripted([fix], { author: [noAuthoredCheck] });
     const ran = await (await fixture()).run(model);
