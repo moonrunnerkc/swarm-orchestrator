@@ -25,6 +25,7 @@ export function summaryLines(
   for (const one of report.requirements) lines.push(...summaryRequirementLines(one));
   for (const one of report.authoring)
     lines.push(`${pad("checks", 12)} ${one.requirement}: ${authoringLine(one)}`);
+  for (const one of report.accepted ?? []) lines.push(`${pad("checks", 12)} ${acceptedLine(one)}`);
   if (report.changed.length > 0) {
     const deleted = report.changed.filter((one) => one.status === "deleted").map((one) => one.path);
     const also = deleted.length === 0 ? "" : `, deleting ${deleted.join(", ")}`;
@@ -96,6 +97,13 @@ export function authoringLine(one: RunReportFile["authoring"][number]): string {
     : `${what.join(" and ")}${kind}, failing at the base, written without seeing the change`;
 }
 
+/** One of the user's checks: what it witnesses and what runs it. */
+function acceptedLine(one: NonNullable<RunReportFile["accepted"]>[number]): string {
+  const what =
+    one.requirement === null ? "a regression witness" : `${one.requirement}, user-acceptance`;
+  return `${what}: ${one.name}, ${one.runs}`;
+}
+
 export function renderMarkdown(report: RunReportFile): string {
   return [
     `# swarm run: ${report.state}`,
@@ -110,6 +118,7 @@ export function renderMarkdown(report: RunReportFile): string {
     ...report.authoring.map(
       (one) => `- Independent checks for ${one.requirement}: ${authoringLine(one)}.`,
     ),
+    ...(report.accepted ?? []).map((one) => `- Your check: ${acceptedLine(one)}.`),
     `- Delivered patch: \`${report.snapshot.patch}\`, sha256 ${report.snapshot.patchSha256}, against base ${report.snapshot.base}.`,
     `- Verification of that patch: ${report.verification}.`,
     ...(report.changed.length === 0 ? [] : [`- Changed: ${changedLine(report.changed)}.`]),

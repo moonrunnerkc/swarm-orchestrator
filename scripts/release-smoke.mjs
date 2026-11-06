@@ -130,6 +130,8 @@ async function main() {
       "replay",
       "--approve",
       "auto",
+      // The authored path end to end: the fixed author reply's check, used as written.
+      "--accept-authored",
       "--max-steps",
       "20",
     ],

@@ -25,6 +25,8 @@ export interface FinalizeInput {
   readonly held: HeldResult | null;
   /** Null to verify the snapshot now; otherwise why final verification cannot run. */
   readonly cannotVerify: string | null;
+  /** Why the run stopped before its first edit, where it did: the state is blocked, unverified. */
+  readonly blocked?: string | null;
   readonly verify: (snapshot: Snapshot) => Promise<VerifyResult>;
 }
 
@@ -84,6 +86,8 @@ export async function finalize(input: FinalizeInput): Promise<Finalized> {
   ) {
     result = input.held.result;
     verification = "reused";
+  } else if (input.blocked != null) {
+    unrun = `the run stopped before its first edit: ${input.blocked}`;
   } else if (input.cannotVerify === null) {
     if (input.held !== null)
       notes.push(
@@ -112,11 +116,13 @@ export async function finalize(input: FinalizeInput): Promise<Finalized> {
     );
   const requirements = result?.requirements ?? unmeasured(input.record, unrun);
   const state =
-    result === null || moved
-      ? result?.state === "blocked"
-        ? "blocked"
-        : "incomplete"
-      : result.state;
+    input.blocked != null
+      ? "blocked"
+      : result === null || moved
+        ? result?.state === "blocked"
+          ? "blocked"
+          : "incomplete"
+        : result.state;
   await writeFile(join(input.directory, "result.json"), `${JSON.stringify(result, null, 2)}\n`, {
     mode: 0o600,
   });

@@ -7,6 +7,7 @@ import {
   type Producer,
   requestVersion,
   snapshotWorkingTree,
+  type TrustedCheck,
   type VerifyResult,
   verifierVersion,
   verify,
@@ -81,6 +82,8 @@ export function createVerifier(input: {
   readonly evidence: EvidenceRecorder;
   readonly producer: Pick<Producer, "name" | "version" | "promptSha256" | "instructions">;
   readonly model: () => string;
+  /** The user's command checks, run on the candidate under their authority; known after authoring. */
+  readonly trusted?: () => readonly TrustedCheck[];
   readonly signal?: AbortSignal | undefined;
 }): Verifier {
   let held: HeldResult | null = null;
@@ -95,6 +98,7 @@ export function createVerifier(input: {
         base: { commit: input.base },
         candidate: { kind: "patch", path: candidate.path, sha256: candidate.sha256 },
         requirements: [...record.requirements],
+        checks: [...(input.trusted?.() ?? [])],
         policy: { behaviorChange: input.behaviorChange, execution: input.execution },
         artifacts: { directory },
         producer: {

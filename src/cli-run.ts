@@ -1,13 +1,17 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import type { Escalate } from "./agent/attempts.ts";
+import type { ChecksMode } from "./agent/check-gate.ts";
+import { gitText } from "./agent/git.ts";
 import { summaryLines } from "./agent/report.ts";
 import { type RunReport, runAgent } from "./agent/run.ts";
+import { readSupplied, type Supplied, SuppliedCheckError } from "./agent/supplied.ts";
 import { swarmHome } from "./agent/verification.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
 import { recordFor } from "./cli-record.ts";
+import { terminalReviewer } from "./cli-review.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
 import { finishedOutcome, type Profile, recordOutcome } from "./runtime/profile.ts";
 import {
@@ -70,6 +74,11 @@ export async function run(args: readonly string[]): Promise<number> {
       approve: { type: "string" },
       profile: { type: "string" },
       "no-record": { type: "boolean" },
+      accept: { type: "string", multiple: true },
+      "accept-cmd": { type: "string", multiple: true },
+      "accept-authored": { type: "boolean" },
+      "review-checks": { type: "boolean" },
+      "write-checks": { type: "string" },
     },
   });
   const task = positionals.join(" ").trim();
@@ -104,6 +113,8 @@ export async function run(args: readonly string[]): Promise<number> {
         : [defaultContextTokens];
 
   const record = recordFor(values.profile, values["no-record"] === true);
+  const supplied = await suppliedChecks(workspace, values.accept ?? [], values["accept-cmd"] ?? []);
+  const checksMode = modeOf(values);
   write(`task         ${task}`);
   write(`record       ${record.name}${record.writes ? "" : ", read only (--no-record)"}`);
   let model: ResolvedModel;
@@ -140,6 +151,8 @@ export async function run(args: readonly string[]): Promise<number> {
     // Only the user changes what existing tests may expect; nothing the model says can.
     behaviorChange: values["authorize-behavior-change"] === true ? "authorized" : "none",
     review: values.review === true,
+    supplied,
+    checksMode,
     cost: model.cost,
     maxSteps,
     // Unset, the token budget is what the steps could use at this context, so steps and time end
@@ -169,6 +182,49 @@ export async function run(args: readonly string[]): Promise<number> {
   write(`evidence     ${ran.sessionDirectory}`);
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
   return exitCodeOf(ran.report.state, ran.report.requirements);
+}
+
+/** The user's checks, read before the run seeds its workspace; a refused one is a usage error. */
+async function suppliedChecks(
+  workspace: string,
+  files: readonly string[],
+  commands: readonly string[],
+): Promise<Supplied[]> {
+  try {
+    const repository = await gitText(workspace, ["rev-parse", "--show-toplevel"]);
+    return await readSupplied({ repository, cwd: process.cwd(), files, commands });
+  } catch (error) {
+    if (error instanceof SuppliedCheckError) throw new UsageError(error.message);
+    throw error;
+  }
+}
+
+/**
+ * What happens to the author's checks: one of the three flags, else shown for approval at a
+ * terminal, else written out for the user, since nobody is there to approve them.
+ */
+function modeOf(values: {
+  readonly "accept-authored"?: boolean | undefined;
+  readonly "review-checks"?: boolean | undefined;
+  readonly "write-checks"?: string | undefined;
+}): ChecksMode {
+  const chosen = [
+    values["accept-authored"] === true,
+    values["review-checks"] === true,
+    values["write-checks"] !== undefined,
+  ].filter(Boolean).length;
+  if (chosen > 1)
+    throw new UsageError(
+      "--accept-authored, --review-checks and --write-checks are one choice: pass one",
+    );
+  if (values["accept-authored"] === true) return { kind: "accept-authored" };
+  const write = values["write-checks"];
+  if (write !== undefined) return { kind: "write", directory: resolve(write) };
+  if (values["review-checks"] === true && !process.stdin.isTTY)
+    throw new UsageError("--review-checks needs a terminal; use --write-checks <dir> instead");
+  if (process.stdin.isTTY) return { kind: "review", reviewer: terminalReviewer() };
+  const stamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15);
+  return { kind: "write", directory: join(swarmHome(), "checks", stamp) };
 }
 
 /** The context a named model or server is used with: room for the task, instructions and a diff. */

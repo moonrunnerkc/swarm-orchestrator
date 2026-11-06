@@ -10,6 +10,8 @@ import type { TurnUsage } from "./loop-types.ts";
 import type { PythonEnvironment } from "./python-environment.ts";
 import { renderMarkdown } from "./report-render.ts";
 import type { ReviewOutcome } from "./review.ts";
+import { timings, turnsByRequirement } from "./usage.ts";
+import type { UserCheck } from "./user-checks.ts";
 import type { Delivery, StartingState } from "./workspace.ts";
 
 export { renderMarkdown, summaryLines } from "./report-render.ts";
@@ -48,6 +50,15 @@ export interface RunReportFile {
     readonly claims: number;
     readonly failure: string | null;
     readonly attempts: number;
+  }[];
+  /**
+   * The user's checks, by name: the requirement each witnesses (null for a behavior-preservation
+   * check, which witnesses none), and the file or command, never the file's source.
+   */
+  readonly accepted?: readonly {
+    readonly name: string;
+    readonly requirement: string | null;
+    readonly runs: string;
   }[];
   readonly regression: string | null;
   readonly execution: string | null;
@@ -130,6 +141,9 @@ export function assembleReport(input: {
   readonly delivery: Delivery;
   readonly startedAt: number;
   readonly authored: readonly Authored[];
+  readonly user?: readonly UserCheck[];
+  /** Why the run stopped before its first edit, where it did. */
+  readonly blocked?: string | null;
 }): RunReportFile {
   const { finalized, loops, review } = input;
   const result = finalized.result;
@@ -160,7 +174,7 @@ export function assembleReport(input: {
       treeSha256: result?.snapshot.treeSha256 ?? null,
     },
     verification: finalized.verification,
-    blocked: result?.state === "blocked" ? (result.reasons[0] ?? null) : null,
+    blocked: result?.state === "blocked" ? (result.reasons[0] ?? null) : (input.blocked ?? null),
     unchecked:
       result !== null && result.state !== "blocked" && result.checks.length === 0
         ? (result.reasons[0] ?? null)
@@ -174,6 +188,11 @@ export function assembleReport(input: {
       claims: one.structure.length,
       failure: one.failure,
       attempts: one.attempts.length,
+    })),
+    accepted: (input.user ?? []).map((one) => ({
+      name: one.name,
+      requirement: one.requirement,
+      runs: one.path ?? one.command,
     })),
     regression:
       result === null
@@ -236,31 +255,6 @@ export async function writeReport(
   await writeFile(json, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   await writeFile(markdown, renderMarkdown(report), { mode: 0o600 });
   return { json, markdown };
-}
-
-/** The loops' turns by requirement, summed across an escalation. */
-function turnsByRequirement(loops: readonly LoopResult[]): Record<string, number> {
-  const total: Record<string, number> = {};
-  for (const loop of loops)
-    for (const [id, turns] of Object.entries(loop.turnsByRequirement))
-      total[id] = (total[id] ?? 0) + turns;
-  return total;
-}
-
-/** The loop turns' prefill and generation time, where every one of them reported it; else null. */
-function timings(loops: readonly LoopResult[]): {
-  prefillMs: number | null;
-  generationMs: number | null;
-} {
-  const turns = loops.flatMap((loop) => loop.usage.perTurn);
-  const total = (pick: (turn: (typeof turns)[number]) => number | null | undefined) =>
-    turns.length > 0 && turns.every((turn) => pick(turn) != null)
-      ? turns.reduce((sum, turn) => sum + (pick(turn) ?? 0), 0)
-      : null;
-  return {
-    prefillMs: total((turn) => turn.prefillMs),
-    generationMs: total((turn) => turn.generationMs),
-  };
 }
 
 /** The ledger's last record: how the run stopped, the delivered patch and where the report is. */

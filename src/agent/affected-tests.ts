@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { gitText } from "./git.ts";
+import type { TestConventions } from "./test-conventions.ts";
 
 const scriptFile = /\.(?:[cm]?[jt]sx?)$/;
 const pythonFile = /\.py$/;
@@ -143,3 +144,21 @@ export function affectedTests(
   }
   return [...reached].filter((path) => graph.has(path) && isTest(path)).sort();
 }
+
+const nodeTestFile = /\.(test|spec)\.[cm]?[jt]sx?$/;
+const pythonTestFile = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/;
+export const testPattern = (conventions: TestConventions) =>
+  conventions.runner === "pytest" ? pythonTestFile : nodeTestFile;
+
+/** A report's file as a path to run: pytest's dotted module, turned to slashes, gets its suffix. */
+export const testPathOf = (file: string) => (/\.[\w]+$/.test(file) ? file : `${file}.py`);
+
+/** Whether a test reported with `file` lives in `path`, as the verifier reads it. */
+export function livesIn(file: string | null, path: string): boolean {
+  if (file === null) return false;
+  const stem = path.replace(/\.[^./]+$/, "");
+  return file === path || file === stem || file.startsWith(`${stem}/`);
+}
+
+export const shellWord = (path: string) =>
+  /^[\w./@+-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;

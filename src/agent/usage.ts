@@ -1,5 +1,5 @@
 import { estimateTokens } from "./context.ts";
-import type { TurnUsage, Usage } from "./loop-types.ts";
+import type { LoopResult, TurnUsage, Usage } from "./loop-types.ts";
 import type { Reply } from "./model.ts";
 
 export const noUsage: Usage = {
@@ -36,5 +36,30 @@ export function withTurn(usage: Usage, reply: Reply, prompt: number): Usage {
     inferenceTurns: usage.inferenceTurns + (reply.inferenceMs === null ? 0 : 1),
     retries: usage.retries + reply.retries,
     perTurn: [...usage.perTurn, turn],
+  };
+}
+
+/** The loops' turns by requirement, summed across an escalation. */
+export function turnsByRequirement(loops: readonly LoopResult[]): Record<string, number> {
+  const total: Record<string, number> = {};
+  for (const loop of loops)
+    for (const [id, turns] of Object.entries(loop.turnsByRequirement))
+      total[id] = (total[id] ?? 0) + turns;
+  return total;
+}
+
+/** The loop turns' prefill and generation time, where every one of them reported it; else null. */
+export function timings(loops: readonly LoopResult[]): {
+  prefillMs: number | null;
+  generationMs: number | null;
+} {
+  const turns = loops.flatMap((loop) => loop.usage.perTurn);
+  const total = (pick: (turn: (typeof turns)[number]) => number | null | undefined) =>
+    turns.length > 0 && turns.every((turn) => pick(turn) != null)
+      ? turns.reduce((sum, turn) => sum + (pick(turn) ?? 0), 0)
+      : null;
+  return {
+    prefillMs: total((turn) => turn.prefillMs),
+    generationMs: total((turn) => turn.generationMs),
   };
 }

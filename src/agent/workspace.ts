@@ -52,6 +52,7 @@ export async function openWorkspace(
   repository: string,
   directory: string,
   scratch: string,
+  withheld: readonly string[] = [],
 ): Promise<ManagedWorkspace> {
   const head = await gitText(repository, ["rev-parse", "--verify", "HEAD^{commit}"]);
   const edits = await snapshotWorkingTree(repository, head, join(scratch, "starting-state.patch"));
@@ -79,6 +80,19 @@ export async function openWorkspace(
     }
     if (paths.length > 0) {
       await run("git", ["apply", "--index", "--whitespace=nowarn", edits.path], directory);
+      // The user's own checks (`--accept`) are not the model's to read: the base keeps HEAD's file.
+      for (const path of paths.filter((one) => withheld.includes(one))) {
+        const tracked = await gitText(directory, ["cat-file", "-e", `HEAD:${path}`]).then(
+          () => true,
+          () => false,
+        );
+        if (tracked) await run("git", ["checkout", "HEAD", "--", path], directory);
+        else await run("git", ["rm", "--cached", "--force", "--quiet", "--", path], directory);
+        if (!tracked) await rm(join(directory, path), { force: true });
+      }
+      paths.splice(0, paths.length, ...paths.filter((one) => !withheld.includes(one)));
+    }
+    if (paths.length > 0) {
       await run(
         "git",
         [

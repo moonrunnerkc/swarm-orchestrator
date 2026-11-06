@@ -10,11 +10,19 @@ import {
   type TestReport,
 } from "swarm-verify";
 import type { Chokepoint } from "../tools/chokepoint.ts";
-import { affectedTests, importGraph } from "./affected-tests.ts";
+import {
+  affectedTests,
+  importGraph,
+  livesIn,
+  shellWord,
+  testPathOf,
+  testPattern,
+} from "./affected-tests.ts";
 import { type AuthoredTest, removeLaid } from "./check-author.ts";
 import { evidenceRef } from "./exchange.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 import type { TestConventions } from "./test-conventions.ts";
+import { runUserCheck, type UserCheck } from "./user-checks.ts";
 
 /** What the harness measured for one requirement on the tree as it stands. */
 export interface RequirementCheck {
@@ -55,6 +63,8 @@ export function createTurnChecks(input: {
   readonly scratch: string;
   /** How one test file runs; null where no runner was recognized, so only the suite runs. */
   readonly conventions: TestConventions | null;
+  /** The user's checks (`--accept`), validated at the base. */
+  readonly user?: readonly UserCheck[];
 }) {
   const { chokepoint, workspace, conventions } = input;
   let suite: readonly DeclaredCheck[] = [];
@@ -63,7 +73,20 @@ export function createTurnChecks(input: {
   let suiteRuns = 0;
   /** Tests newly failing as last read, each with the files that run it again. */
   let known = new Map<string, readonly string[]>();
-  const withheld = input.authored.map((one) => one.path);
+  const user = input.user ?? [];
+  const withheld = [
+    ...input.authored.map((one) => one.path),
+    ...user.flatMap((one) => (one.path === null ? [] : [one.path])),
+  ];
+  /** The user's behavior-preservation checks that fail now, which passed at the base. */
+  const keptFailures = async () => {
+    const failing: string[] = [];
+    for (const check of user.filter((one) => one.requirement === null)) {
+      const ran = await runUserCheck(chokepoint, workspace, check, "kept check");
+      if (ran.exitCode !== 0) failing.push(`${check.name} (${check.path ?? check.command})`);
+    }
+    return failing;
+  };
 
   /** One declared test check with its runner's reporter: the report, or its exit code. */
   const measure = async (check: DeclaredCheck, label: string) => {
@@ -120,8 +143,24 @@ export function createTurnChecks(input: {
             evidence: evidenceRef(ran.record),
           });
         }
+        for (const check of user.filter((one) => one.requirement === requirement.id)) {
+          const ran = await runUserCheck(
+            chokepoint,
+            workspace,
+            check,
+            `your check for ${requirement.id}`,
+          );
+          const ok = ran.decision === "allowed" && ran.exitCode === 0;
+          const what = `the user's check ${check.path ?? check.command}`;
+          parts.push({
+            ok,
+            line: ok ? `${what} passes` : `${what} fails:\n${excerpt(ran.output)}`,
+            evidence: evidenceRef(ran.record),
+          });
+        }
         const claims = requirement.evidence.structure.filter(
-          (claim) => claim.authority === "independently-generated",
+          (claim) =>
+            claim.authority === "independently-generated" || claim.authority === "user-acceptance",
         );
         for (const claim of claims) {
           const read = await structureEvidence(workspace, claim);
@@ -176,6 +215,7 @@ export function createTurnChecks(input: {
       known = new Map(
         newFailures.flatMap((id) => (files.has(id) ? [[id, files.get(id) ?? []]] : [])),
       );
+      newFailures.push(...(await keptFailures()));
       const none = `the declared tests show no new failure (${suite.map((one) => one.name).join(", ") || "none declared"})`;
       return {
         scope: "suite",
@@ -219,7 +259,7 @@ export function createTurnChecks(input: {
           if (now === "pass") known.delete(id);
           else known.set(id, [testPathOf(entry.file ?? "")]);
         }
-        const newFailures = [...known.keys()];
+        const newFailures = [...known.keys(), ...(await keptFailures())];
         const output = ran.exitCode === 0 ? "" : excerpt(ran.output, 1200);
         const none = `the tests your change reaches show no new failure (${files.length} file${files.length === 1 ? "" : "s"})`;
         return {
@@ -231,12 +271,19 @@ export function createTurnChecks(input: {
       }
       return {
         scope: "affected",
-        newFailures: [...known.keys()],
+        newFailures: [...known.keys(), ...(await keptFailures())],
         detail: "no test file reaches what changed",
         evidence: null,
       };
     },
 
+    /** Whether any declared test failed at the base: a change could make it pass, and witness R1. */
+    baseFailing: () =>
+      base.some((one) =>
+        typeof one === "number"
+          ? one !== 0
+          : one !== null && Object.values(one).some((entry) => entry.status === "fail"),
+      ),
     /** How many check commands the harness has run. */
     runs: () => runs,
     /** How many times the whole declared suite ran, the base's run included. */
@@ -251,21 +298,3 @@ function failuresDetail(newFailures: readonly string[], output: string, none: st
   const more = newFailures.length > 12 ? ` and ${newFailures.length - 12} more` : "";
   return `newly failing: ${newFailures.slice(0, 12).join(", ")}${more}\n${output}`;
 }
-
-const nodeTestFile = /\.(test|spec)\.[cm]?[jt]sx?$/;
-const pythonTestFile = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/;
-const testPattern = (conventions: TestConventions) =>
-  conventions.runner === "pytest" ? pythonTestFile : nodeTestFile;
-
-/** A report's file as a path to run: pytest's dotted module, turned to slashes, gets its suffix. */
-const testPathOf = (file: string) => (/\.[\w]+$/.test(file) ? file : `${file}.py`);
-
-/** Whether a test reported with `file` lives in `path`, as the verifier reads it. */
-function livesIn(file: string | null, path: string): boolean {
-  if (file === null) return false;
-  const stem = path.replace(/\.[^./]+$/, "");
-  return file === path || file === stem || file.startsWith(`${stem}/`);
-}
-
-const shellWord = (path: string) =>
-  /^[\w./@+-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;

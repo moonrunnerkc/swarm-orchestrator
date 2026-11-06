@@ -20,6 +20,8 @@ export interface RequirementRecord {
     readonly kind: Requirement["kind"];
     readonly structure: readonly Claim[];
     readonly behaviorAsked: boolean;
+    /** The user's command checks (`--accept-cmd`) that witness R1, by name. */
+    readonly checks?: readonly string[];
   };
 }
 
@@ -31,11 +33,12 @@ function holding(requirement: Requirement, held: RequirementRecord["held"]): Req
   const own = requirement.evidence.structure.filter(
     (claim) => !held.structure.some((one) => JSON.stringify(one) === JSON.stringify(claim)),
   );
+  const checks = [...new Set([...(held.checks ?? []), ...requirement.evidence.checks])];
   return {
     ...requirement,
     kind: held.kind,
     behaviorAsked: held.behaviorAsked,
-    evidence: { ...requirement.evidence, structure: [...held.structure, ...own] },
+    evidence: { ...requirement.evidence, structure: [...held.structure, ...own], checks },
   };
 }
 
@@ -45,8 +48,9 @@ export function withAuthored(
   kind: Requirement["kind"],
   structure: readonly Claim[],
   behaviorAsked = false,
+  checks: readonly string[] = [],
 ): RequirementRecord {
-  const held = { kind, structure, behaviorAsked };
+  const held = { kind, structure, behaviorAsked, checks };
   return {
     ...record,
     held,
