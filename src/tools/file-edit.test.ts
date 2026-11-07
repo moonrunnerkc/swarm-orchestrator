@@ -168,7 +168,7 @@ describe("where a SEARCH part parts from the file", () => {
     const file = ["a", "def f(", "    x,", "):", "    return x", "z"].join("\n");
     const search = ["def f(", "    x,", ") -> int:", "    return x"].join("\n");
     expect(whereItDiffers(file, search)).toBe(
-      '. Its first 2 line(s) match the file from line 2; its line 3 reads ") -> int:", where the file\'s line 4 reads "):".\n',
+      '. Its first 2 line(s) match the file from line 2; its line 3 reads ") -> int:", where the file\'s line 4 reads "):". The file\'s lines there, numbered as in the file:\n    2  def f(\n    3      x,\n    4  ):\n    5      return x\n    6  z\n',
     );
     const long = Array.from({ length: 50 }, (_, at) => `line ${at}`);
     const drifted = [...long.slice(0, 45), "  line 45", ...long.slice(46)].join("\n");
@@ -176,6 +176,49 @@ describe("where a SEARCH part parts from the file", () => {
       /its line 46 reads " {2}line 45", where the file's line 46 reads "line 45" \(they differ only in whitespace\)\. A SEARCH of 50 lines is hard to copy exactly/,
     );
     expect(whereItDiffers("q", "nothing here")).toBeNull();
+  });
+});
+
+// fix-tracemantle-c4dc276c4 (Arm B, rc.7, 2026-11-07): the model's own test had comment lines
+// between those its SEARCH named; each refusal showed one more of the file's lines, and the run
+// ended on three edits that never applied.
+describe("a SEARCH the file interleaves with lines it lacks", () => {
+  it("is shown the file's lines from where they part, to copy whole", () => {
+    const file = [
+      "def test_errors():",
+      "    # Test boolean error",
+      "    path.write_text(\"some-bool = 'yes'\")",
+      "    # Need to check which fields are in _BOOL_FIELDS.",
+      '    # Looking at config_loader.py: _BOOL_FIELDS = {"strict"}',
+      "    path.write_text(\"strict = 'yes'\")",
+      "    with pytest.raises(ConfigError) as excinfo:",
+      "        load_config(path)",
+      '    assert "must be true or false" in str(excinfo.value)',
+      "",
+      "def test_next():",
+    ].join("\n");
+    const search = [
+      "    # Test boolean error",
+      "    path.write_text(\"some-bool = 'yes'\")",
+      "    with pytest.raises(ConfigError) as excinfo:",
+      "        load_config(path)",
+      '    assert "must be true or false" in str(excinfo.value)',
+    ].join("\n");
+    const shown = whereItDiffers(file, search) ?? "";
+    expect(shown).toContain("its line 3 reads");
+    expect(shown).toContain(
+      [
+        "The file's lines there, numbered as in the file:",
+        "    2      # Test boolean error",
+        "    3      path.write_text(\"some-bool = 'yes'\")",
+        "    4      # Need to check which fields are in _BOOL_FIELDS.",
+        '    5      # Looking at config_loader.py: _BOOL_FIELDS = {"strict"}',
+        "    6      path.write_text(\"strict = 'yes'\")",
+        "    7      with pytest.raises(ConfigError) as excinfo:",
+        "    8          load_config(path)",
+        '    9      assert "must be true or false" in str(excinfo.value)',
+      ].join("\n"),
+    );
   });
 });
 
