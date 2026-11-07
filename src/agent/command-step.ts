@@ -6,6 +6,7 @@ import { readShellCommand } from "../tools/shell-command.ts";
 import { comparableOutput } from "./comparable-output.ts";
 import { type CommandFact, evidenceRef, excerptBytes } from "./exchange.ts";
 import { outputCap, truncate } from "./prompt.ts";
+import { reclaimWithheld } from "./reclaim.ts";
 
 export interface CommandStep {
   /** What the model reads next turn. */
@@ -68,6 +69,12 @@ export async function runCommandStep(input: {
       ? await input.chokepoint.edit(input.action.edit)
       : await input.chokepoint.run(input.action.command);
   const evidence = evidenceRef(outcome.record);
+  const reclaimed = await reclaimWithheld(
+    input.outputs.root,
+    input.withheld ?? [],
+    input.outputs.directory,
+    evidence,
+  );
   const bytes = Buffer.byteLength(outcome.output);
   let saved: string | null = null;
   if (bytes > excerptBytes) {
@@ -94,11 +101,19 @@ export async function runCommandStep(input: {
   // no such file each time, and the run stopped there.
   const named = isEdit
     ? []
-    : (input.withheld ?? []).filter((path) => command.includes(basename(path)));
-  const withheld = named.map(
-    (path) =>
-      `\n[${path} is the independent check written apart from your change. The harness withholds its source and lays it in only while it runs it, so it is not in the tree. What it reports after each change, its failing cases and their errors, is in the checks note; change the code until they pass.]`,
-  );
+    : (input.withheld ?? []).filter(
+        (path) => command.includes(basename(path)) && !reclaimed.some((one) => one.path === path),
+      );
+  const withheld = [
+    ...reclaimed.map(
+      (one) =>
+        `\n[${one.path} holds an independent check the harness lays in only while it runs it: the harness put the path back, and ${one.kept === null ? "nothing you did there was kept" : `what you wrote is in ${one.kept}`}. Write a test of your own at another path.]`,
+    ),
+    ...named.map(
+      (path) =>
+        `\n[${path} is the independent check written apart from your change. The harness withholds its source and lays it in only while it runs it, so it is not in the tree. What it reports after each change, its failing cases and their errors, is in the checks note; change the code until they pass.]`,
+    ),
+  ];
   return {
     note: `${again}${status}\n${truncate(outcome.output)}${where}${withheld.join("")}`,
     fact: {
