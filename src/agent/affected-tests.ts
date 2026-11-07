@@ -169,20 +169,37 @@ const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 /** A runner's own lines naming what failed: pytest's and vitest's summaries, an assertion. */
 const summaryLine = /^(?:FAILED|ERROR) |^\s*FAIL |^E\s+\S|AssertionError|^\s*[×✗] /;
 
+const oneLiner = /^(?:FAILED|ERROR) |^\s*FAIL |^\s*[×✗] /;
+
+/** The `E` lines pytest prints under "ERROR collecting": why a module could not be loaded. */
+function collectionErrors(lines: readonly string[]): Set<string> {
+  const found = new Set<string>();
+  let collecting = false;
+  for (const line of lines) {
+    if (/^_{3,} .* _{3,}$|^={3,}/.test(line)) collecting = / ERROR collecting /.test(line);
+    else if (collecting && /^E\s+\S/.test(line)) found.add(line);
+  }
+  return found;
+}
+
 /**
  * The end of a check's output, bounded, with the runner's failure summary kept ahead of it where
  * the end alone would cut it: a warning printed after pytest's summary (ironroot, 2026-11-06)
- * otherwise pushed out the one line that said what failed.
+ * otherwise pushed out the one line that said what failed. Why a module failed to load goes
+ * first: every failure downstream follows from it, and its summary line names only the module
+ * (t6, 2026-11-07).
  */
 export const excerpt = (text: string, bytes = 1800) => {
   const plain = text.replace(ansi, "");
   if (plain.length <= bytes) return plain;
   const tail = plain.slice(-bytes);
-  const lines = plain.split("\n").filter((line) => summaryLine.test(line) && !tail.includes(line));
-  // The runner's one-line summaries first: each names a case and why it failed.
-  const first = (line: string) => (/^(?:FAILED|ERROR) |^\s*FAIL |^\s*[×✗] /.test(line) ? 0 : 1);
+  const all = plain.split("\n");
+  const causes = collectionErrors(all);
+  const lines = new Set(all.filter((line) => summaryLine.test(line) && !tail.includes(line)));
+  // Then the runner's one-line summaries: each names a case and why it failed.
+  const rank = (line: string) => (causes.has(line) ? 0 : oneLiner.test(line) ? 1 : 2);
   const missing = [...lines]
-    .sort((a, b) => first(a) - first(b))
+    .sort((a, b) => rank(a) - rank(b))
     .map((line) => (line.length > 300 ? `${line.slice(0, 300)}...` : line));
   let kept = "";
   for (const line of missing) {

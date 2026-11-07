@@ -130,6 +130,23 @@ describe("a failing check in one line", () => {
     );
   });
 
+  // t6 (Arm B, rc.4, 2026-11-07): a re-export shim dropped a private name, 8 test modules failed
+  // to collect and 72 tests failed downstream. The one line saying why, "cannot import name
+  // '_entry_from_dict'", sat under a collection error; three FAILED lines and the tail filled
+  // the excerpt, and the model read only symptoms until the quiet stop.
+  it("keeps the error a collection failure printed, which no summary line states", async () => {
+    const output = await readFile(
+      join(import.meta.dirname, "fixtures", "t6-collection-errors-2026-11-07.txt"),
+      "utf8",
+    );
+    const shown = excerpt(output, 1200);
+    expect(shown).toContain(
+      "E   ImportError: cannot import name '_entry_from_dict' from 'tracemantle.core.history_io'",
+    );
+    expect(shown.length).toBeLessThanOrEqual(1600);
+    expect(shown.match(/cannot import name/g)).toHaveLength(1);
+  });
+
   it("joins its summary to the first output line that names what failed", () => {
     expect(
       failureLine("its authored test fails:\n\n   x\nFAILED tests/a.py::t - assert 4 == 2\nmore"),
