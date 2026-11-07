@@ -11,6 +11,7 @@ import {
 } from "swarm-verify";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import {
+  addedFailing,
   affectedTests,
   excerpt,
   failuresDetail,
@@ -24,7 +25,7 @@ import { type AuthoredTest, removeLaid } from "./check-author.ts";
 import { evidenceRef } from "./exchange.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 import type { TestConventions } from "./test-conventions.ts";
-import { runUserCheck, type UserCheck } from "./user-checks.ts";
+import { failingKept, runUserCheck, type UserCheck } from "./user-checks.ts";
 
 /** What the harness measured for one requirement on the tree as it stands. */
 export interface RequirementCheck {
@@ -74,15 +75,7 @@ export function createTurnChecks(input: {
     ...user.flatMap((one) => (one.path === null ? [] : [one.path])),
     ...(user.find((one) => one.support !== undefined)?.support ?? []).map((one) => one.path),
   ];
-  /** The user's behavior-preservation checks that fail now, which passed at the base. */
-  const keptFailures = async () => {
-    const failing: string[] = [];
-    for (const check of user.filter((one) => one.requirement === null)) {
-      const ran = await runUserCheck(chokepoint, workspace, check, "kept check");
-      if (ran.exitCode !== 0) failing.push(`${check.name} (${check.path ?? check.command})`);
-    }
-    return failing;
-  };
+  const keptFailures = () => failingKept(chokepoint, workspace, user);
 
   /** One declared test check with its runner's reporter: the report, or its exit code. */
   const measure = async (check: DeclaredCheck, label: string) => {
@@ -190,6 +183,7 @@ export function createTurnChecks(input: {
     /** The whole declared suite now, against the base: what newly fails. */
     async suite(): Promise<RegressionCheck> {
       const newFailures: string[] = [];
+      const added: string[] = [];
       const files = new Map<string, readonly string[]>();
       suiteRuns += 1;
       let output = "";
@@ -199,6 +193,7 @@ export function createTurnChecks(input: {
         evidence = evidenceRef(ran.record);
         const before = base[at] ?? null;
         if (report !== null && typeof before === "object" && before !== null) {
+          added.push(...addedFailing(before, report));
           for (const [id, entry] of Object.entries(before)) {
             if (entry.status !== "pass" || report[id]?.status === "pass") continue;
             newFailures.push(id);
@@ -216,7 +211,7 @@ export function createTurnChecks(input: {
       return {
         scope: "suite",
         newFailures,
-        detail: failuresDetail(newFailures, output, none),
+        detail: failuresDetail(newFailures, output, none, added),
         evidence,
       };
     },
@@ -261,7 +256,7 @@ export function createTurnChecks(input: {
         return {
           scope: "affected",
           newFailures,
-          detail: failuresDetail(newFailures, output, none),
+          detail: failuresDetail(newFailures, output, none, addedFailing(before, report)),
           evidence: evidenceRef(ran.record),
         };
       }

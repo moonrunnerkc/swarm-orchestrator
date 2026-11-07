@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
+import type { TestReport } from "swarm-verify";
 import { gitText } from "./git.ts";
 import type { TestConventions } from "./test-conventions.ts";
 
@@ -191,12 +192,30 @@ export const excerpt = (text: string, bytes = 1800) => {
   return kept.length === 0 ? `...${tail}` : `${kept}...${plain.slice(-(bytes - kept.length))}`;
 };
 
+/** Tests the report has that the base's did not, failing now: tests the change adds that fail. */
+export function addedFailing(before: TestReport, now: TestReport | null): string[] {
+  return Object.entries(now ?? {})
+    .filter(([id, entry]) => entry.status === "fail" && before[id] === undefined)
+    .map(([id]) => id);
+}
+
+/**
+ * What newly fails against the base, and the tests the change adds that fail, with the run's
+ * output. A test the change adds broke nothing at the base, but its error is the model's to read
+ * (c4dc276c4, 2026-11-06: an import error in its own test file was reported as no failure).
+ */
 export function failuresDetail(
   newFailures: readonly string[],
   output: string,
   none: string,
+  added: readonly string[] = [],
 ): string {
-  if (newFailures.length === 0) return none;
-  const more = newFailures.length > 12 ? ` and ${newFailures.length - 12} more` : "";
-  return `newly failing: ${newFailures.slice(0, 12).join(", ")}${more}\n${output}`;
+  if (newFailures.length === 0 && added.length === 0) return none;
+  const list = (ids: readonly string[]) =>
+    `${ids.slice(0, 12).join(", ")}${ids.length > 12 ? ` and ${ids.length - 12} more` : ""}`;
+  return [
+    newFailures.length === 0 ? none : `newly failing: ${list(newFailures)}`,
+    ...(added.length === 0 ? [] : [`tests the change adds that fail: ${list(added)}`]),
+    output,
+  ].join("\n");
 }

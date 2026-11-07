@@ -81,6 +81,20 @@ export async function runUserCheck(
     : laid(workspace, [{ path: check.path, content: check.content }, ...(check.support ?? [])], go);
 }
 
+/** The user's behavior-preservation checks (`keep=`) that fail now, which passed at the base. */
+export async function failingKept(
+  chokepoint: Chokepoint,
+  workspace: string,
+  user: readonly UserCheck[],
+): Promise<string[]> {
+  const failing: string[] = [];
+  for (const check of user.filter((one) => one.requirement === null)) {
+    const ran = await runUserCheck(chokepoint, workspace, check, "kept check");
+    if (ran.exitCode !== 0) failing.push(`${check.name} (${check.path ?? check.command})`);
+  }
+  return failing;
+}
+
 /**
  * Each supplied check run at the base, before any edit, as an authored one is: a check that
  * witnesses a requirement must fail there (a check that already passes cannot show the change),

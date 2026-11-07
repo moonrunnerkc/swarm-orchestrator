@@ -78,6 +78,18 @@ describe("the declared suite runs whole only where a completion is at stake", ()
     );
   });
 
+  // fix-tracemantle-c4dc276c4 (Arm B, 2026-11-06): the model's own test file failed to import, no
+  // test that passed at the base broke, and the note said only that nothing newly failed. The
+  // model spent its last turns looking for an error it was never shown.
+  it("shows a test the change adds that fails, with what it printed", async () => {
+    const broken = `import { test } from "node:test";\nimport { thrice } from "../twice.mjs";\ntest("thrice", () => thrice(1));\n`;
+    const model = scripted([write("test/thrice.test.mjs", broken), bash("ls")]);
+    await (await fixture(modules)).run(model, { maxSteps: 2 });
+    const shown = model.seen[1]?.at(-1)?.content ?? "";
+    expect(shown).toContain("tests the change adds that fail: ");
+    expect(shown).toMatch(/does not provide an export named 'thrice'/);
+  });
+
   // t6 (Arm B, 2026-11-06): warned that one more quiet turn ended the run, the model sent its fix
   // in a reply refused for its form, and the refusal was counted as that quiet turn.
   it("does not count a reply refused for its form as a turn that changed nothing", async () => {
