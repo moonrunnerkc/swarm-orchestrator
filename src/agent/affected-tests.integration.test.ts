@@ -105,4 +105,24 @@ describe("the declared suite runs whole only where a completion is at stake", ()
     expect(model.seen[4]?.at(-1)?.content).toContain("more than one fenced block");
     expect(ran.report.state).toBe("complete");
   });
+
+  // fix-tracemantle-c4dc276c4 (Arm B, rc.6, 2026-11-07): the user's check passed, the task asked
+  // for tests, so R1 stayed open and the whole suite never ran. The change broke a test that runs
+  // the CLI as a process, which no import reaches, and the model was never told.
+  it("runs the suite once the independent checks pass, though the task still asks for tests", async () => {
+    const cli = {
+      "cli.mjs": 'import { twice } from "./twice.mjs";\nconsole.log(twice(3));\n',
+      "test/cli.test.mjs": `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { execFileSync } from "node:child_process";\ntest("the cli prints 6", () => assert.equal(execFileSync(process.execPath, ["cli.mjs"], { encoding: "utf8" }), "6\\n"));\n`,
+    };
+    const fixAndBreak = bash(
+      [
+        "cat > half.mjs <<'EOF'\nexport const half = (n) => n / 2;\nEOF",
+        "cat > cli.mjs <<'EOF'\nimport { twice } from \"./twice.mjs\";\nconsole.log(twice(3), 'loaded');\nEOF",
+      ].join("\n"),
+    );
+    const model = scripted([fixAndBreak, bash("ls")]);
+    const probe = await fixture({ ...modules, ...cli }, "Make half(n) return n / 2, with a test.");
+    await probe.run(model, { maxSteps: 2 });
+    expect(model.seen[1]?.at(-1)?.content).toMatch(/newly failing: test\/cli\.test\.mjs/);
+  });
 });

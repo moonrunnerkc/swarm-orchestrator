@@ -36,7 +36,8 @@ export async function measureTree(
   diff = "",
   previous: string | null = null,
 ): Promise<Measured> {
-  const results = (await checks.requirements(record)).map((one) => {
+  const measured = await checks.requirements(record);
+  const results = measured.map((one) => {
     const asked = record.requirements.find((r) => r.id === one.requirement)?.testsAsked === true;
     if (!asked || one.status !== "passing" || testsTouched(diff).length > 0) return one;
     const detail = `the task asks for tests, and the change adds none yet: add them\n${one.detail}`;
@@ -46,8 +47,12 @@ export async function measureTree(
   const passing = checked.length > 0 && checked.every((one) => one.status === "passing");
   const changed = movedFiles(diffSections(previous ?? ""), diffSections(diff));
   let regression = await checks.affected(changed);
-  // The base's run is the first; the first completion's is the second, and the last here.
-  if (passing && (regression?.newFailures.length ?? 0) === 0 && checks.suiteRuns() <= 1)
+  // The base's run is the first; the first completion's is the second, and the last here. The
+  // completion is the independent checks', whether or not the task's tests are written yet: a
+  // test run as a process is reached by no import, and only the suite shows it (c4dc276c4).
+  const held = measured.filter((one) => one.status !== "none");
+  const witnessed = held.length > 0 && held.every((one) => one.status === "passing");
+  if (witnessed && (regression?.newFailures.length ?? 0) === 0 && checks.suiteRuns() <= 1)
     regression = await checks.suite();
   const ready =
     passing &&
