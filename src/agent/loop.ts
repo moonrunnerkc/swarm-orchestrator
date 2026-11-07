@@ -63,6 +63,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let previous = { command: "", comparable: "", repeats: 0 };
   const cycles = treeCycles(repeatLimit);
   let malformed = 0;
+  let undone = false;
   let proposedLast = false;
   let measured: Measured | null = null;
   let measuredDiff: string | null = options.settled ?? null;
@@ -125,10 +126,12 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       }
     }
     // A turn that changed neither the tree nor any check's or the verifier's result made no progress.
-    // A reply refused for its form is not counted: the model has yet to read why (t6, 2026-11-06),
-    // and replies refused in a row end the run on their own count.
+    // A reply refused for its form, or an action the harness undid, is not counted: the model has
+    // yet to read why (t6, 2026-11-06; c4dc276c4, 2026-11-07). Replies refused in a row end the
+    // run on their own count.
     const key = `${diff}\u0000${measured?.key ?? ""}\u0000${findings ?? ""}`;
-    quiet = changedOnce && key === lastKey ? quiet + (malformed > 0 ? 0 : 1) : 0;
+    quiet = changedOnce && key === lastKey ? quiet + (malformed > 0 || undone ? 0 : 1) : 0;
+    undone = false;
     lastKey = key;
     const focus = focusOf(measured);
     if (quiet >= quietStop) {
@@ -237,6 +240,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         withheld: options.checks?.withheld ?? [],
       });
       previous = { command: ran.fact.command, comparable: ran.comparable, repeats: ran.repeats };
+      undone = ran.undone;
       if (ran.repeats >= repeatLimit) {
         return result(
           "no-progress",

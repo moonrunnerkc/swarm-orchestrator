@@ -18,6 +18,8 @@ export interface CommandStep {
   readonly comparable: string;
   /** For an edit, what an old turn shows in place of a long block; null for a command. */
   readonly brief: string | null;
+  /** Whether the harness put back a withheld path the action wrote. */
+  readonly undone: boolean;
 }
 
 /** Files one command can name in a digest line; the rest are left out. */
@@ -107,7 +109,7 @@ export async function runCommandStep(input: {
   const withheld = [
     ...reclaimed.map(
       (one) =>
-        `\n[${one.path} holds an independent check the harness lays in only while it runs it: the harness put the path back, and ${one.kept === null ? "nothing you did there was kept" : `what you wrote is in ${one.kept}`}. Write a test of your own at another path.]`,
+        `\n[${one.path} holds an independent check the harness lays in only while it runs it, so the harness put the path back. ${one.kept === null ? "Write a test of your own at another path." : `What you wrote is in ${one.kept}: move it from there to a test path of your own.`}]`,
     ),
     ...named.map(
       (path) =>
@@ -136,5 +138,6 @@ export async function runCommandStep(input: {
         ? `(a ${input.action.edit.mode} block for ${input.action.edit.path}; not repeated here)`
         : null,
     output: outcome.output,
+    undone: reclaimed.length > 0,
   };
 }

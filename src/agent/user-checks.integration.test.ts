@@ -74,7 +74,8 @@ describe("the user supplies the oracle", () => {
   // fix-tracemantle-c4dc276c4 (Arm B, rc.4, 2026-11-07): the model found the user's check path
   // empty, wrote its own test there, and edited it for five turns. The harness laid the user's
   // check over it for every run, so nothing ran the model's file; it was delivered, and the
-  // delivery collided with the user's own file at that path.
+  // delivery collided with the user's own file at that path. On rc.5 the two writes put back
+  // there counted as turns that changed nothing, and with a failed `mv` they ended the run.
   it("puts back a supplied check's path the model writes, keeping what it wrote apart", async () => {
     const probe = await fixture(passingBase);
     await probe.put("test/half.accept.test.mjs", acceptance("half(10), 5"));
@@ -86,17 +87,19 @@ describe("the user supplies the oracle", () => {
     });
     const own = acceptance("half(4), 2").replace("the user's case", "the model's case");
     const model = scripted([
+      write("half.mjs", "export const half = (n) => n * 3;"),
       write("test/half.accept.test.mjs", own),
       bash(`cat > test/half.accept.test.mjs <<'EOF'\n${own}EOF`),
+      write("test/half.accept.test.mjs", own),
       fix,
     ]);
     const ran = await probe.run(model, { supplied });
 
     expect(ran.report.state).toBe("complete");
     expect(ran.report.changed.map((one) => one.path)).toEqual(["half.mjs"]);
-    for (const turn of [1, 2]) {
-      expect(model.seen[turn]?.at(-1)?.content).toContain(
-        "test/half.accept.test.mjs holds an independent check the harness lays in only while it runs it: the harness put the path back, and what you wrote is in .swarm/outputs/",
+    for (const turn of [2, 3, 4]) {
+      expect(model.seen[turn]?.at(-1)?.content).toMatch(
+        /test\/half\.accept\.test\.mjs holds an independent check the harness lays in only while it runs it, so the harness put the path back\. What you wrote is in \.swarm\/outputs\/\S+: move it from there to a test path of your own\./,
       );
     }
     expect(await readFile(join(probe.repo, "test/half.accept.test.mjs"), "utf8")).toContain(
