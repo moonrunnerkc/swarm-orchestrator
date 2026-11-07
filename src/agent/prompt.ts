@@ -105,6 +105,15 @@ const markerFence = new RegExp(
   "gm",
 );
 
+/**
+ * Two or more edit blocks naming one file: one edit, its pairs applied in the order sent.
+ * fix-tracemantle-c4dc276c4 (Arm B, rc.8, 2026-11-07) sent its test file's two changes so four
+ * replies running, each refused for two blocks, and the run ended as unusable replies.
+ */
+const oneFile = (edits: readonly { readonly language: string; readonly info: string }[]) =>
+  edits.length > 1 &&
+  edits.every((one) => one.language === "edit" && one.info.trim() === edits[0]?.info.trim());
+
 export function parseReply(reply: string): ParsedReply {
   const content = reply.replace(markerFence, completionMarker);
   const blocks = [...content.matchAll(fenced)].map((match) => ({
@@ -126,6 +135,18 @@ export function parseReply(reply: string): ParsedReply {
   // An edit or write block whose own text holds a fence closes early, and its rest reads as more.
   const fourBackticks =
     "where a block's text holds a line of three backticks, fence the block with four";
+  const sameFile = commands.length + records.length === 0 && oneFile(edits);
+  if (sameFile && !blocks.some((block) => block.language === "") && !/^`{3,}/m.test(outside)) {
+    const pairs: { search: string; replace: string }[] = [];
+    let path = "";
+    for (const one of edits) {
+      const read = readEditBlock(one.info, one.raw);
+      if ("malformed" in read) return { kind: "malformed", reason: read.malformed };
+      if (read.mode === "edit") pairs.push(...read.pairs);
+      path = read.path;
+    }
+    return { kind: "edit", edit: { mode: "edit", path, pairs } };
+  }
   if (commands.length + records.length + edits.length > 1) {
     // A bare fence after an edit or write block is that block's own text closing it early; two
     // whole blocks are two changes, which go in two replies (t6, 2026-11-03, sent two writes).
