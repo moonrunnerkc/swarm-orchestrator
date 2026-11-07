@@ -36,6 +36,27 @@ describe("the output the no-progress rule compares", () => {
     expect(same("\u001b[32m✓\u001b[39m half", "✓ half")).toBe(true);
   });
 
+  // cmp-feature-pubprep (Arm C, rc.9, 2026-11-07): the same `find . -type f | head -100` ran 49
+  // times; each run listed one more output the harness had saved under .swarm/outputs, so no two
+  // results compared equal and the repeat stop never came.
+  it("leaves out the harness's own files under .swarm/", () => {
+    const listing = (...saved: string[]) =>
+      ["./LICENSE", "./src/cli.ts", ...saved.map((one) => `./.swarm/outputs/${one}.txt`)].join(
+        "\n",
+      );
+    expect(same(listing("95c0a144c148ee23"), listing("95c0a144c148ee23", "c19707a9ccaf3b37"))).toBe(
+      true,
+    );
+    // As `ls` prints the directory's own names, a reclaimed copy among them.
+    expect(
+      same(
+        ".swarm/outputs:\n95c0a144c148ee23.txt",
+        ".swarm/outputs:\n95c0a144c148ee23.txt\nc19707a9ccaf3b37-test_config_loader.py",
+      ),
+    ).toBe(true);
+    expect(same("./src/cli.ts", "./src/cli.ts\n./src/new.ts")).toBe(false);
+  });
+
   it("keeps everything that says what happened", () => {
     expect(same(" Tests  2 passed (2)", " Tests  1 failed | 1 passed (2)")).toBe(false);
     expect(same("==== 3 passed in 0.12s ====", "==== 2 passed, 1 failed in 0.12s ====")).toBe(

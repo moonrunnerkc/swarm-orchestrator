@@ -22,8 +22,18 @@ const duration =
 // /tmp/x, /private/tmp/x, /var/folders/ab/cd/T/x, /private/var/folders/...
 const temporaryPath = /(?:\/private)?(?:\/tmp|\/var\/folders)\/[^\s'"`:)\]]*/g;
 
+/**
+ * A line naming the harness's own files: a path under `.swarm/`, or a name it saves an output or a
+ * put-back check under (`<evidence>.txt`, `<evidence>-<file>`). Each turn's long output is saved
+ * there, so a listing of the tree grows by a line every turn (cmp-feature-pubprep, 2026-11-07).
+ */
+const harnessLine = /(?:^|[\s/'"])\.swarm\/|^[0-9a-f]{16}(?:\.txt|-\S+)$/;
+
 export function comparableOutput(output: string): string {
   return stripVTControlCharacters(output)
+    .split("\n")
+    .filter((line) => !harnessLine.test(line.trim()))
+    .join("\n")
     .replace(temporaryPath, "<temporary path>")
     .replace(isoTimestamp, "<time>")
     .replace(clockTime, "<time>")
