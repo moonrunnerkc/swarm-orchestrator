@@ -91,6 +91,38 @@ describe("the harness runs the checks, not the model", () => {
   });
 });
 
+// cmp-feature-pubprep (Arm C, rc.10, 2026-11-07): at a 32k context the model read the same six
+// files in a cycle from step 9 to step 60 and never edited. No turn repeated the one before it,
+// so the repeat stop never fired, and the quiet stop starts at the first change.
+describe("rereading before the first change", () => {
+  const cycle = [bash("cat half.mjs"), bash("cat test/half.test.mjs"), bash("ls")];
+
+  it("is told after four rereads, and ends at the sixth, naming the check still failing", async () => {
+    const model = scripted([...cycle, ...cycle, ...cycle, ...cycle]);
+    const ran = await (await fixture()).run(model, { maxSteps: 40 });
+    expect(ran.stop).toBe("no-progress");
+    expect(ran.report.resources.steps).toBe(9);
+    expect(ran.report.reason).toMatch(
+      /^6 turns running re-ran a command whose output an earlier turn had already printed, before any change; R1's independent check fails at the base, and the tree was never changed$/,
+    );
+    expect(model.seen[7]?.at(-1)?.content).toContain(
+      "Your last 4 commands each printed what an earlier turn of this run had already printed.",
+    );
+  });
+
+  it("goes on where the model changes the tree before the sixth", async () => {
+    const model = scripted([
+      ...cycle,
+      ...cycle,
+      bash("cat half.mjs"),
+      bash("cat test/half.test.mjs"),
+      fix,
+    ]);
+    const ran = await (await fixture()).run(model, { maxSteps: 40 });
+    expect(ran.report.state).toBe("complete");
+  });
+});
+
 describe("reading the wording and the diff", () => {
   it("reads a request for tests, and not a test suite that must stay green", () => {
     expect(asksForTests("Fix it, with a test.")).toBe(true);

@@ -17,6 +17,7 @@ import type { LoopOptions, LoopResult, StopReason, Usage } from "./loop-types.ts
 import { createVerifyStep } from "./loop-verify.ts";
 import { stepsLeftNotice, systemPrompt, timeLeftNotice } from "./prompt.ts";
 import { runRequirementsStep } from "./requirements-step.ts";
+import { rereadNote, rereadReason, rereadStop, rereads } from "./rereads.ts";
 import { treeCycles } from "./tree-cycles.ts";
 import { noUsage } from "./usage.ts";
 
@@ -62,6 +63,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let longestTurnMs = 0;
   let previous = { command: "", comparable: "", repeats: 0 };
   const cycles = treeCycles(repeatLimit);
+  const reread = rereads();
   let malformed = 0;
   let undone = false;
   let proposedLast = false;
@@ -247,7 +249,10 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
           `the same command printed the same result ${ran.repeats} turns running`,
         );
       }
-      const shown = circlingNote(ran.note, ran.repeats, findings);
+      const command = parsed.kind === "edit" ? null : ran.fact.command;
+      const again = changedOnce ? 0 : reread(command, ran.comparable);
+      if (again >= rereadStop) return result("no-progress", rereadReason(again));
+      const shown = rereadNote(circlingNote(ran.note, ran.repeats, findings), again);
       conversation.add(commandExchange({ ...ran, reply: read.text, result: shown }));
       continue;
     }
