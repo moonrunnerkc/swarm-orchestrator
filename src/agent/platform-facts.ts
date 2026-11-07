@@ -90,8 +90,16 @@ function programs(facts: Readonly<Record<string, string>>): string[] {
   const present = keyed("have.").map(([name, line]) => `${name} ${versionOf(line)}`);
   const broken = keyed("broken.").map(([name]) => name);
   const containers = keyed("container.").map(([name]) => name);
+  // The workspace's own environment, with the project's dependencies, is not the python3 on PATH
+  // (c4dc276c4, 2026-11-06: pytest under python3 lacked the project's plugins).
+  const venv = facts["venv.python"];
   return [
     `- Programs found: ${present.join(", ") || "none of those probed"}.`,
+    ...(venv === undefined
+      ? []
+      : [
+          `- The project's Python: .venv/bin/python ${versionOf(venv)}. Run its tests and scripts with it (.venv/bin/python -m pytest), not with python3.`,
+        ]),
     ...(broken.length > 0 ? [`- On PATH but failing to start: ${broken.join(", ")}.`] : []),
     `- Container runtimes on PATH: ${containers.join(", ") || "none"}.`,
   ];

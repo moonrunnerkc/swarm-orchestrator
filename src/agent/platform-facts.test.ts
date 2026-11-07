@@ -82,6 +82,17 @@ describe("the platform block", () => {
     expect(text).toMatch(/\(and \d+ more\)\./);
   });
 
+  // fix-tracemantle-c4dc276c4 (Arm B, 2026-11-06): the block listed python3 3.14.7 and a .venv/
+  // entry, never which was the project's; the model ran pytest under python3, without the
+  // project's plugins, three turns running.
+  it("names the workspace's virtual environment as the Python to run the project with", () => {
+    const text = block({ ...darwin, "venv.python": "Python 3.13.13" }, [".venv/", "src/"]);
+    expect(text).toContain(
+      "- The project's Python: .venv/bin/python 3.13.13. Run its tests and scripts with it (.venv/bin/python -m pytest), not with python3.",
+    );
+    expect(block(darwin)).not.toContain("The project's Python");
+  });
+
   it("is the same text for the same probe, so its digest names it", () => {
     expect(block(darwin)).toBe(block(darwin));
   });

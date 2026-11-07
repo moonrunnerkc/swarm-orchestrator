@@ -39,6 +39,7 @@ for t in node npm npx pnpm yarn bun deno python3 python pip3 uv poetry go cargo 
     echo "broken.$t=$(printf '%s\\n' "$out" | head -n 1)"
   fi
 done
+[ -x .venv/bin/python ] && echo "venv.python=$(first .venv/bin/python --version)"
 for t in docker podman nerdctl; do command -v "$t" >/dev/null 2>&1 && echo "container.$t=$(command -v "$t")"; done
 exit 0
 `;
