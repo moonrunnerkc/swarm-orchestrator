@@ -6,7 +6,7 @@ import { readShellCommand } from "../tools/shell-command.ts";
 import { comparableOutput } from "./comparable-output.ts";
 import { type CommandFact, evidenceRef, excerptBytes } from "./exchange.ts";
 import { outputCap, truncate } from "./prompt.ts";
-import { reclaimWithheld } from "./reclaim.ts";
+import { reclaimNote, reclaimWithheld } from "./reclaim.ts";
 
 export interface CommandStep {
   /** What the model reads next turn. */
@@ -107,10 +107,7 @@ export async function runCommandStep(input: {
         (path) => command.includes(basename(path)) && !reclaimed.some((one) => one.path === path),
       );
   const withheld = [
-    ...reclaimed.map(
-      (one) =>
-        `\n[${one.path} holds an independent check the harness lays in only while it runs it, so the harness put the path back. ${one.kept === null ? "Write a test of your own at another path." : `What you wrote is in ${one.kept}: move it from there to a test path of your own.`}]`,
-    ),
+    ...reclaimed.map(reclaimNote),
     ...named.map(
       (path) =>
         `\n[${path} is the independent check written apart from your change. The harness withholds its source and lays it in only while it runs it, so it is not in the tree. What it reports after each change, its failing cases and their errors, is in the checks note; change the code until they pass.]`,

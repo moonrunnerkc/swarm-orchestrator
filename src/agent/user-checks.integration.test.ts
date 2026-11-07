@@ -99,7 +99,7 @@ describe("the user supplies the oracle", () => {
     expect(ran.report.changed.map((one) => one.path)).toEqual(["half.mjs"]);
     for (const turn of [2, 3, 4]) {
       expect(model.seen[turn]?.at(-1)?.content).toMatch(
-        /test\/half\.accept\.test\.mjs holds an independent check the harness lays in only while it runs it, so the harness put the path back\. What you wrote is in \.swarm\/outputs\/\S+: move it from there to a test path of your own\./,
+        /test\/half\.accept\.test\.mjs holds an independent check the harness lays in only while it runs it, so the harness put the path back\. What you wrote is in \.swarm\/outputs\/\S+: move it from there to another path, such as test\/half\.accept\.own\.test\.mjs; anything written at test\/half\.accept\.test\.mjs is put back\./,
       );
     }
     expect(await readFile(join(probe.repo, "test/half.accept.test.mjs"), "utf8")).toContain(

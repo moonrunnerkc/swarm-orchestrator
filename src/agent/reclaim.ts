@@ -52,3 +52,27 @@ export async function reclaimWithheld(
   }
   return reclaimed;
 }
+
+/** A path beside a withheld check's for the model's own test, which the runner still collects. */
+export function ownPath(path: string): string {
+  const marked = /\.(?:test|spec)\.[^./]+$/.exec(path);
+  if (marked !== null) return `${path.slice(0, marked.index)}.own${marked[0]}`;
+  const dot = path.lastIndexOf(".");
+  return dot > path.lastIndexOf("/")
+    ? `${path.slice(0, dot)}_own${path.slice(dot)}`
+    : `${path}_own`;
+}
+
+/**
+ * What the model reads after the harness put a withheld path back. fix-tracemantle-c4dc276c4
+ * (Arm B, rc.7, 2026-11-07) moved what it wrote back to the same path four times when told only
+ * to use "a test path of your own"; this names one.
+ */
+export function reclaimNote(one: Reclaimed): string {
+  const where = `another path, such as ${ownPath(one.path)}; anything written at ${one.path} is put back`;
+  const next =
+    one.kept === null
+      ? `Write a test of your own at ${where}.`
+      : `What you wrote is in ${one.kept}: move it from there to ${where}.`;
+  return `\n[${one.path} holds an independent check the harness lays in only while it runs it, so the harness put the path back. ${next}]`;
+}
