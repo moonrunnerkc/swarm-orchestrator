@@ -113,7 +113,12 @@ export function parseReply(reply: string): ParsedReply {
     raw: match[4] ?? "",
     body: (match[4] ?? "").trim(),
   }));
-  const commands = blocks.filter((block) => shells.has(block.language));
+  // A bash block of comments alone, beside another block, is prose that runs nothing (t6,
+  // 2026-11-06: notes ahead of the edit they described). A bare fence is not read so: it may be
+  // the rest of a write block's text, closed early on a line of its own.
+  const prose = (block: (typeof blocks)[number]) =>
+    blocks.length > 1 && block.language !== "" && !/^[ \t]*[^#\s]/m.test(block.body);
+  const commands = blocks.filter((block) => shells.has(block.language) && !prose(block));
   const records = blocks.filter((block) => block.language === "requirements");
   const edits = blocks.filter((block) => editors.has(block.language));
   const outside = content.replace(fenced, "");

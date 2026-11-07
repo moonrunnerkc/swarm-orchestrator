@@ -125,8 +125,10 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       }
     }
     // A turn that changed neither the tree nor any check's or the verifier's result made no progress.
+    // A reply refused for its form is not counted: the model has yet to read why (t6, 2026-11-06),
+    // and replies refused in a row end the run on their own count.
     const key = `${diff}\u0000${measured?.key ?? ""}\u0000${findings ?? ""}`;
-    quiet = changedOnce && key === lastKey ? quiet + 1 : 0;
+    quiet = changedOnce && key === lastKey ? quiet + (malformed > 0 ? 0 : 1) : 0;
     lastKey = key;
     const focus = focusOf(measured);
     if (quiet >= quietStop) {

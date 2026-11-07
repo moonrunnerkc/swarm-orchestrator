@@ -77,4 +77,20 @@ describe("the declared suite runs whole only where a completion is at stake", ()
       "The change breaks tests that passed at the base: test/twice.test.mjs::twice holds.",
     );
   });
+
+  // t6 (Arm B, 2026-11-06): warned that one more quiet turn ended the run, the model sent its fix
+  // in a reply refused for its form, and the refusal was counted as that quiet turn.
+  it("does not count a reply refused for its form as a turn that changed nothing", async () => {
+    const breakTwice = bash(
+      [
+        "cat > half.mjs <<'EOF'\nexport const half = (n) => n / 2;\nEOF",
+        "cat > twice.mjs <<'EOF'\nexport const twice = (n) => n * 3;\nEOF",
+      ].join("\n"),
+    );
+    const mend = write("twice.mjs", "export const twice = (n) => n * 2;");
+    const model = scripted([breakTwice, bash("ls"), bash("pwd"), `${mend}\n${bash("ls")}`, mend]);
+    const ran = await (await fixture(modules)).run(model, { maxSteps: 25 });
+    expect(model.seen[4]?.at(-1)?.content).toContain("more than one fenced block");
+    expect(ran.report.state).toBe("complete");
+  });
 });

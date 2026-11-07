@@ -8,6 +8,7 @@ import {
   timeLeftNotice,
   truncate,
 } from "./prompt.ts";
+import { bash } from "./test-doubles.ts";
 
 describe("reading a reply", () => {
   it("takes the one bash block as the command", () => {
@@ -106,6 +107,18 @@ describe("reading an edit or write block", () => {
       kind: "malformed",
       reason: expect.stringContaining("the reply has more than one fenced block"),
     });
+  });
+
+  // t6 (Arm B, 2026-11-06): told one more quiet turn ended the run, gemma4:31b sent its fix as an
+  // edit block after a bash block of comments alone; the reply was refused for two blocks, and the
+  // run stopped with the fix unsent.
+  it("reads a bash block of comments alone beside another block as prose", () => {
+    const notes = "# First, fix the internal import\n\n# It was: x";
+    expect(parseReply(`${bash(notes)}\n\n${edit}`)).toMatchObject({ kind: "edit" });
+    // Alone, it is still the command it was: it runs, and prints nothing.
+    expect(parseReply(bash(notes))).toEqual({ kind: "command", command: notes });
+    // A block that runs something is a block, comments or not.
+    expect(parseReply(`${bash("# look\nls")}\n${edit}`)).toMatchObject({ kind: "malformed" });
   });
 
   it("describes both blocks in the system prompt", () => {
