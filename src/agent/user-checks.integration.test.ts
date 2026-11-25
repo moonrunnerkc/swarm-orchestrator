@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CheckReviewer } from "./check-gate.ts";
+import type { CheckReviewer } from "./check-review.ts";
 import { readSupplied } from "./supplied.ts";
 import { authoredHalf, bash, fixture, noAuthoredCheck, scripted, write } from "./test-doubles.ts";
 

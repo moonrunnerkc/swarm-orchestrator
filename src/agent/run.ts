@@ -87,7 +87,12 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     const progress: Progress = {
       model: options.model,
       loops: [],
-      record: initialRecord(options.task, stated.constraints, [...declared.notes, ...stated.notes]),
+      record: initialRecord(
+        options.task,
+        stated.constraints,
+        [...declared.notes, ...stated.notes],
+        options.obligations ?? [],
+      ),
       review: null,
       escalated: false,
     };
@@ -221,6 +226,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       digests,
       notes: [
         ...instructions.notes,
+        ...(gate?.notes ?? []),
         ...(progress.escalationNote === undefined
           ? []
           : [`Not escalated: ${progress.escalationNote}.`]),

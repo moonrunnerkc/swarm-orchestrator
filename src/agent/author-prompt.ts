@@ -59,20 +59,31 @@ export const authorPrompt = [
   "```test block for that behavior, as for a feature.",
 ].join("\n");
 
-/** What the author is shown: the requirement as recorded, and the repository's conventions. */
+/**
+ * What the author is shown: the requirement as recorded, and the repository's conventions. For an
+ * obligation, a part of the task set apart, the whole task is shown for context and the checks
+ * are for that part alone.
+ */
 export function authorRequest(
   requirement: Requirement,
   conventions: TestConventions | null,
+  task = requirement.text,
 ): string {
   const assumptions =
     requirement.assumptions.length === 0 ? "none" : requirement.assumptions.join("; ");
-  const head = [
-    `Task (${requirement.id}, as the user wrote it):`,
-    requirement.text,
-    "",
-    `Assumptions recorded: ${assumptions}`,
-    "",
-  ];
+  const head =
+    requirement.id === "R1"
+      ? [`Task (${requirement.id}, as the user wrote it):`, requirement.text, ""]
+      : [
+          "The whole task, as the user wrote it, for context:",
+          task,
+          "",
+          `Write the checks for this part of it alone (${requirement.id}, in the user's words):`,
+          requirement.text,
+          "The rest of the task has checks of its own; check nothing but this part.",
+          "",
+        ];
+  head.push(`Assumptions recorded: ${assumptions}`, "");
   if (conventions === null)
     return [
       ...head,

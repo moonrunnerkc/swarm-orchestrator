@@ -220,10 +220,13 @@ describe("swarm run against the stub endpoint", () => {
     const [file] = await readdir(profiles);
     const profile = JSON.parse(await readFile(join(profiles, file ?? ""), "utf8"));
     // And under R1's kind, here the default the check author's unusable reply left.
+    expect(profile.version).toBe(2);
     expect(profile.outcomes[`${endpoint}#stub`]).toEqual({
       complete: 0,
       other: 1,
-      kinds: { other: { complete: 0, other: 1 } },
+      legacyOther: 0,
+      unattributed: 0,
+      kinds: { other: { complete: 0, other: 1, unattributed: 0 } },
     });
   });
 
@@ -250,7 +253,8 @@ describe("swarm run against the stub endpoint", () => {
     const dev = JSON.parse(await readFile(join(profiles, `${host}@dev.json`), "utf8"));
     // Seeded from the default, so selection starts where the machine's record stands.
     expect(dev.profile).toBe("dev");
-    expect(dev.outcomes.kept).toEqual({ complete: 12, other: 2 });
+    expect(dev.outcomes.kept).toEqual({ complete: 12, other: 2, legacyOther: 2, unattributed: 0 });
+    expect(await readdir(profiles)).toHaveLength(2);
     expect(dev.outcomes[`${endpoint}#stub`]).toMatchObject({ complete: 0, other: 1 });
   });
 
@@ -261,5 +265,15 @@ describe("swarm run against the stub endpoint", () => {
     await stub.close();
     expect(ran.stdout).toContain("record       default, read only (--no-record)");
     await expect(readdir(join(root, "home", "profiles"))).rejects.toThrow();
+    // And where the machine has a record, it is left byte for byte as it was.
+    const profiles = join(root, "home", "profiles");
+    await mkdir(profiles, { recursive: true });
+    const seeded = '{"version": 1, "a record this build cannot read": ';
+    await writeFile(join(profiles, `${hostname()}.json`), seeded);
+    const again = await startStubModel();
+    await swarmRun(`http://127.0.0.1:${again.port}/v1`, ["--max-steps", "1", "--no-record"]);
+    await again.close();
+    expect(await readFile(join(profiles, `${hostname()}.json`), "utf8")).toBe(seeded);
+    expect(await readdir(profiles)).toEqual([`${hostname()}.json`]);
   });
 });

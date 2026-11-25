@@ -5,6 +5,7 @@ import type { Escalate } from "./agent/attempts.ts";
 import type { ChecksMode } from "./agent/check-gate.ts";
 import { gitText } from "./agent/git.ts";
 import { summaryLines } from "./agent/report.ts";
+import { obligationsOf } from "./agent/requirement-record.ts";
 import { type RunReport, runAgent } from "./agent/run.ts";
 import { readSupplied, type Supplied, SuppliedCheckError } from "./agent/supplied.ts";
 import { swarmHome } from "./agent/verification.ts";
@@ -13,7 +14,8 @@ import { UsageError } from "./cli-command-definitions.ts";
 import { recordFor } from "./cli-record.ts";
 import { terminalReviewer } from "./cli-review.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
-import { finishedOutcome, type Profile, recordOutcome } from "./runtime/profile.ts";
+import { attribute, recordOutcome } from "./runtime/outcomes.ts";
+import type { Profile } from "./runtime/profile.ts";
 import {
   NoModelError,
   type ResolvedModel,
@@ -74,6 +76,7 @@ export async function run(args: readonly string[]): Promise<number> {
       approve: { type: "string" },
       profile: { type: "string" },
       "no-record": { type: "boolean" },
+      require: { type: "string", multiple: true },
       accept: { type: "string", multiple: true },
       "accept-cmd": { type: "string", multiple: true },
       "accept-authored": { type: "boolean" },
@@ -88,6 +91,8 @@ export async function run(args: readonly string[]): Promise<number> {
       "--linked-dependencies needs --host: a container never runs on the workspace's installed dependencies",
     );
   }
+  const set = obligationsOf(task, values.require ?? []);
+  if (set.refused.length > 0) throw new UsageError(set.refused.join("; "));
   const workspace = resolve(values.workspace ?? process.cwd());
   // swarm.toml is optional: without one, the model is discovered and the defaults below apply.
   const agent = await readAgentConfig(workspace);
@@ -121,6 +126,8 @@ export async function run(args: readonly string[]): Promise<number> {
       `--write-checks needs a directory outside the repository, which is the tree the model works in: ${checksMode.directory}`,
     );
   write(`task         ${task}`);
+  for (const [at, text] of set.obligations.entries())
+    write(`requires     R${at + 2} ${JSON.stringify(text)}`);
   write(`record       ${record.name}${record.writes ? "" : ", read only (--no-record)"}`);
   let model: ResolvedModel;
   let contextTokens: number;
@@ -156,6 +163,7 @@ export async function run(args: readonly string[]): Promise<number> {
     // Only the user changes what existing tests may expect; nothing the model says can.
     behaviorChange: values["authorize-behavior-change"] === true ? "authorized" : "none",
     review: values.review === true,
+    obligations: set.obligations,
     supplied,
     checksMode,
     cost: model.cost,
@@ -175,14 +183,10 @@ export async function run(args: readonly string[]): Promise<number> {
     signal: controller.signal,
     log: (line) => process.stderr.write(`${line}\n`),
   });
-  // A finished run joins its model's record here, which selection reads once there are enough.
-  const finished = finishedOutcome({
-    stop: ran.stop,
-    state: ran.report.state,
-    escalated: ran.report.resources.escalations > 0,
-  });
+  // A finished run joins its model's record here. Selection reads what the model completed or
+  // stopped short of on its own; a run that measures nothing about it is tallied apart.
   const kind = ran.report.requirements.find((one) => one.id === "R1")?.kind ?? null;
-  if (finished !== null) await recordOutcome(record, model.digest, finished, kind);
+  await recordOutcome(record, model.digest, attribute(ran.stop, ran.report), kind);
   for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
   write(`evidence     ${ran.sessionDirectory}`);
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);

@@ -62,16 +62,19 @@ export async function authorChecks(input: {
   readonly evidence: EvidenceRecorder;
   readonly workspace: string;
   readonly requirement: Requirement;
+  /** The whole task, which an obligation's author reads for context and its checks are held to. */
+  readonly task?: string;
   readonly conventions: TestConventions | null;
   readonly turnTokens: number;
   readonly signal?: AbortSignal | undefined;
 }): Promise<Authored> {
   const { requirement, conventions } = input;
+  const task = input.task ?? requirement.text;
   const path = conventions?.pathFor(requirement.id) ?? null;
   const command = path === null ? null : (conventions?.commandFor(path) ?? null);
   const messages: Message[] = [
     { role: "system", content: authorPrompt },
-    { role: "user", content: authorRequest(requirement, conventions) },
+    { role: "user", content: authorRequest(requirement, conventions, task) },
   ];
   const attempts: string[][] = [];
   let tokens = { inputTokens: 0, outputTokens: 0 };
@@ -126,7 +129,7 @@ export async function authorChecks(input: {
           ? {}
           : { failure: "no version constraint could be read from the task's wording" };
     } else if (parsed.kind === "refactor") {
-      const read = await claimsAtBase(input.workspace, parsed.claims ?? [], requirement.text);
+      const read = await claimsAtBase(input.workspace, parsed.claims ?? [], task);
       reasons.push(...read.reasons);
       if (parsed.claims === null) reasons.push("the reply has no ```claims block");
       if (reasons.length === 0) accepted = { structure: read.kept };
@@ -136,13 +139,7 @@ export async function authorChecks(input: {
       else if (parsed.test === null) reasons.push("the reply has no ```test block");
       else {
         const test = { requirement: requirement.id, path, command, content: parsed.test };
-        const ran = await runAtBase(
-          input.chokepoint,
-          input.workspace,
-          test,
-          requirement.text,
-          parsed.kind,
-        );
+        const ran = await runAtBase(input.chokepoint, input.workspace, test, task, parsed.kind);
         reasons.push(...ran.reasons);
         if (ran.reasons.length === 0)
           accepted = {

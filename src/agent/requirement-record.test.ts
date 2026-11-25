@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { applyProposal, initialRecord, recordSha256, withAuthored } from "./requirement-record.ts";
+import {
+  applyProposal,
+  initialRecord,
+  obligationsOf,
+  recordSha256,
+  withAuthored,
+} from "./requirement-record.ts";
 
 const task = "Add a --json option to status. Keep the text output as it is.";
 
@@ -32,20 +38,23 @@ describe("the requirement record", () => {
       kind: "feature",
     });
     expect(record.requirements[0]?.evidence.tests).toEqual([{ name: "json" }]);
-    expect(record.requirements[1]).toMatchObject({ id: "R2", source: "user" });
+    // Quoting the task does not make the model's own entry the user's requirement.
+    expect(record.requirements[1]).toMatchObject({ id: "R2", source: "inferred", required: false });
   });
 
-  it("records a requirement claiming to be the user's as inferred unless it quotes the task", () => {
+  it("records what the model adds as its own suggestion, never required, whatever it claims", () => {
     const record = applyProposal(
       task,
       initialRecord(task),
-      JSON.stringify([{ id: "R2", text: "Also add YAML", source: "user", kind: "feature" }]),
+      JSON.stringify([
+        { id: "R2", text: "Also add YAML", source: "user", kind: "feature", required: true },
+      ]),
     );
-    expect(record.requirements.map((one) => [one.id, one.source])).toEqual([
-      ["R1", "user"],
-      ["R2", "inferred"],
+    expect(record.requirements.map((one) => [one.id, one.source, one.required])).toEqual([
+      ["R1", "user", true],
+      ["R2", "inferred", false],
     ]);
-    expect(record.notes).toEqual(["R2 does not quote the task, so it is recorded as inferred"]);
+    expect(record.notes[0]).toMatch(/^R2 was added during the work/);
   });
 
   it("keeps the record and says why when a proposal does not parse or validate", () => {
@@ -171,5 +180,118 @@ describe("an upgrade whose author found a code change to check", () => {
       JSON.stringify([{ id: "R1", text: task, kind: "upgrade", behaviorAsked: false }]),
     );
     expect(next.requirements[0]?.behaviorAsked).toBe(true);
+  });
+});
+
+describe("the parts of the task the user set apart", () => {
+  const listed = [
+    "Rework the status command:",
+    "- add a --json option",
+    "- keep the text output as it is",
+    "2. document the option in the README",
+  ].join("\n");
+
+  it("reads each item of a list the task holds, in the task's own words", () => {
+    expect(obligationsOf(listed)).toEqual({
+      obligations: [
+        "add a --json option",
+        "keep the text output as it is",
+        "document the option in the README",
+      ],
+      refused: [],
+    });
+  });
+
+  it("does not split prose, or take one bullet for a list", () => {
+    expect(obligationsOf(task).obligations).toEqual([]);
+    expect(obligationsOf("Fix the parser.\n- see issue 12").obligations).toEqual([]);
+  });
+
+  it("takes a --require quote the task holds, and refuses a paraphrase or the whole task", () => {
+    expect(obligationsOf(task, ["Keep the text   output as it is"])).toEqual({
+      obligations: ["Keep the text output as it is"],
+      refused: [],
+    });
+    const refused = obligationsOf(task, ["keep stdout unchanged", task]).refused;
+    expect(refused[0]).toContain("does not quote the task");
+    expect(refused[1]).toContain("is the whole task");
+  });
+
+  it("names one obligation once, however it was set apart", () => {
+    expect(obligationsOf(listed, ["add a --json option"]).obligations).toHaveLength(3);
+  });
+
+  const start = initialRecord(listed, [], [], obligationsOf(listed).obligations);
+
+  it("records each as a required requirement of the user's, after R1", () => {
+    expect(start.requirements.map((one) => [one.id, one.source, one.required, one.text])).toEqual([
+      ["R1", "user", true, listed],
+      ["R2", "user", true, "add a --json option"],
+      ["R3", "user", true, "keep the text output as it is"],
+      ["R4", "user", true, "document the option in the README"],
+    ]);
+  });
+
+  it("keeps every obligation when a proposal leaves it out", () => {
+    const next = applyProposal(
+      listed,
+      start,
+      JSON.stringify([{ id: "R1", text: listed, kind: "feature" }]),
+    );
+    expect(next.requirements.map((one) => one.id)).toEqual(["R1", "R2", "R3", "R4"]);
+    expect(next.requirements.every((one) => one.required)).toBe(true);
+  });
+
+  it("refuses a proposal that rewords, downgrades or maps its own evidence onto one", () => {
+    const next = applyProposal(
+      listed,
+      start,
+      JSON.stringify([
+        { id: "R2", text: "add some option", kind: "feature" },
+        { id: "R3", text: "keep the text output as it is", kind: "other", required: false },
+        {
+          id: "R4",
+          text: "document the option in the README",
+          kind: "other",
+          evidence: { structure: [{ path: "README.md", contains: "--json" }] },
+        },
+      ]),
+    );
+    expect(next.requirements).toEqual(start.requirements);
+    expect(next.notes).toHaveLength(2);
+    expect(next.notes[0]).toContain("R2 is part of the task as the user wrote it");
+  });
+
+  it("holds the check stage's kind and claims on an obligation, by its id", () => {
+    const claim = {
+      path: "README.md",
+      contains: "--json",
+      authority: "independently-generated" as const,
+    };
+    const held = withAuthored(start, "other", [claim], false, [], "R4");
+    expect(held.requirements[3]?.evidence.structure).toEqual([claim]);
+    expect(held.requirements[0]?.evidence.structure).toEqual([]);
+    const next = applyProposal(
+      listed,
+      held,
+      JSON.stringify([{ id: "R9", text: "tidy", kind: "other" }]),
+    );
+    expect(next.requirements[3]?.evidence.structure).toEqual([claim]);
+    expect(next.requirements.at(-1)).toMatchObject({
+      id: "R9",
+      required: false,
+      source: "inferred",
+    });
+  });
+
+  it("gives a suggestion a new id of its own, never one already fixed", () => {
+    const next = applyProposal(
+      listed,
+      start,
+      JSON.stringify([{ id: "R3", text: "something else entirely", kind: "other" }]),
+    );
+    expect(next.requirements.find((one) => one.id === "R3")?.text).toBe(
+      "keep the text output as it is",
+    );
   });
 });

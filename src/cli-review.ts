@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline/promises";
-import type { CheckReviewer } from "./agent/check-gate.ts";
+import type { CheckReviewer } from "./agent/check-review.ts";
 
 /**
  * Shows each authored check with the requirement it witnesses and asks: approve it, edit it in

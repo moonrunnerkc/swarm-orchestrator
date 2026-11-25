@@ -54,6 +54,23 @@ async function filesUnder(directory: string): Promise<string[]> {
 
 const claimList = requirementSchema.shape.evidence.unwrap().shape.structure;
 
+/** The file a requirement's structure claims are written to and read back from. */
+export const claimsFile = (requirement: string) => `${requirement}.claims.json`;
+
+/**
+ * Inside a supplied directory, an obligation's checks are named for it: `R2.claims.json`, or any
+ * file under `R2/`, laid at its path below that. Everything else is as the directory was given.
+ */
+function placedFor(
+  relativePath: string,
+  given: string | null,
+): { readonly requirement: string | null; readonly path: string } {
+  const parts = relativePath.split("/");
+  const named = /^(R\d+)(?:\.claims\.json)?$/.exec(parts[0] ?? "")?.[1];
+  if (named === undefined) return { requirement: given, path: relativePath };
+  return { requirement: named, path: parts.length > 1 ? parts.slice(1).join("/") : relativePath };
+}
+
 /** Structure claims, where the file is a JSON array of them; null where it is not JSON at all. */
 export function claimsIn(text: string, source: string): Claim[] | null {
   let parsed: unknown;
@@ -96,18 +113,23 @@ export async function readSupplied(input: {
     if (listed.length === 0) throw new SuppliedCheckError(`${value} holds no file`);
     for (const file of listed) {
       const content = await readFile(file, "utf8");
+      const under = found.isDirectory() ? relative(absolute, file).split(sep).join("/") : null;
+      // A directory outside the repository names its obligations' checks; one inside it is the
+      // repository's own layout, where a directory called R2 is just a directory.
+      const named =
+        under !== null && inside(file) === null
+          ? placedFor(under, requirement)
+          : { requirement, path: under };
       const claims = file.endsWith(".json") ? claimsIn(content, file) : null;
       if (claims !== null) {
-        if (requirement === null)
+        if (named.requirement === null)
           throw new SuppliedCheckError(
             `${file}: structure claims witness a requirement, not keep=`,
           );
-        supplied.push({ kind: "claims", requirement, source: file, claims });
+        supplied.push({ kind: "claims", requirement: named.requirement, source: file, claims });
         continue;
       }
-      const path =
-        inside(file) ??
-        (found.isDirectory() ? relative(absolute, file).split(sep).join("/") : null);
+      const path = inside(file) ?? named.path;
       if (path === null)
         throw new SuppliedCheckError(
           `${file} is outside the repository: pass the directory that holds it at its repository path`,
@@ -117,7 +139,12 @@ export async function readSupplied(input: {
         throw new SuppliedCheckError(
           `${path} is the repository's own file as committed, which the model reads; supply a new file or your changed copy`,
         );
-      supplied.push({ kind: "file", requirement, path: path.split(sep).join("/"), content });
+      supplied.push({
+        kind: "file",
+        requirement: named.requirement,
+        path: path.split(sep).join("/"),
+        content,
+      });
     }
   }
   for (const spec of input.commands) {

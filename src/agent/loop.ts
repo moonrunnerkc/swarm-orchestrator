@@ -75,7 +75,6 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let changedOnce = false;
   let modelTests = 0;
   const turnsBy = new Map<string, number>();
-  const required = Math.max(1, record.requirements.filter((one) => one.required).length);
   const result = (stop: StopReason, why: string | null = null): LoopResult => ({
     stop,
     reason:
@@ -197,12 +196,6 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     steps += 1;
     const charged = focus ?? "R1";
     turnsBy.set(charged, (turnsBy.get(charged) ?? 0) + 1);
-    if (required > 1 && (turnsBy.get(charged) ?? 0) > Math.floor(options.maxSteps / required)) {
-      return result(
-        "step-budget",
-        `${charged} used its share of the turns with its checks still failing`,
-      );
-    }
     const { reply, read } = turn;
     if (reply.inputTokens !== null && prompt > 0) calibration = reply.inputTokens / prompt;
     const parsed = read.parsed;

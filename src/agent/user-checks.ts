@@ -31,8 +31,8 @@ interface LaidFile {
 
 export interface Validated {
   readonly checks: readonly UserCheck[];
-  /** Structure claims for R1, each holding or not at the base; at least one must not. */
-  readonly claims: readonly Claim[];
+  /** Structure claims by the requirement they witness; of each set, at least one fails at the base. */
+  readonly claims: readonly { readonly requirement: string; readonly claim: Claim }[];
   /** Why a supplied check cannot witness what it was supplied for, one line each. */
   readonly refused: readonly string[];
 }
@@ -108,7 +108,7 @@ export async function validateSupplied(input: {
   readonly supplied: readonly Supplied[];
 }): Promise<Validated> {
   const checks: UserCheck[] = [];
-  const claims: Claim[] = [];
+  const claims: { requirement: string; claim: Claim }[] = [];
   const refused: string[] = [];
   // A supplied file the runner would not collect is a fixture its tests read, not a check.
   const isTest = (path: string) =>
@@ -130,7 +130,7 @@ export async function validateSupplied(input: {
         refused.push(
           `${one.source}: every claim already holds at the base, so none can show the change`,
         );
-      else claims.push(...one.claims);
+      else claims.push(...one.claims.map((claim) => ({ requirement: one.requirement, claim })));
       continue;
     }
     const label = one.kind === "file" ? one.path : one.command;

@@ -63,7 +63,7 @@ const sub = (text: string) => `${"".padEnd(12)} ${text.padEnd(8)}`;
 export function summaryRequirementLines(one: RequirementOutcome): string[] {
   const held = heldTo(one);
   return [
-    `${label(one.id)} ${"asked".padEnd(8)} ${one.text}`,
+    `${label(one.id)} ${(one.required ? "asked" : "suggested").padEnd(8)} ${one.text}`,
     `${sub("read as")} ${readingOf(one)}`,
     ...(held === null ? [] : [`${sub("held to")} ${held}`]),
     `${sub("status")} ${one.status}, witness ${one.witness}${one.limitation === null ? "" : `: ${one.limitation}`}`,
@@ -79,5 +79,5 @@ export const requirementTableHeader = [
 
 export function requirementRow(one: RequirementOutcome): string {
   const evidence = one.evidence.map((ref) => `${ref.ref} (${ref.outcome}, ${ref.authority})`);
-  return `| ${one.id}: ${cell(one.text)} | ${one.source} | ${cell(readingOf(one))} | ${cell(heldTo(one) ?? "")} | ${one.status} | ${one.witness} | ${cell(evidence.join("; ") || "none")} | ${cell(one.limitation ?? "")} |`;
+  return `| ${one.id}: ${cell(one.text)} | ${one.source}, ${one.required ? "required" : "a suggestion, not required"} | ${cell(readingOf(one))} | ${cell(heldTo(one) ?? "")} | ${one.status} | ${one.witness} | ${cell(evidence.join("; ") || "none")} | ${cell(one.limitation ?? "")} |`;
 }

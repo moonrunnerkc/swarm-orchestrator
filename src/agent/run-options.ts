@@ -37,6 +37,11 @@ export interface RunOptions {
   readonly behaviorChange?: "none" | "authorized";
   /** One fresh-context review of a completed change; off unless asked for. */
   readonly review?: boolean;
+  /**
+   * The parts of the task the user set apart, in the task's own words (list items it holds and
+   * `--require` quotes): each is a required requirement of its own, after R1.
+   */
+  readonly obligations?: readonly string[];
   /** The user's own checks (`--accept`, `--accept-cmd`), read before the workspace opens. */
   readonly supplied?: readonly Supplied[];
   /** What happens to the author's checks; used as written where not said. */

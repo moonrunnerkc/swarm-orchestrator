@@ -7,7 +7,7 @@ export interface Measured {
   readonly checks: readonly RequirementCheck[];
   /** The tests the change reaches, or the whole suite where a completion was at stake; null where neither could run. */
   readonly regression: RegressionCheck | null;
-  /** Every required requirement has an independent check, each passes, nothing newly fails. */
+  /** Every independent check there is passes, and nothing newly fails. */
   readonly ready: boolean;
   /** No required requirement has an independent check: the model's completion is verified as asked. */
   readonly unchecked: boolean;
@@ -54,10 +54,8 @@ export async function measureTree(
   const witnessed = held.length > 0 && held.every((one) => one.status === "passing");
   if (witnessed && (regression?.newFailures.length ?? 0) === 0 && checks.suiteRuns() <= 1)
     regression = await checks.suite();
-  const ready =
-    passing &&
-    results.every((one) => one.status !== "none") &&
-    (regression?.newFailures.length ?? 0) === 0;
+  // A requirement with no check here is the verifier's to judge from what the model maps to it.
+  const ready = passing && (regression?.newFailures.length ?? 0) === 0;
   const key = JSON.stringify([
     results.map((one) => [one.requirement, one.status, one.detail]),
     regression?.newFailures ?? null,
