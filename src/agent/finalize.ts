@@ -115,10 +115,17 @@ export async function finalize(input: FinalizeInput): Promise<Finalized> {
       `the working tree changed after it was snapshotted (sha256 ${again.sha256}); the result describes ${snapshot.sha256} only`,
     );
   const requirements = result?.requirements ?? unmeasured(input.record, unrun);
+  // The verifier's state is its own answer; whether its evidence was published is another, and a
+  // run is not complete on evidence nobody can inspect.
+  const undelivered = result?.delivery.status === "failed";
+  if (undelivered)
+    notes.push(
+      `the verifier did not publish its evidence, so the run is not complete: ${result?.delivery.problems.join("; ")}`,
+    );
   const state =
     input.blocked != null
       ? "blocked"
-      : result === null || moved
+      : result === null || moved || undelivered
         ? result?.state === "blocked"
           ? "blocked"
           : "incomplete"

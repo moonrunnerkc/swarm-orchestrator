@@ -186,6 +186,7 @@ export async function run(args: readonly string[]): Promise<number> {
   for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
   write(`evidence     ${ran.sessionDirectory}`);
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
+  if (ran.report.attestationKey !== null) write(`key          ${ran.report.attestationKey}`);
   return exitCodeOf(ran.report.state, ran.report.requirements);
 }
 

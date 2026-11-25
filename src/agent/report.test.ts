@@ -18,6 +18,8 @@ const report: RunReportFile = {
   regression: "unresolved",
   execution: null,
   attestation: null,
+  attestationKey: null,
+  evidenceDelivery: null,
   startingState: { head: "h", base: "b", edits: [], python: null },
   delivery: { applied: true },
   instructions: [],

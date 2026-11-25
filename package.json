@@ -29,13 +29,13 @@
     "swarm": "dist/cli.js"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "node scripts/build-dist.mjs",
     "dev": "mkdir -p .swarm/dev-workspace && node src/cli.ts --workspace .swarm/dev-workspace",
     "format": "biome format --write",
-    "gates": "npm run checks && npm run caps && npm run typecheck && npm run lint && npm test",
+    "gates": "npm run checks && npm run caps && npm run typecheck && npm run lint && npm run unused && npm test",
     "checks": "node scripts/check-doc-paths.mjs",
     "lint": "biome check",
     "prepare": "npm run build",
@@ -44,18 +44,20 @@
     "test:integration": "SWARM_TEST_PROFILE=integration vitest run",
     "test:unit": "SWARM_TEST_PROFILE=unit vitest run",
     "typecheck": "tsc --noEmit",
-    "caps": "node scripts/check-caps.mjs"
+    "caps": "node scripts/check-caps.mjs",
+    "unused": "knip --no-config-hints && knip --production --include files,dependencies --no-config-hints"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
     "@types/node": "^24.13.3",
     "@vitest/coverage-v8": "4.1.11",
+    "knip": "6.48.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   },
   "dependencies": {
     "smol-toml": "^1.8.0",
-    "swarm-verify": "2.1.0",
+    "swarm-verify": "3.1.0",
     "zod": "^4.4.3"
   },
   "license": "ISC",

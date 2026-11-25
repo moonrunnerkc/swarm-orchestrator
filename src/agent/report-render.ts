@@ -85,7 +85,7 @@ function changedLine(changed: RunReportFile["changed"]): string {
 }
 
 /** What was written apart from the change for one requirement, or why nothing was. */
-export function authoringLine(one: RunReportFile["authoring"][number]): string {
+function authoringLine(one: RunReportFile["authoring"][number]): string {
   const what = [
     ...(one.test === null ? [] : [`a test, run from ${one.test}`]),
     ...(one.claims === 0 ? [] : [`${one.claims} structure claim(s)`]),
@@ -131,7 +131,7 @@ export function renderMarkdown(report: RunReportFile): string {
     `- Applied to the workspace: ${report.delivery.applied ? "yes" : `no, ${report.delivery.reason}`}.`,
     `- Regression: ${report.regression ?? "not measured"}.`,
     `- Execution: ${report.execution ?? "not measured"}.`,
-    `- Attestation: ${report.attestation ?? "none"}.`,
+    `- Attestation: ${report.attestation ?? "none"}${report.attestationKey === null ? "" : `, verified with ${report.attestationKey}`}${report.evidenceDelivery === null ? "" : ` (evidence ${report.evidenceDelivery})`}.`,
     `- Instructions loaded: ${report.instructions.map((one) => `${one.path} (sha256 ${one.sha256})`).join(", ") || "none"}.`,
     `- Resources: ${report.resources.steps} model turn(s); ${report.resources.inputTokens} input and ${report.resources.outputTokens} output token(s)${report.resources.estimatedTurns > 0 ? ` (${report.resources.estimatedTurns} turn(s) estimated from text)` : " (reported by the runtime)"}; ${inferenceOf(report.resources)} and ${Math.round(report.resources.wallMs / 1000)} s of wall time; ${report.resources.retries} retried request(s); ${report.resources.escalations} escalation(s); ${report.resources.verifications} verification(s) in the loop; cost: ${report.resources.cost}.`,
     ...(report.review === null ? [] : [`- Review: ${reviewLine(report.review)}.`]),

@@ -63,6 +63,10 @@ export interface RunReportFile {
   readonly regression: string | null;
   readonly execution: string | null;
   readonly attestation: string | null;
+  /** The public key the attestation verifies against: what `swarm-verify replay --key` takes. */
+  readonly attestationKey: string | null;
+  /** Whether the verifier published its evidence: signed, unsigned or failed; null where none ran. */
+  readonly evidenceDelivery: string | null;
   /**
    * The user's tree as the run began: HEAD, the paths of their own uncommitted edits, and the
    * worktree's Python environment, null where the project has none.
@@ -200,6 +204,8 @@ export function assembleReport(input: {
         : `${result.regression.status}${inherited > 0 ? ` (${inherited} inherited failure(s))` : ""}`,
     execution: result?.execution.statement ?? null,
     attestation: result?.evidence.bundle ?? null,
+    attestationKey: result?.evidence.publicKey ?? null,
+    evidenceDelivery: result?.delivery.status ?? null,
     startingState: {
       head: input.start.head,
       base: input.start.base,

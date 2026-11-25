@@ -6,7 +6,7 @@ import { swarmHome } from "./agent/verification.ts";
 import { describeRunningVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
 import { recordFor } from "./cli-record.ts";
-import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
+import { diagnose, remediesFor } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
 import { surveyModels } from "./runtime/survey.ts";
@@ -36,8 +36,7 @@ export async function doctor(options: DoctorCommand): Promise<number> {
 
   const findings = diagnose(snapshot);
   const remedies = remediesFor(findings);
-  const report = [...findings, runtimeFinding(process.version)];
-  for (const line of describeInstall(report, remedies.length > 0 && !options.fix)) {
+  for (const line of describeInstall(findings, remedies.length > 0 && !options.fix)) {
     process.stdout.write(`${line}\n`);
   }
 
