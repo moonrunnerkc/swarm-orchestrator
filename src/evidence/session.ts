@@ -4,7 +4,7 @@ import { type BlobStore, openBlobStore } from "./blob-store.ts";
 import type { JsonValue } from "./canonical-json.ts";
 import { type ChainHead, type Ledger, openLedger } from "./ledger.ts";
 import type { LedgerRecord, ProvenanceTag, RecordType } from "./ledger-record.ts";
-import { scrubJson } from "./scrub-json.ts";
+import { scrubJson } from "./scrub.ts";
 
 interface EvidenceEntry {
   readonly type: RecordType;
