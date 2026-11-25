@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Eligibility } from "./capacity.ts";
 import type { InstalledModel } from "./ollama.ts";
+import { withOutcome } from "./outcomes.ts";
 import type { Profile } from "./profile.ts";
 import { type Candidate, choose, escalationFor, probedEnough } from "./select.ts";
 
@@ -38,7 +39,7 @@ const candidate = (
   },
 });
 const profile = (outcomes: Profile["outcomes"] = {}): Profile => ({
-  version: 1,
+  version: 2,
   machine: { hostname: "h", platform: "darwin", arch: "arm64", totalMemory: 1 },
   probes: {},
   outcomes,
@@ -97,6 +98,68 @@ describe("choosing a model", () => {
       "2 finished tasks recorded for it here (1 complete), too few to rank by",
     );
     expect(choice?.reason).not.toContain("no finished tasks");
+  });
+});
+
+// 2026-11-05: gemma4:31b, 12 of 14 finished tasks complete here, went under the even prior for
+// untried models after a day of development runs that ended for want of independent evidence,
+// each counted against it, and `auto` then chose a worse model.
+describe("runs that do not measure the model", () => {
+  const good = profile({ "digest-gemma": { complete: 12, other: 2, legacyOther: 2 } });
+  const both = [candidate("gemma", 3.1e10), candidate("untried", 2e10)];
+  const elevenMore = (outcome: "model" | "unattributed") =>
+    Array.from({ length: 11 }).reduce<Profile>(
+      (before) => withOutcome(before, "digest-gemma", outcome, "fix"),
+      good,
+    );
+
+  it("leave a good record ranked above an untried model, and are said in the reason", () => {
+    const records = elevenMore("unattributed");
+    expect(records.outcomes["digest-gemma"]).toMatchObject({
+      complete: 12,
+      other: 2,
+      unattributed: 11,
+    });
+    const choice = choose(both, records, 32768);
+    expect(choice?.chosen.eligibility.model.name).toBe("gemma");
+    expect(choice?.reason).toMatch(/^the best record here: 86% of its finished tasks complete/);
+    expect(choice?.reason).toContain(
+      "; 11 runs here ended for reasons not attributed to the model and are not counted",
+    );
+    expect(choice?.reason).toContain(
+      "; 2 of its unfinished tasks were recorded before runs were attributed and still count",
+    );
+    // Probing has no reason to go past it either.
+    expect(probedEnough([candidate("gemma", 3.1e10)], [model("untried", 2e10)], records)).toBe(
+      true,
+    );
+  });
+
+  it("where the same runs counted against it, as they did, the untried model was chosen", () => {
+    const choice = choose(both, elevenMore("model"), 32768);
+    expect(choice?.chosen.eligibility.model.name).toBe("untried");
+    expect(choice?.reason).toMatch(/^ranked above gemma \(12 of 25 finished tasks complete\)/);
+  });
+
+  it("are not finished tasks: a model with nothing else has no record to rank by", () => {
+    const records = profile({ "digest-large": { complete: 0, other: 0, unattributed: 4 } });
+    const choice = choose([candidate("large", 3e10), candidate("small", 4e9)], records, 32768);
+    expect(choice?.chosen.eligibility.model.name).toBe("large");
+    expect(choice?.reason).toContain("no finished tasks recorded for it here yet; 4 runs here");
+  });
+
+  it("do not move whom a stalled run is handed to", () => {
+    const kinds = (complete: number, other: number, unattributed: number) => ({
+      complete,
+      other,
+      unattributed,
+      kinds: { fix: { complete, other, unattributed } },
+    });
+    const records = profile({ "digest-gemma": kinds(5, 1, 9), "digest-qwen": kinds(2, 0, 0) });
+    const alternatives = [{ name: "qwen", digest: "digest-qwen" }];
+    expect(escalationFor("digest-gemma", alternatives, records, "fix").reason).toContain(
+      "against 5 of 6 fix task(s) complete",
+    );
   });
 });
 

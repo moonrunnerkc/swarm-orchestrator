@@ -1,5 +1,6 @@
 import { eligibility } from "./capacity.ts";
 import { listOllama, ollamaBase, ollamaChat, ollamaVersion } from "./ollama.ts";
+import { describeRecord } from "./outcomes.ts";
 import { type ProbeResult, probeModel } from "./probe.ts";
 import { cachedProbe, type ModelRecord, modelRecord, withProbe } from "./profile.ts";
 
@@ -9,6 +10,8 @@ export interface SurveyRow {
   /** Why it is or is not a candidate, with its memory need where it could be estimated. */
   readonly capacity: string;
   readonly probe: ProbeResult | null;
+  /** Its finished tasks here as selection counts them, and what it does not count. */
+  readonly record: string;
 }
 
 const gib = 1024 ** 3;
@@ -28,7 +31,7 @@ export async function surveyModels(input: {
   const version = await ollamaVersion(base);
   if (version === null)
     throw new Error(`Ollama is not answering at ${base}: start it with \`ollama serve\``);
-  const record = input.record ?? modelRecord(input.home);
+  const record = input.record ?? modelRecord(input.home, { log: input.log });
   let profile = await record.read();
   const rows: SurveyRow[] = [];
   for (const one of eligibility(await listOllama(base), input.contextTokens)) {
@@ -41,6 +44,7 @@ export async function surveyModels(input: {
         eligible: false,
         capacity: `${one.reason}${weights}`,
         probe: null,
+        record: describeRecord(profile.outcomes[model.digest]),
       });
       continue;
     }
@@ -63,7 +67,13 @@ export async function surveyModels(input: {
       profile = withProbe(profile, identity, result);
       await record.write(profile);
     }
-    rows.push({ name: model.name, eligible: true, capacity: one.reason, probe: result });
+    rows.push({
+      name: model.name,
+      eligible: true,
+      capacity: one.reason,
+      probe: result,
+      record: describeRecord(profile.outcomes[model.digest]),
+    });
   }
   return { runtime: `Ollama ${version} at ${base}`, rows };
 }

@@ -92,7 +92,7 @@ async function probed(
   input: ResolveInput,
   enough: (candidates: readonly Candidate[], rest: readonly InstalledModel[]) => boolean,
 ): Promise<Candidate[]> {
-  const record = input.record ?? modelRecord(input.home);
+  const record = input.record ?? modelRecord(input.home, { log: input.log });
   let profile = await record.read();
   const listed = eligibility(models, input.contextTokens).filter((one) => one.eligible);
   listed.sort((a, b) => (b.model.parameters ?? 0) - (a.model.parameters ?? 0));
@@ -125,7 +125,7 @@ async function probed(
  * picks by the profile's policy. Nothing is downloaded, and nothing remote is chosen.
  */
 export async function resolveModel(input: ResolveInput): Promise<ResolvedModel> {
-  const profile = await (input.record ?? modelRecord(input.home)).read();
+  const profile = await (input.record ?? modelRecord(input.home, { log: input.log })).read();
   if (input.endpoint !== null && input.model !== "auto") {
     // Named on both counts: used as named, and a failure to answer ends the run like any other.
     const client = openAiCompatible({

@@ -11,6 +11,7 @@ export function recordFor(profile: string | undefined, readOnly: boolean): Model
     return modelRecord(swarmHome(), {
       profile: profile ?? process.env.SWARM_PROFILE,
       write: !readOnly,
+      log: (line) => process.stderr.write(`${line}\n`),
     });
   } catch (error) {
     if (error instanceof ProfileNameError) throw new UsageError(error.message);

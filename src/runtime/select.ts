@@ -1,5 +1,6 @@
 import type { Eligibility } from "./capacity.ts";
 import type { InstalledModel } from "./ollama.ts";
+import { recordNotes } from "./outcomes.ts";
 import type { ProbeResult } from "./probe.ts";
 import type { Profile } from "./profile.ts";
 
@@ -18,7 +19,10 @@ export interface Choice {
 
 const gib = 1024 ** 3;
 
-/** Finished tasks recorded for a model, where there are enough to rank by. */
+/**
+ * Finished tasks recorded for a model, where there are enough to rank by: the ones it completed
+ * and the ones it stopped short of on its own. Runs not attributed to it are never among them.
+ */
 function completionRate(profile: Profile, digest: string): number | null {
   const outcome = profile.outcomes[digest];
   if (outcome === undefined || outcome.complete + outcome.other < 3) return null;
@@ -94,10 +98,11 @@ export function choose(
     records.length === 0
       ? "conservative default: the largest installed model that fits and passed its readiness probe"
       : `ranked above ${records.join(" and ")}, whose record${records.length === 1 ? " is" : "s are"} worse`;
-  const reason =
+  const said =
     rate === null
       ? `${lead}${size}${speed}; ${history}`
       : `the best record here: ${Math.round(rate * 100)}% of its finished tasks complete${size}${speed}`;
+  const reason = [said, ...recordNotes(outcome)].join("; ");
   return { chosen, reason, alternatives: ranked.slice(1) };
 }
 

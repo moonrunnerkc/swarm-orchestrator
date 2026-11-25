@@ -110,7 +110,7 @@ async function modelsReport(contextTokens: number): Promise<number> {
         ? "not probed: excluded before loading"
         : `${row.probe.ready ? "ready" : "not ready"}: ${row.probe.reason}${row.probe.tokensPerSecond === null ? "" : `, ${row.probe.tokensPerSecond} tok/s`}, ${Math.round(row.probe.latencyMs / 1000)} s`;
     process.stdout.write(
-      `${row.name}\n  capacity  ${row.eligible ? "eligible" : "excluded"}: ${row.capacity}\n  probe     ${probe}\n`,
+      `${row.name}\n  capacity  ${row.eligible ? "eligible" : "excluded"}: ${row.capacity}\n  probe     ${probe}\n  record    ${row.record}\n`,
     );
   }
   return rows.some((row) => row.probe?.ready === true) ? 0 : 1;

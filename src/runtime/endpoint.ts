@@ -67,7 +67,7 @@ export async function endpointCandidate(
     quantization: null,
     contextTokens: input.contextTokens,
   };
-  const record = input.record ?? modelRecord(input.home);
+  const record = input.record ?? modelRecord(input.home, { log: input.log });
   const profile = await record.read();
   let probe = cachedProbe(profile, identity);
   if (probe === null) {
