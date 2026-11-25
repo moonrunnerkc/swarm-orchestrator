@@ -10,6 +10,10 @@
  * A released changelog section (`## 1.2.3 - 2026-01-01`) describes the tree of that release,
  * so its paths resolve against the release tag's tree as well as today's.
  *
+ * Historical evidence and reports left the active tree for the archive tags below (docs/history.md
+ * says how to read them). A path that resolves in an archive tag's tree is archived, not missing,
+ * so append-only records keep pointing at what they pointed at.
+ *
  *   node scripts/check-doc-paths.mjs [repository root]
  */
 import { execFile, spawnSync } from "node:child_process";
@@ -23,6 +27,8 @@ const backtickPattern = /`([^`\n]+)`/g;
 const releasedHeading = /^## (\d+\.\d+\.\d+) - \d{4}-\d{2}-\d{2}/;
 const rootedPrefixes = ["src/", "docs/", "scripts/", ".github/", "dist/", "eval/"];
 const pathSuffixes = [".ts", ".mjs", ".js", ".json", ".md", ".yml", ".yaml", ".toml", ".sh"];
+/** Tags whose trees hold documents the active tree no longer does. */
+export const archiveTags = ["archive/docs-2026-11-25"];
 /** Changelogs and the tag prefix their releases carry. */
 const changelogTags = new Map([["CHANGELOG.md", "v"]]);
 
@@ -76,7 +82,7 @@ function repoRelative(root, target, wantsDirectory) {
   return wantsDirectory && !path.endsWith("/") ? `${path}/` : path;
 }
 
-export async function checkDocumentationPaths(root) {
+export async function checkDocumentationPaths(root, archives = archiveTags) {
   const trees = new Map([[null, await pathsAt(root, null)]]);
   const treeAt = async (ref) => {
     if (!trees.has(ref)) trees.set(ref, await pathsAt(root, ref).catch(() => null));
@@ -85,8 +91,10 @@ export async function checkDocumentationPaths(root) {
   const files = [...trees.get(null)].filter(
     (path) => path.endsWith(".md") && !path.startsWith("src/fixtures/"),
   );
+  const archived = (await Promise.all(archives.map(treeAt))).filter((tree) => tree != null);
   const unresolved = [];
   let checked = 0;
+  let inArchive = 0;
 
   for (const path of files.sort()) {
     const file = join(root, path);
@@ -96,9 +104,10 @@ export async function checkDocumentationPaths(root) {
       const then = section.ref === null ? now : ((await treeAt(section.ref)) ?? now);
       const record = (raw, kind, candidates) => {
         checked += 1;
-        if (!candidates.some((candidate) => now.has(candidate) || then.has(candidate))) {
-          unresolved.push({ file, raw, kind });
-        }
+        if (candidates.some((candidate) => now.has(candidate) || then.has(candidate))) return;
+        if (candidates.some((candidate) => archived.some((tree) => tree.has(candidate))))
+          inArchive += 1;
+        else unresolved.push({ file, raw, kind });
       };
       for (const match of section.text.matchAll(linkPattern)) {
         const raw = (match[1] ?? "").split("#")[0] ?? "";
@@ -121,13 +130,15 @@ export async function checkDocumentationPaths(root) {
   const ignored = ignoredAmong(root, unresolved.map((entry) => entry.raw).filter(inside));
   const generated = unresolved.filter((entry) => ignored.has(entry.raw));
   const misses = unresolved.filter((entry) => !ignored.has(entry.raw));
-  return { fileCount: files.length, checked, misses, generated };
+  return { fileCount: files.length, checked, misses, generated, archived: inArchive };
 }
 
 if (import.meta.filename === process.argv[1]) {
   const root = resolve(process.argv[2] ?? join(import.meta.dirname, ".."));
-  const { fileCount, checked, misses, generated } = await checkDocumentationPaths(root);
-  process.stdout.write(`resolved ${checked} path reference(s) across ${fileCount} file(s)\n`);
+  const { fileCount, checked, misses, generated, archived } = await checkDocumentationPaths(root);
+  process.stdout.write(
+    `resolved ${checked} path reference(s) across ${fileCount} file(s), ${archived} of them in the archive\n`,
+  );
   for (const entry of generated) {
     process.stdout.write(`  generated: ${entry.file}: ${entry.raw} (git ignores it)\n`);
   }

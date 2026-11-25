@@ -1,125 +1,95 @@
 # swarm-orchestrator
 
-Give Swarm an engineering task. It makes the change, checks each requirement, repairs supported
-failures, and returns the patch with evidence of what is complete and what remains uncertain.
-
-[![ci](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=v13-main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
+[![ci](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![license: ISC](https://img.shields.io/badge/license-ISC-blue)](LICENSE)
 
-You supply the check that says the task is done; Swarm does the work until it passes.
+Swarm is a coding agent that runs on a local model. Give it an engineering task in a git
+repository: it makes the change in a copy of your tree, checks each requirement with tests the
+coding model did not write, repairs what fails, and hands back a patch with a report of what is
+complete and what is not. [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify), a separate
+package, judges every result.
 
-```sh
-# 1. A test that fails today and passes once the task is done (yours, or one Swarm drafts).
-swarm run "Add a --json option to the status command" --write-checks ../status-checks
-#    read and edit ../status-checks, then:
-# 2. Run the task against it.
-swarm run "Add a --json option to the status command" --accept ../status-checks
-```
+## What you need
 
-`--accept` takes test files, a directory, or a JSON array of structure claims; `--accept-cmd`
-takes a command. Each runs at the base before any edit: a check for the task must fail there,
-and one marked `keep=` (behavior that must not change) must pass. The model sees what your checks
-print, never their source, and the report names each by the requirement it witnesses.
-
-Without `--accept`, a separate call writes a check from the task's wording before the first
-edit. At a terminal you approve, edit or reject it (`--review-checks`); with nobody there it is
-written out for you and the run stops (`--write-checks`); `--accept-authored` uses it as
-written. Where no independent check exists at all, the run stops before its first edit and says
-how to supply one, rather than work toward a completion nothing could confirm.
-
-Features, fixes, refactors and upgrades are all ordinary work. Source, tests, manifests and
-lockfiles may change together when the task needs it; what the change cannot touch is the
-authority that judges it.
-
-## How a run works
-
-1. Swarm reads the task and the repository's `AGENTS.md` (or `CLAUDE.md`) instructions.
-2. It records the requirements it was given, with stable IDs, and the assumptions it made.
-3. A local model works through bash, and changes files with edit blocks (exact replacements) or
-   write blocks (whole files), which mean the same on macOS and Linux. The prompt opens with the
-   machine as probed when the run started: operating system, shell, whether `sed`, `grep`,
-   `find`, `awk` and `xargs` are BSD or GNU, and the programs on PATH. Every command and edit goes
-   through one chokepoint under a lexical path policy and lands on a hash-chained ledger outside
-   the workspace.
-4. [Swarm Verify](https://github.com/moonrunnerkc/swarm-verify), the standalone verifier, measures
-   the candidate in a container from a pinned image, network closed, with dependencies installed
-   fresh from the lockfile: the base commit's tests against the new source, new tests as labeled
-   evidence, test by test against the base. `--host` runs the checks on your machine instead, and
-   the report says `host, not isolated`; add `--linked-dependencies` where the lockfile does not
-   install in a clean checkout, and the report says the dependencies are not reproducible.
-5. A supported failure goes back to the model for repair while the run budget allows.
-6. Every exit, including a budget running out or an interrupted run, ends in one finalization
-   that verifies the exact delivered snapshot, or writes an incomplete report bound to it.
-
-The final report lists each requirement as `satisfied`, `failed`, `unverified` or `blocked`,
-with the evidence that decided it. The run is `complete` only when every required obligation is
-satisfied, no new regression is unresolved, and the evidence matches the delivered patch.
+- Node 22.13 or newer, and git.
+- [Ollama](https://ollama.com) with at least one model installed, or any OpenAI-compatible
+  server (`--endpoint`). Swarm downloads nothing and never picks a remote model for you.
+- A docker daemon (Docker Desktop, or colima on macOS) so checks run in a container. Without
+  one, `--host` runs them on your machine and the report says so.
 
 ## Install
 
-Node 22 or newer, git, and a docker daemon for isolated verification (colima or Docker Desktop
-on macOS). Swarm runs against a local model.
-
 ```sh
 npm install -g swarm-orchestrator
-swarm run "<task>"
+swarm doctor --models
 ```
 
-A run prints the directory of its evidence and the attestation of its final verification. The
-verifier is its own package; installed beside Swarm, it reruns that verification from the record
-and says whether it agrees:
+`swarm doctor --models` lists each installed model, whether it fits in memory and whether it
+follows the reply protocol. If none is ready it says why.
+
+## Run a task
+
+Swarm finishes a task when a check you stand behind passes. The quickest route is to let it
+draft that check, read it, then run against it:
 
 ```sh
-npm install -g swarm-verify
-swarm-verify replay <directory holding the printed attestation> --workspace <repo>
+cd your-repo
+
+# 1. Draft a failing test for the task. Nothing in the repository is edited.
+swarm run "Add a --json option to the status command" --write-checks ../status-checks
+
+# 2. Read and edit ../status-checks, then run the task against it.
+swarm run "Add a --json option to the status command" --accept ../status-checks
 ```
 
-With no model named, Swarm asks Ollama what is installed, leaves out cloud entries, embedding
-models and anything that would not fit in memory at the context (weights plus KV cache), probes
-the strongest candidates until one follows its shell protocol, and prints the one it chose and
-why. It tries a 65,536-token context first and 32,768 where nothing fits there; `--context` sets
-one, and a named model or server gets 32,768 unless you set it. Probe results and finished runs are kept per machine and model digest under `~/.swarm/profiles`; `--profile <name>` (or `SWARM_PROFILE`) keeps a run's results in a record of their own, so experiments and development runs leave the one `auto` chooses by untouched, and `--no-record` writes nothing.
-`swarm doctor --models` shows every installed model's verdict. Name a model with `--model`, or
-any OpenAI-compatible server (Rapid-MLX, vLLM, llama.cpp) with `--endpoint`. Nothing is
-downloaded and nothing remote is chosen for you.
+Already have a test that fails today and should pass when the work is done? Skip step 1 and pass
+it with `--accept <file>` or `--accept-cmd "<command>"`. To use the drafted check without reading
+it, pass `--accept-authored`.
 
-The run works in a clone beside your repository that shares its objects but not its branches,
-tags or config, starting from your tree as it is (staged,
-unstaged and untracked edits included), and applies its patch to your working tree at the end
-only if nothing changed there meanwhile; `--no-apply` keeps it as a patch. A Python project's
-`.venv` is not copied there: the clone gets its own, built with your `[verify] setup` command
-or else `uv sync --frozen` from `uv.lock`, and the report names its interpreter or says why it has
-none.
+A task that lists several things, one per bullet or number, gets one requirement per item, and
+each needs a check of its own. Set a phrase of the task apart the same way with
+`--require "<its words>"`.
 
-Your existing tests keep judging the change in their original form. When the task itself changes
-what they should expect, pass `--authorize-behavior-change`: a rewritten expectation then stands
-where its new version fails before the change and passes after it, and the report names each one.
+## What you get back
 
-`--review` asks the same model, in a fresh context, for one case the finished change gets wrong
-and a command that shows it. Only a command that fails on the delivered tree reopens the work;
-the verifier still decides. It is off by default and costs one more model turn.
+The run ends with a summary like this:
 
-## What the evidence is, and is not
+```
+state        complete
+R1           asked    Add a --json option to the status command
+             status   satisfied, witness user-acceptance
+patch        ~/.swarm/sessions/<id>/final/delivered.patch
+applied      yes
+report       ~/.swarm/sessions/<id>/final/report.md
+```
 
-The verifier signs an in-toto Statement in a DSSE envelope over the patch and the tree it
-measured. That is tamper-evident evidence: a changed bundle no longer verifies against the
-key. It does not prove the code is correct, that the tests were comprehensive, or that nothing
-unobserved happened. Execution assurance (how the checks were contained) and evidence integrity
-(whether the record is intact) are separate fields. The verifier's
-[docs/verifying.md](https://github.com/moonrunnerkc/swarm-verify/blob/main/docs/verifying.md) says
-what each part of a result means and where its reach ends.
+- **The patch** is applied to your working tree only if you did not change the tree meanwhile.
+  `--no-apply` leaves it as a file.
+- **The report** lists every requirement with its status and the evidence that decided it.
+- **The session directory** holds the full record of commands, model replies and verifications.
 
-## Where things are
+| State | Meaning | Exit code |
+| --- | --- | --- |
+| `complete` | Every required requirement is satisfied by independent evidence, nothing that passed before fails now, and the evidence matches the delivered patch. | 0 |
+| `incomplete` | A requirement failed, or something could not be shown. The report says which and what to do next. | 1 or 4 |
+| `blocked` | The run stopped before editing, for example because no usable check exists. | 5 |
 
-- [ADR 0015](docs/adr/0015-coding-agent-consumes-standalone-verifier.md): why the agent and the
-  verifier are two products, and which owns what.
-- [docs/plans/2026-10-31-product-recovery.md](docs/plans/2026-10-31-product-recovery.md): the
-  specification the current work follows.
-- [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify): the verifier, its
-  API, its GitHub Action and its integrations with CI, pre-commit and MCP.
-- [docs/acceptance/2026-11-04-comparison/README.md](docs/acceptance/2026-11-04-comparison/README.md):
-  Swarm and Claude Code on four tasks under criteria sealed before either ran, the latest result.
-- [docs/results.md](docs/results.md): earlier evaluation results, kept as history.
-- [docs/eval.md](docs/eval.md): how those evaluations ran.
+An incomplete run still delivers its patch and names what is missing. Nothing the model says can
+turn an unverified requirement into a satisfied one.
+
+## What the evidence shows, and what it does not
+
+Each verification is signed. The signature makes the record tamper-evident: a changed patch or
+report no longer matches it. It does not show that the code is correct beyond the checks that
+ran, that those checks are thorough, or that nothing unobserved happened. The path policy that
+keeps the model's commands inside the workspace is a filter on command text, not a sandbox.
+
+## More
+
+- [Getting started](docs/getting-started.md): the first run step by step, and choosing a model.
+- [Reference](docs/reference.md): every command, option, configuration key and exit code.
+- [Troubleshooting](docs/troubleshooting.md): what each stop and blocked message means.
+- [Architecture](docs/architecture.md): how a run works and where the evidence boundaries are.
+- [History](docs/history.md): past evaluations and release reports, with links to the evidence.
 
 ISC licensed; see [LICENSE](LICENSE).

@@ -4,15 +4,16 @@ The coding agent. Give it an engineering task; it makes the change, checks each 
 repairs supported failures, and returns the patch with evidence of what is complete and what
 remains uncertain. It consumes Swarm Verify, the standalone verifier, as an exact-version
 runtime dependency through the verifier's public API
-([ADR 0015](docs/adr/0015-coding-agent-consumes-standalone-verifier.md)). The specification for
-the current work is [docs/plans/2026-10-31-product-recovery.md](docs/plans/2026-10-31-product-recovery.md).
+([ADR 0015](docs/adr/0015-coding-agent-consumes-standalone-verifier.md)). How a run works is in
+[docs/architecture.md](docs/architecture.md).
 
 ## Commands
 
-- `npm run gates`: checks, caps, typecheck, lint and the full test suite. This defines green,
-  and CI runs exactly this.
+- `npm run gates`: checks, caps, typecheck, lint, the unused-code check and the full test suite.
+  This defines green, and CI runs exactly this.
 - `npm run checks`: documentation paths resolve against what git tracks.
 - `npm run caps`: the size caps below.
+- `npm run unused`: Knip, with no unused export, file or dependency allowed.
 - `npm run typecheck`, `npm run lint`, `npm test`, `npm run format`.
 - `npm run build`: the `swarm` CLI into `dist/`.
 
@@ -39,6 +40,8 @@ commits, pushed code, passing CI and published packages are separate facts.
   process groups come from `swarm-verify/execution`, so agent commands and checks are run alike.
 - `src/evidence`: append-only hash-chained records, canonical JSON, scrubbing with the
   verifier's credential detector.
+- `src/runtime`: model discovery, readiness probes, selection, and the per-machine record of
+  finished runs, which counts only what a run says about its model.
 - `src/config`: the `[agent]` table of `swarm.toml`, optional, validated with Zod.
 - `scripts/adopt-verifier.mjs`: pins `swarm-verify` to an exact packed tarball by integrity.
 - `scripts/packed-consumer.test.mjs`: installs the packed agent beside the pinned verifier
@@ -46,8 +49,10 @@ commits, pushed code, passing CI and published packages are separate facts.
 
 ## Invariants
 
-1. Model output is a claim; only harness-captured output is evidence. A model may propose
-   requirements, mappings and checks; only verifier and report code set a status. Another
+1. Model output is a claim; only harness-captured output is evidence. What the user requires
+   (the task, and each part of it set apart) is fixed before the first edit; a model may propose
+   mappings, checks and suggestions of its own, never change that set. Only verifier and report
+   code set a status. Another
    model's agreement is never execution evidence. Unverified is its own status and never counts
    as satisfied.
 2. Every command the agent runs passes through the chokepoint under the path policy. There is
@@ -76,7 +81,7 @@ workflow files. Tests are not capped: boundary tests are the point.
 ## Code style
 
 - Strict TypeScript with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, ESM,
-  Node 22 or newer at runtime and Node 24 in development and CI.
+  Node 22.13 or newer at runtime and Node 24 in development and CI.
 - Named exports only. Kebab-case filenames. Tests sit beside their sources. Split a file by
   responsibility, not by line count.
 - No em dashes anywhere: code, comments, strings, documentation or commit messages.
@@ -95,6 +100,13 @@ workflow files. Tests are not capped: boundary tests are the point.
 - Open choices go in `docs/DECISIONS.md`, dated, with the reason; the file is append-only.
   Unrelated defects found along the way go in `docs/known-issues.md` with a reproduction. Work
   deliberately left undone goes in `docs/FOLLOW-UPS.md` as one line.
+- The active documentation is the README and the four guides under `docs/` (getting started,
+  reference, troubleshooting, architecture). Keep them current with the code in the same change.
+  Do not add plan hierarchies, run diaries or raw logs to the tree: evidence of a measured run
+  goes under an `archive/` tag, indexed in `docs/history.md`, and a release's story goes in the
+  changelog.
+- Development, CI and evaluation runs never write the machine's default model record: set
+  `SWARM_HOME`, or pass `--profile` or `--no-record`.
 - Never write a number you did not measure. A measured number cites the command, test or
   evidence file it came from. `docs/results.md` is the generated history of the three-arm and
   tamper evaluations.
