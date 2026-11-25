@@ -24,7 +24,7 @@ export interface UserCheck {
   readonly atBase: string;
 }
 
-export interface LaidFile {
+interface LaidFile {
   readonly path: string;
   readonly content: string;
 }
@@ -41,7 +41,7 @@ export interface Validated {
  * Lays a file at its path for one run and puts back whatever was there: the base's file, or the
  * model's version of it, or nothing.
  */
-export async function laid<T>(
+async function laid<T>(
   workspace: string,
   files: readonly LaidFile[],
   run: () => Promise<T>,

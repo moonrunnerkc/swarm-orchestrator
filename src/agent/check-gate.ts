@@ -22,7 +22,7 @@ export type ChecksMode =
   | { readonly kind: "write"; readonly directory: string };
 
 /** One authored check shown to the user, written to `file` for them to edit in place. */
-export interface ShownCheck {
+interface ShownCheck {
   readonly requirement: string;
   readonly path: string;
   readonly file: string;
@@ -274,7 +274,7 @@ const commonParts = new Set(
  * Whether a test file's path shares a word with the task: a failing base test the task bears on.
  * A README test-count claim failing at tracemantle's base shares none with a template fix.
  */
-export function bearsOn(task: string): (path: string) => boolean {
+function bearsOn(task: string): (path: string) => boolean {
   const words = new Set(
     task
       .replace(/([a-z])([A-Z])/g, "$1 $2")

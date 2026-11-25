@@ -1,7 +1,7 @@
 import type { Requirement } from "swarm-verify";
 import type { TestConventions } from "./test-conventions.ts";
 
-export const authorKinds = ["fix", "feature", "refactor", "upgrade", "other"] as const;
+const authorKinds = ["fix", "feature", "refactor", "upgrade", "other"] as const;
 export type AuthorKind = (typeof authorKinds)[number];
 
 export const authorPrompt = [

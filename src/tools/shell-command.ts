@@ -18,8 +18,6 @@ export interface ShellCommand {
 import { pathsACommandCouldOpen } from "./command-operands.ts";
 import { type ShellOperator, tokenize } from "./shell-tokens.ts";
 
-export type { ShellOperator } from "./shell-tokens.ts";
-
 /** One simple command of a string: its program, and the words it was given, in order. */
 export interface SimpleShellCommand {
   readonly executable: string;

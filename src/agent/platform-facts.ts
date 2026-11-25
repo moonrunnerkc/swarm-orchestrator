@@ -7,7 +7,7 @@ export const platformBlockBytes = 4_000;
 const layoutKept = 40;
 const nameKept = 80;
 
-export type Flavor = "GNU" | "BSD" | "BusyBox" | "mawk" | "unidentified" | "missing";
+type Flavor = "GNU" | "BSD" | "BusyBox" | "mawk" | "unidentified" | "missing";
 
 export interface ToolFlavor {
   readonly flavor: Flavor;
@@ -106,7 +106,7 @@ function programs(facts: Readonly<Record<string, string>>): string[] {
 }
 
 /** The block's last paragraph: how the coding model changes files. A reviewer changes none. */
-export const editAdvice = [
+const editAdvice = [
   "Change a file's text with an edit or write block, not with sed, awk, perl or a shell",
   "redirection: those blocks behave the same on every platform. Keep bash for running programs,",
   "reading files, and moving or deleting them.",

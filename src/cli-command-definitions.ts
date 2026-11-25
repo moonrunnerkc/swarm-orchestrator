@@ -1,12 +1,16 @@
 import { commandDefinitions as verifierDefinitions } from "swarm-verify/cli";
 
-export interface CommandDefinition {
+interface CommandDefinition {
   readonly name: string;
   readonly syntax: string;
   readonly description: string;
 }
 
-/** The subcommands, in the order help lists them. Help and the caps check both read this. */
+/**
+ * The subcommands, in the order help lists them. Help reads this, and so does the caps check
+ * (scripts/check-caps.mjs), by a path it computes.
+ * @public
+ */
 export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "run",

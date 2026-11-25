@@ -1,5 +1,5 @@
 /** Rereads in a row after which the model is told, and after which the run ends. */
-export const rereadNudge = 4;
+const rereadNudge = 4;
 export const rereadStop = 6;
 
 /**

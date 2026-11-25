@@ -7,7 +7,7 @@ import { chmod, mkdir } from "node:fs/promises";
  * by everyone. Asking for the mode is not enough on its own, because a directory that already
  * exists keeps the mode it was made with, so an existing one is narrowed rather than assumed.
  */
-export const ownerOnlyDirectory = 0o700;
+const ownerOnlyDirectory = 0o700;
 export const ownerOnlyFile = 0o600;
 
 export async function makeOwnerOnlyDirectory(path: string): Promise<void> {

@@ -12,14 +12,14 @@ import { pathsWhereTheyRun } from "./working-directories.ts";
 /** Whether an off-allowlist command is answered by the run (auto) or by a person (ask). */
 export type ApprovalMode = "ask" | "auto";
 
-export interface ConfirmationRequest {
+interface ConfirmationRequest {
   readonly command: string;
   /** The off-list programs an "always" would allow for the rest of the run. */
   readonly programs: readonly string[];
   readonly explanation: string;
 }
 
-export type ConfirmationAnswer = "yes" | "no" | "always";
+type ConfirmationAnswer = "yes" | "no" | "always";
 
 /** Asked when a command needs a person; null where nobody is there to ask. */
 export type ConfirmationPrompt =

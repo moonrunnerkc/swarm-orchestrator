@@ -39,7 +39,7 @@ function expectedRate(profile: Profile, digest: string): number {
  * throughput, then by name. Without outcomes the order is a conservative default, and the reason
  * says so.
  */
-export function rank(candidates: readonly Candidate[], profile: Profile): Candidate[] {
+function rank(candidates: readonly Candidate[], profile: Profile): Candidate[] {
   const ready = candidates.filter((one) => one.probe.ready && one.eligibility.eligible);
   return [...ready].sort((a, b) => {
     const rateA = expectedRate(profile, a.eligibility.model.digest);
@@ -102,7 +102,7 @@ export function choose(
 }
 
 /** A model's finished tasks of one kind here, complete and not. */
-export function kindRecord(profile: Profile, digest: string, kind: string) {
+function kindRecord(profile: Profile, digest: string, kind: string) {
   const tally = profile.outcomes[digest]?.kinds?.[kind] ?? { complete: 0, other: 0 };
   return { ...tally, finished: tally.complete + tally.other };
 }

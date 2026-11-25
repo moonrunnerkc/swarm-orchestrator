@@ -1,31 +1,23 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { snapshotWorkingTree, type VerifyResult } from "swarm-verify";
+import { snapshotWorkingTree } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
-import {
-  type ApprovalMode,
-  type ConfirmationPrompt,
-  createChokepoint,
-} from "../tools/chokepoint.ts";
-import { type Escalate, type Progress, runAttempts } from "./attempts.ts";
-import { type CheckGate, type ChecksMode, checkGate } from "./check-gate.ts";
+import { createChokepoint } from "../tools/chokepoint.ts";
+import { type Progress, runAttempts } from "./attempts.ts";
+import { type CheckGate, checkGate } from "./check-gate.ts";
 import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
-import type { StopReason } from "./loop.ts";
-import type { ModelClient } from "./model.ts";
-import { assembleReport, type RunReportFile, recordStopped, writeReport } from "./report.ts";
+import { assembleReport, recordStopped, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
 import { runEnvironment } from "./run-environment.ts";
 import type { RunOptions, RunReport } from "./run-options.ts";
 import { stablePrefix } from "./stable-prefix.ts";
-import { type Supplied, suppliedPaths } from "./supplied.ts";
+import { suppliedPaths } from "./supplied.ts";
 import { behaviorChangeNote, createVerifier, swarmHome } from "./verification.ts";
 import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
 import { deliver, openWorkspace } from "./workspace.ts";
 
 export type { RunOptions, RunReport } from "./run-options.ts";
-
-export { swarmHome };
 
 /**
  * Runs the loop in a managed worktree seeded with the user's tree as it stands, finalizes the

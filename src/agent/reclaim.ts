@@ -54,7 +54,7 @@ export async function reclaimWithheld(
 }
 
 /** A path beside a withheld check's for the model's own test, which the runner still collects. */
-export function ownPath(path: string): string {
+function ownPath(path: string): string {
   const marked = /\.(?:test|spec)\.[^./]+$/.exec(path);
   if (marked !== null) return `${path.slice(0, marked.index)}.own${marked[0]}`;
   const dot = path.lastIndexOf(".");

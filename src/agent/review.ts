@@ -13,7 +13,7 @@ import type { RequirementRecord } from "./requirement-record.ts";
 /** What the reviewer writes, alone on a line, when it finds nothing. */
 export const noFinding = "NO_FINDING";
 
-export const reviewPrompt = [
+const reviewPrompt = [
   "You review a change another engineer made, with a fresh context. You see the task, the",
   "requirements they recorded and their diff. Their tests already pass. Look for one case the task",
   "asks for that the change gets wrong.",

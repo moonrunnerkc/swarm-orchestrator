@@ -57,7 +57,7 @@ export function scripted(
  * A model a test wrote by hand, with the check author's call answered for it by `authoredHalf`,
  * since what the test exercises is the loop and not the author.
  */
-export function answeringAuthor(model: ModelClient): ModelClient {
+function answeringAuthor(model: ModelClient): ModelClient {
   return {
     model: model.model,
     complete: (messages, options) =>

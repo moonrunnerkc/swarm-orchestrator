@@ -21,7 +21,7 @@ import { rereadNote, rereadReason, rereadStop, rereads } from "./rereads.ts";
 import { treeCycles } from "./tree-cycles.ts";
 import { noUsage } from "./usage.ts";
 
-export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
+export type { LoopOptions, LoopResult, StopReason, Verification } from "./loop-types.ts";
 
 /** The smallest reply worth asking for: one command and its fence. */
 const minimumReplyTokens = 256;

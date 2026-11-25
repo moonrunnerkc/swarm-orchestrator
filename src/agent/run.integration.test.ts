@@ -13,8 +13,6 @@ import {
 } from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
-/** A change that is not the fix: the run goes on past it. */
-const _wip = write("NOTES.md", "half: work in progress");
 const mapped = recordAndComplete([
   { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "half" }] } },
 ]);

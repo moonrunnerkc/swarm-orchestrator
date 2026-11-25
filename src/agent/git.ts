@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 /** Variables that would point git at some other repository or index than the one named. */
 const repositoryOverrides = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY"];
 
-export class GitError extends Error {
+class GitError extends Error {
   constructor(args: readonly string[], stderr: string) {
     super(`git ${args.join(" ")} failed: ${stderr.trim() || "no output"}`);
     this.name = "GitError";

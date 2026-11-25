@@ -10,7 +10,7 @@ export function ollamaBase(
   return /^https?:\/\//.test(host) ? host.replace(/\/+$/, "") : `http://${host}`;
 }
 
-export interface LayerShape {
+interface LayerShape {
   readonly kvHeads: number;
   readonly keyLength: number;
   readonly valueLength: number;

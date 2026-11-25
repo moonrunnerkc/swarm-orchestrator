@@ -6,7 +6,7 @@ import type { RequirementOutcome } from "swarm-verify";
  */
 
 /** The model's reading: the kind and every piece of evidence it said would show the requirement. */
-export function readingOf(one: RequirementOutcome): string {
+function readingOf(one: RequirementOutcome): string {
   const { tests, checks, structure, packages } = one.expected;
   const parts = [
     ...packages.map(
@@ -46,7 +46,7 @@ export function readingOf(one: RequirementOutcome): string {
 }
 
 /** The versions the wording itself holds the change to, read by code; null where it names none. */
-export function heldTo(one: RequirementOutcome): string | null {
+function heldTo(one: RequirementOutcome): string | null {
   if (one.versions.length === 0) return null;
   return one.versions
     .map(

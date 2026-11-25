@@ -27,7 +27,7 @@ export interface Reply {
   readonly truncated: boolean;
 }
 
-export interface TurnOptions {
+interface TurnOptions {
   readonly signal?: AbortSignal | undefined;
   /** The completion cap for this turn, sent as max_tokens. */
   readonly maxTokens: number;

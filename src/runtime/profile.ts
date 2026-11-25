@@ -55,7 +55,7 @@ const profileSchema = z.object({
 });
 export type Profile = z.infer<typeof profileSchema>;
 
-export const identityKey = (identity: ProbeIdentity) =>
+const identityKey = (identity: ProbeIdentity) =>
   createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 
 /**
@@ -67,7 +67,7 @@ export function profilePath(home: string, name = defaultProfile): string {
   return join(home, "profiles", `${hostname()}${suffix}.json`);
 }
 
-export const defaultProfile = "default";
+const defaultProfile = "default";
 const profileName = /^[A-Za-z0-9][\w.-]{0,63}$/;
 
 export class ProfileNameError extends Error {
@@ -133,7 +133,7 @@ const empty = (): Profile => ({
  * directory shared or copied between machines). A file that does not parse is replaced, never
  * trusted in part.
  */
-export async function readProfile(path: string): Promise<Profile> {
+async function readProfile(path: string): Promise<Profile> {
   const text = await readFile(path, "utf8").catch(() => null);
   if (text === null) return empty();
   try {
@@ -148,7 +148,7 @@ export async function readProfile(path: string): Promise<Profile> {
   }
 }
 
-export async function writeProfile(path: string, profile: Profile): Promise<void> {
+async function writeProfile(path: string, profile: Profile): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.tmp`;
   await writeFile(temporary, `${JSON.stringify(profile, null, 2)}\n`, { mode: 0o600 });
@@ -170,7 +170,7 @@ type Tally = { readonly complete: number; readonly other: number };
 const tallied = (before: Tally, complete: boolean): Tally =>
   complete ? { ...before, complete: before.complete + 1 } : { ...before, other: before.other + 1 };
 
-export function withOutcome(
+function withOutcome(
   profile: Profile,
   digest: string,
   complete: boolean,
