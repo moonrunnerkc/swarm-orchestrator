@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { hostExecutor } from "../tools/executor.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
 import { toolFlavor } from "./platform-facts.ts";
 import { parseProbe, probePlatform, probeScript } from "./platform-probe.ts";
@@ -22,7 +23,10 @@ describe("the platform probe, run for real", () => {
       deniedRoots: [],
       childHomeDir: await mkdtemp(join(tmpdir(), "probe-home-")),
     });
-    const probe = await probePlatform({ workspace, env: guard.childEnvironment.variables });
+    const probe = await probePlatform({
+      workspace,
+      executor: hostExecutor(workspace, guard.childEnvironment.variables),
+    });
     expect(probe.cut).toBe(false);
     expect(probe.layout).toEqual(["package.json", "src/"]);
     expect(toolFlavor("sed", probe.facts).flavor).toBe(
@@ -49,7 +53,10 @@ describe("the platform probe, run for real", () => {
       deniedRoots: [],
       childHomeDir: await mkdtemp(join(tmpdir(), "probe-home-")),
     });
-    const probe = await probePlatform({ workspace, env: guard.childEnvironment.variables });
+    const probe = await probePlatform({
+      workspace,
+      executor: hostExecutor(workspace, guard.childEnvironment.variables),
+    });
     expect(probe.facts["venv.python"]).toBe("Python 3.13.13");
   });
 

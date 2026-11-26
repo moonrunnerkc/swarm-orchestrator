@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { type Chokepoint, createChokepoint } from "./chokepoint.ts";
+import { hostExecutor } from "./executor.ts";
 import { createPolicyGuard } from "./policy-guard.ts";
 
 /**
@@ -66,7 +67,14 @@ beforeEach(async () => {
     childHomeDir: join(root, "child-home"),
   });
   run = (approval) =>
-    createChokepoint({ guard, evidence, approval, confirm: null, timeoutMs: 30_000 });
+    createChokepoint({
+      guard,
+      executor: hostExecutor(guard.workspaceRoot, guard.childEnvironment.variables),
+      evidence,
+      approval,
+      confirm: null,
+      timeoutMs: 30_000,
+    });
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });

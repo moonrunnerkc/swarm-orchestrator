@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Executor } from "../tools/executor.ts";
 import { type Instructions, loadInstructions, renderInstructions } from "./instructions.ts";
 import { platformSha256, renderPlatform } from "./platform-facts.ts";
 import { probePlatform } from "./platform-probe.ts";
@@ -26,13 +27,12 @@ export interface StablePrefix {
  */
 export async function stablePrefix(input: {
   readonly workspace: string;
-  readonly env: Record<string, string>;
+  readonly executor: Executor;
   readonly task: string;
-  readonly checks: "isolated" | "host";
   readonly signal?: AbortSignal | undefined;
 }): Promise<StablePrefix> {
   const probe = await probePlatform(input);
-  const block = renderPlatform({ probe, root: input.workspace, checks: input.checks });
+  const block = renderPlatform({ probe, root: input.workspace, checks: input.executor.mode });
   const instructions = await loadInstructions(input.workspace);
   const rendered = renderInstructions(instructions);
   return {

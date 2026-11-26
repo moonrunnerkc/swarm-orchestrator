@@ -53,6 +53,8 @@ export async function openWorkspace(
   directory: string,
   scratch: string,
   withheld: readonly string[] = [],
+  // A container installs its own: the host's tree is built for the host.
+  copyInstalled = true,
 ): Promise<ManagedWorkspace> {
   const head = await gitText(repository, ["rev-parse", "--verify", "HEAD^{commit}"]);
   const edits = await snapshotWorkingTree(repository, head, join(scratch, "starting-state.patch"));
@@ -111,7 +113,7 @@ export async function openWorkspace(
       base = await gitText(directory, ["rev-parse", "HEAD"]);
     }
   }
-  for (const name of installed) {
+  for (const name of copyInstalled ? installed : []) {
     const source = join(repository, name);
     if (
       await access(source).then(

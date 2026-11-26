@@ -129,13 +129,19 @@ export function renderPlatform(input: {
 }): string {
   const { facts } = input.probe;
   const head = [
-    "This machine, probed when the run started. Your commands run here, with /bin/sh -c:",
+    input.checks === "isolated"
+      ? "A Linux container, probed when the run started. Each of your commands runs in a fresh one, with /bin/sh -c:"
+      : "This machine, probed when the run started. Your commands run here, with /bin/sh -c:",
     system(facts),
     ...probedTools.map((tool) => toolLine(tool, facts)),
     ...programs(facts),
-    input.checks === "isolated"
-      ? "- The verifier runs the project's checks in a Linux container, not on this machine."
-      : "- The verifier runs the project's checks on this machine.",
+    ...(input.checks === "isolated"
+      ? [
+          "- Only the repository is kept between commands; a process you start ends with its command.",
+          "- There is no network. A package manager's install run as a command of its own (npm install <pkg>) reaches the registry, without running install scripts.",
+          "- The verifier runs the project's checks in a container of the same image.",
+        ]
+      : ["- The verifier runs the project's checks on this machine."]),
     ...(input.probe.cut
       ? ["- The probe ran out of time; what it did not reach is not listed."]
       : []),

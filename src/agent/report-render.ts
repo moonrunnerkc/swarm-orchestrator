@@ -32,6 +32,7 @@ export function summaryLines(
     lines.push(`${pad("changed", 12)} ${report.changed.length} file(s)${also}`);
   }
   if (report.regression !== null) lines.push(`${pad("regression", 12)} ${report.regression}`);
+  if (report.commands !== undefined) lines.push(`${pad("commands", 12)} ${report.commands}`);
   if (report.execution !== null) lines.push(`${pad("execution", 12)} ${report.execution}`);
   lines.push(
     `${pad("patch", 12)} ${report.snapshot.patch} (sha256 ${report.snapshot.patchSha256})`,
@@ -130,7 +131,8 @@ export function renderMarkdown(report: RunReportFile): string {
       : [`- Python environment: ${describePythonEnvironment(report.startingState.python)}.`]),
     `- Applied to the workspace: ${report.delivery.applied ? "yes" : `no, ${report.delivery.reason}`}.`,
     `- Regression: ${report.regression ?? "not measured"}.`,
-    `- Execution: ${report.execution ?? "not measured"}.`,
+    `- The model's commands: ${report.commands ?? "not recorded"}.`,
+    `- Verification: ${report.execution ?? "not measured"}.`,
     `- Attestation: ${report.attestation ?? "none"}${report.attestationKey === null ? "" : `, verified with ${report.attestationKey}`}${report.evidenceDelivery === null ? "" : ` (evidence ${report.evidenceDelivery})`}.`,
     `- Instructions loaded: ${report.instructions.map((one) => `${one.path} (sha256 ${one.sha256})`).join(", ") || "none"}.`,
     `- Resources: ${report.resources.steps} model turn(s); ${report.resources.inputTokens} input and ${report.resources.outputTokens} output token(s)${report.resources.estimatedTurns > 0 ? ` (${report.resources.estimatedTurns} turn(s) estimated from text)` : " (reported by the runtime)"}; ${inferenceOf(report.resources)} and ${Math.round(report.resources.wallMs / 1000)} s of wall time; ${report.resources.retries} retried request(s); ${report.resources.escalations} escalation(s); ${report.resources.verifications} verification(s) in the loop; cost: ${report.resources.cost}.`,

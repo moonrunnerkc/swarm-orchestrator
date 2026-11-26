@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import { createChokepoint } from "./chokepoint.ts";
+import { hostExecutor } from "./executor.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "./policy-guard.ts";
 
 let root = "";
@@ -26,20 +27,23 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-const chokepoint = () =>
-  createChokepoint({
-    guard: createPolicyGuard({
-      workspaceRoot: workspace,
-      homeDir: homedir(),
-      shellAllowlist: defaultShellAllowlist,
-      deniedRoots: [join(root, "sessions")],
-      childHomeDir: join(root, "child-home"),
-    }),
+const chokepoint = () => {
+  const guard = createPolicyGuard({
+    workspaceRoot: workspace,
+    homeDir: homedir(),
+    shellAllowlist: defaultShellAllowlist,
+    deniedRoots: [join(root, "sessions")],
+    childHomeDir: join(root, "child-home"),
+  });
+  return createChokepoint({
+    guard,
+    executor: hostExecutor(guard.workspaceRoot, guard.childEnvironment.variables),
     evidence,
     approval: "auto",
     confirm: null,
     timeoutMs: 30_000,
   });
+};
 
 const replace = (path: string, search: string, value: string) =>
   ({ mode: "edit", path, pairs: [{ search, replace: value }] }) as const;

@@ -62,6 +62,8 @@ export interface RunReportFile {
   }[];
   readonly regression: string | null;
   readonly execution: string | null;
+  /** Where the model's commands and the harness's checks between turns ran. */
+  readonly commands?: string;
   readonly attestation: string | null;
   /** The public key the attestation verifies against: what `swarm-verify replay --key` takes. */
   readonly attestationKey: string | null;
@@ -142,6 +144,7 @@ export function assembleReport(input: {
   readonly notes: readonly string[];
   readonly start: StartingState;
   readonly python: PythonEnvironment | null;
+  readonly commands: string;
   readonly delivery: Delivery;
   readonly startedAt: number;
   readonly authored: readonly Authored[];
@@ -203,6 +206,7 @@ export function assembleReport(input: {
         ? null
         : `${result.regression.status}${inherited > 0 ? ` (${inherited} inherited failure(s))` : ""}`,
     execution: result?.execution.statement ?? null,
+    commands: input.commands,
     attestation: result?.evidence.bundle ?? null,
     attestationKey: result?.evidence.publicKey ?? null,
     evidenceDelivery: result?.delivery.status ?? null,
