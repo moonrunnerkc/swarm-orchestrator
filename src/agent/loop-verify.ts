@@ -4,6 +4,14 @@ import type { StopReason, Verification } from "./loop-types.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 import { runVerificationStep } from "./verification-step.ts";
 
+/** How a finding is repaired: from a reproduction, at its cause, with the legitimate case kept. */
+const repair =
+  "Repair each at its cause: reproduce the failure it names with a command and read what it prints, say in one line what in the code lets it happen, look for other paths that share that cause, and fix it where the decision is made. Keep the legitimate use working; a change that refuses everything fails too. Never edit, delete or special-case a check.";
+
+/** What follows a change that moved nothing: a different diagnosis, not the same edit again. */
+const retry =
+  "Your last change left these findings exactly as they were, so their cause is not where you changed. Do not repeat it: read the code the failing request or test actually runs through, name a different cause, and fix that.";
+
 /** What one verification left the loop to do. */
 export type VerifyOutcome =
   | { readonly kind: "stop"; readonly stop: StopReason; readonly reason: string | null }
@@ -29,6 +37,9 @@ export function createVerifyStep(input: {
   let last: Verification | null = null;
   let nudged = false;
   let count = 0;
+  // The open findings as last read, and how many changes in a row left them as they were.
+  let open = "";
+  let unmoved = 0;
   return {
     verifications: () => count,
     last: () => last,
@@ -70,9 +81,18 @@ export function createVerifyStep(input: {
           checked: evidence,
         };
       }
+      const now = openFindings(judged.feedback).join("\n");
+      unmoved = !repeated && now !== "" && now === open ? unmoved + 1 : 0;
+      open = now;
+      if (unmoved >= 3)
+        return {
+          kind: "stop",
+          stop: "no-progress",
+          reason: `three changes in a row left the verifier's findings exactly as they were: ${now.split("\n")[0]}`,
+        };
       return {
         kind: "continue",
-        answer: `(${said}) The verifier did not find the task complete. Act on its findings; the harness runs the checks again after your next change.`,
+        answer: `(${said}) The verifier did not find the task complete. Act on its findings; the harness runs the checks again after your next change. ${unmoved > 0 ? retry : repair}`,
         findings: judged.feedback,
         checked: evidence,
       };
