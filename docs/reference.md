@@ -10,6 +10,10 @@ default is the current directory.
 | `swarm run "<task>"` | Make the change, check each requirement, report what is complete. |
 | `swarm doctor [--fix] [--offline]` | Report what owns the installed `swarm` command; `--fix` repairs a broken install. |
 | `swarm doctor --models [--context <tokens>]` | Probe every installed model and show its verdict and record. |
+| `swarm doctor --conventions` | Show the approved conventions: global, this project's, and what a run here works under. |
+| `swarm init --learn [<path>...]` | Propose conventions from the files or directories given, or the repository's own sources. Writes a proposal; approves nothing. |
+| `swarm init --approve <proposal> [--global]` | Put a proposal in effect for this repository, or as the default for every repository. |
+| `swarm init --set <rule>=<value> [--global]`, `--forget <rule>` | Correct or remove one rule. `--set guidance="<text>"` adds guidance; `--forget guidance` clears it. |
 | `swarm verify`, `swarm init`, `swarm ci` | Swarm Verify's own commands, described in [its documentation](https://github.com/moonrunnerkc/swarm-verify/blob/main/docs/verifying.md). |
 
 ## `swarm run` options
@@ -37,6 +41,14 @@ Requirements and checks:
 | `--authorize-behavior-change` | Allow the change to alter what existing tests expect. The report names each one. |
 | `--review` | After completion, ask for one counterexample in a fresh context. Only a failing command reopens the work. |
 
+Security:
+
+| Option | Meaning |
+| --- | --- |
+| `--security <obligation>` | Say an obligation applies: `ownership`, `single-use-token` or `duplicate-operation`. Repeatable. |
+| `--no-security <obligation>` | Say it does not. The report records that you excluded it. |
+| `--security-check <file>` | Your binding for the checks. Without it one is drafted and reported as not reviewed. |
+
 Limits and execution:
 
 | Option | Default | Meaning |
@@ -46,7 +58,7 @@ Limits and execution:
 | `--turn-tokens <n>` | 16384 | Cap on one reply. |
 | `--max-minutes <n>` | none | Wall time for the whole run, final verification included. |
 | `--approve ask\|auto` | `ask` | Whether a person approves commands off the allowlist. With nobody at a terminal, `ask` refuses them. |
-| `--host` | off | Run checks on this machine instead of a container. |
+| `--host` | off | Run the model's commands and the checks on this machine instead of in containers. Reported as `host, not isolated`. |
 | `--linked-dependencies` | off | With `--host`: verify against the workspace's installed dependencies. Reported as not reproducible. |
 | `--no-apply` | off | Leave the result as a patch file. |
 
@@ -75,6 +87,72 @@ A command-line option wins over the file. Environment variables:
 | `SWARM_PROFILE` | The model record to use, as `--profile`. |
 | `SWARM_API_KEY` | The endpoint's key, unless `api_key_env` names another variable. |
 | `SWARM_SIGNING_KEY` | A PEM private key to sign verifications with, instead of the OS keychain's. |
+
+## Conventions
+
+A profile is a JSON file under `SWARM_HOME/conventions` (`global.json`, and one per repository
+under `projects/`), versioned `swarm.conventions/v1`. It holds rules, guidance, and the path and
+digest of each sample a rule was learned from, never the samples' text. A file that does not
+validate stops the run that would read it.
+
+| Rule | Values |
+| --- | --- |
+| `exports` | `named`, `default` |
+| `function-names`, `variable-names` | `camelCase`, `snake_case` |
+| `type-names` | `PascalCase` |
+| `file-names` | `kebab-case`, `camelCase`, `snake_case`, `PascalCase` |
+| `explicit-any` | `forbidden` |
+| `exported-return-types` | `explicit` |
+| `empty-catch` | `forbidden` |
+| `thrown-values` | `error-objects` |
+| `exported-docs` | `documented` |
+| `test-location` | `beside-sources`, `tests-directory` |
+
+Rules are measured in `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts` and `.cts` files. A
+rule holds where no file the run adds or changes breaks it more often than its base version did.
+Precedence: the harness's command policy, container boundary and acceptance rules are never a
+profile's to change; then the task's own words; then the project's profile; then the global one.
+A run reads its profile once, at the start, and its digest is in the report and in the signed
+statement's `producer.profile`.
+
+## Security binding
+
+```json
+{
+  "target": { "start": "node src/server.ts", "port": 3000, "env": {}, "ready": { "path": "/health" } },
+  "checks": [
+    { "class": "ownership",
+      "resource": { "method": "GET", "path": "/invoices/inv-1/download" },
+      "owner": { "authorization": "Bearer token-ada" },
+      "other": { "authorization": "Bearer token-grace" },
+      "otherRole": { "authorization": "Bearer token-sam" },
+      "ownerSees": ["INV-2026-0001"] },
+    { "class": "single-use-token",
+      "issue": { "method": "POST", "path": "/reset", "body": { "email": "ada@example.test" } },
+      "tokenAt": "token",
+      "redeem": { "method": "POST", "path": "/reset/{{token}}" },
+      "expiresAfterMs": 1500 },
+    { "class": "duplicate-operation",
+      "operation": { "method": "POST", "path": "/payments", "headers": { "idempotency-key": "k-{{run}}" } },
+      "observe": { "method": "GET", "path": "/balance" },
+      "valueAt": "balance",
+      "by": -10 }
+  ]
+}
+```
+
+`start` must keep running and listen on `port`, which it is also given as `PORT`. Use synthetic
+users and tokens. For `expiresAfterMs`, start the server with a short token life in `env`.
+
+| Obligation | Cases, each a real request |
+| --- | --- |
+| `ownership` | The owner is served; another user, another role and an unauthenticated request are refused, and none of them sees `ownerSees`. |
+| `single-use-token` | A valid token is redeemed; a redeemed, unknown or expired one is refused; of several redemptions at once exactly one succeeds. |
+| `duplicate-operation` | The operation is applied; replayed, or sent several times at once, it changes the observed value once. A repeat may be answered with the first result. |
+
+Every set holds a legitimate use that must succeed, so refusing everything fails it. These are
+the supported checks. Anything else, and any project that is not a JavaScript or TypeScript HTTP
+API, gets none, and the report says so.
 
 ## Exit codes
 

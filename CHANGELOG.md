@@ -5,10 +5,36 @@ The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 
 ## 17.1.0 - unreleased
 
-Requires swarm-verify 3.1.0 and Node 22.13. 17.0.0 was never published; this section covers
+Requires swarm-verify 3.2.0 and Node 22.13. 17.0.0 was never published; this section covers
 everything since 16.0.4 that the 17.0.0 section below does not.
 
+### Added
+
+- **Your coding conventions, learned from examples and approved by you.** `swarm init --learn`
+  counts what sample files do and writes a proposal; `--approve` puts it in effect for the
+  repository or, with `--global`, as a default; `--set` and `--forget` correct it, and
+  `swarm doctor --conventions` shows what applies. An approved rule is a requirement of every
+  run, checked on the files the run changes. Nothing is learned without your approval, unsafe
+  patterns in a sample are reported and never learned, and a rule your lint configuration
+  decides is left to it.
+- **Security requirements for web APIs.** For a JavaScript or TypeScript HTTP API, a task that
+  touches a per-user resource, a single-use token or an operation that must not repeat gets a
+  required requirement for it, checked by real requests to your running server from a separate
+  container. The report says which obligations applied and why. `--security`, `--no-security`
+  and `--security-check <file>` settle and bind them.
+
 ### Changed
+
+- **The model's commands run in containers.** Every command of a run, the model's and the
+  checks between turns, runs in a fresh container with no network, bounded resources and only
+  the workspace writable. Dependencies are installed there, fetched with install scripts off. A
+  run that cannot get a container stops before executing anything. `--host` now means the
+  model's commands too, and the report says `host, not isolated`. **This changes the default:**
+  a machine without a docker daemon needs `--host`.
+- **A failing check tells the model what it observed.** Verifier findings carry each failing
+  piece of evidence (the request and the status it got, the file and line that breaks a
+  convention). A change that leaves the findings exactly as they were is answered with a call
+  for a different diagnosis, and three in a row end the run.
 
 - **You supply the check that says the task is done.** `--accept <file or directory>` and
   `--accept-cmd "<command>"` take your own failing test or command; `keep=` marks behavior that
@@ -21,7 +47,8 @@ everything since 16.0.4 that the 17.0.0 section below does not.
   required, each with its own check, each reported separately. The model cannot change, drop or
   downgrade one, and what it adds itself is recorded as an optional suggestion. A run is
   complete only when every required requirement is satisfied.
-- **swarm-verify 3.1.0.** Containers are bounded, isolation that cannot be had runs nothing, and
+- **swarm-verify 3.2.0.** Adds the worker sandbox, behavior checks and convention evidence
+  the entries above rest on. Containers are bounded, isolation that cannot be had runs nothing, and
   replay authenticates first: `swarm-verify replay <dir> --key <key>`, with the key the run
   prints. A verification whose evidence was not published leaves the run incomplete.
 - **Model selection counts only what measures the model.** A run that ended for missing

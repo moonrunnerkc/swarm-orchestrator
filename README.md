@@ -14,8 +14,9 @@ package, judges every result.
 - Node 22.13 or newer, and git.
 - [Ollama](https://ollama.com) with at least one model installed, or any OpenAI-compatible
   server (`--endpoint`). Swarm downloads nothing and never picks a remote model for you.
-- A docker daemon (Docker Desktop, or colima on macOS) so checks run in a container. Without
-  one, `--host` runs them on your machine and the report says so.
+- A docker daemon (Docker Desktop, or colima on macOS). The model's commands and every check run
+  in containers with no network. Without one a run stops before it executes anything; `--host`
+  runs on your machine instead, and the report says `host, not isolated`.
 
 ## Install
 
@@ -50,6 +51,26 @@ A task that lists several things, one per bullet or number, gets one requirement
 each needs a check of its own. Set a phrase of the task apart the same way with
 `--require "<its words>"`.
 
+## Your conventions
+
+```sh
+swarm init --learn src          # propose conventions from examples; nothing is in effect yet
+swarm init --approve <proposal> # put the file you read and edited in effect for this repository
+swarm doctor --conventions      # what is approved, and what a run here works under
+```
+
+An approved rule (named exports, camelCase functions, no `any`, and so on) is checked on the files
+each run changes. Preferences nothing can measure are passed to the model as guidance and never
+reported as proven.
+
+## Security checks
+
+For a JavaScript or TypeScript web API, a task that touches a per-user resource, a single-use
+token or an operation that must not repeat gets a requirement for it. Its check starts your
+server in a container and sends requests from a second one: the owner is served, another user is
+not. The run report says which obligations applied and why. Supply the binding yourself with
+`--security-check <file>`; see [the example](examples/invoice-api/README.md).
+
 ## What you get back
 
 The run ends with a summary like this:
@@ -81,8 +102,9 @@ turn an unverified requirement into a satisfied one.
 
 Each verification is signed. The signature makes the record tamper-evident: a changed patch or
 report no longer matches it. It does not show that the code is correct beyond the checks that
-ran, that those checks are thorough, or that nothing unobserved happened. The path policy that
-keeps the model's commands inside the workspace is a filter on command text, not a sandbox.
+ran, that those checks are thorough, or that nothing unobserved happened. The container keeps
+the model's commands away from your home directory, credentials and network; it is not a defense
+against a compromised docker daemon or host. With `--host` only a filter on command text applies.
 
 ## More
 

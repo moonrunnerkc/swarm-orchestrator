@@ -55,10 +55,36 @@ incomplete. The note gives the verifier's reason. A common one is an unreadable
 `applied  no: ...` gives the reason. Your working tree changed during the run, or `--no-apply`
 was passed. Apply it yourself with `git apply <patch>`.
 
-## Isolated verification fails to start
+## `blocked: isolated execution is not available ...`
 
-A container run needs a docker daemon with memory and CPU limits available. Start Docker Desktop
-or `colima start`, or pass `--host` and accept a result reported as not isolated.
+The model's commands and the checks run in containers, which need a docker daemon with memory
+and CPU limits available. Start Docker Desktop or `colima start`. Nothing was executed. `--host`
+runs on your machine instead; the result is reported as `host, not isolated`, and only a filter
+on command text keeps the model's commands in the workspace.
+
+## `blocked: the base's dependencies did not install in the container ...`
+
+The run installs your lockfile's dependencies in its Linux container before the first turn. The
+output names the package that failed, often one built for another platform. Fix it, or pass
+`--host` to use the dependencies already installed on your machine.
+
+## `blocked: whether the ownership obligation applies could not be settled ...`
+
+The task changes a request handler and does not say whether what it serves belongs to one user.
+Pass `--security ownership` if it does, `--no-security ownership` if it does not.
+
+## A `security` requirement is `unverified`
+
+Either no binding could be drafted (the report's note says what the repository did not show), or
+the check's target never answered (`behavior check ... was not measured`: the note names the
+port, the start command and the log). Write the binding yourself and pass `--security-check
+<file>`; see the [format](reference.md#security-binding).
+
+## A `profile` requirement is `failed`
+
+A file the run changed breaks an approved convention; the evidence names the file and line. If
+the rule is wrong for this repository, correct it (`swarm init --set <rule>=<value>`) or remove
+it (`swarm init --forget <rule>`). A run reads the profile once, when it starts.
 
 ## `swarm doctor` reports a development link
 
