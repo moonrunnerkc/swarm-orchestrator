@@ -125,3 +125,52 @@ outcome here; nothing else in this document is a judgment of either patch.
 Evidence: each task's `swarm/` (run output, session report, trace, patch, replay, judgment) and
 `claude/` (agent report, patch, judgment), `scripts/`, and the run directories under
 /Users/brad/projects/recovery-2026-10-31/comparison/.
+
+## 17.0.0 (2026-11-05)
+
+Swarm only; Claude Code was not run again. Every task once, `swarm run --model auto --approve auto
+--max-steps 60 --max-minutes 60`, isolated unless the entry is host-only, from packed tarballs, on
+this machine with Ollama and colima (Rapid-MLX was stopped for memory; docs/DECISIONS.md). Each
+run's patch was judged by `run-17/judge-17.sh` with the sealed criteria of its corpus entry (the
+same as above, with fix-claimcheck's one recorded correction) and replayed with `swarm-verify
+replay`. The first four rows are the tasks above; "recorded" is the November 4 row for them and,
+for the other six, the latest recorded auto-selected run (docs/acceptance/2026-10-31/README.md).
+The candidate is 17.0.0-rc.19 over swarm-verify 2.1.0-rc.11, except h2 and c4dc276c4, run again on
+17.0.0-rc.21: rc.19 lost h2's authored check to a coverage-threshold defect and judged c4dc276c4
+incomplete against a complete judgment; rc.20 and rc.21 change only how an authored check is
+validated at the base (four files of `src/agent`, 75 lines added and 8 removed outside tests;
+whether the other eight runs' checks would have been validated the same way on rc.21 was not measured). Each judge ran while the next
+task ran, so the wall times are those of a busier machine than November 4's.
+
+| Task | Category | Self-reported | Judged | Model | Turns (recorded) | Tokens in / out | Wall s (recorded) | Turns, wall vs recorded | Replay | Candidate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `cmp-fix-claimcheck` | fix | incomplete | incomplete | gemma4:31b | 15 (50) | 247,479 / 20,368 | 1,701 (2,814) | -35, -1,113 s | agrees | 17.0.0-rc.19 |
+| `cmp-feature-pubprep` | feature | incomplete | incomplete | gemma4:31b | 10 (42) | 75,856 / 6,244 | 471 (956) | -32, -485 s | agrees | 17.0.0-rc.19 |
+| `cmp-refactor-ironroot` | refactor | incomplete | incomplete | gemma4:31b | 16 (22) | 206,560 / 11,847 | 1,237 (1,097) | -6, +140 s | agrees | 17.0.0-rc.19 |
+| `cmp-upgrade-claimcheck` | upgrade | incomplete | incomplete | gemma4:31b | 10 (48) | 92,335 / 3,443 | 602 (1,933) | -38, -1,331 s | agrees | 17.0.0-rc.19 |
+| `t6-tracemantle` | refactor | incomplete | incomplete | gemma4:31b | 15 (19) | 104,108 / 2,567 | 1,497 (1,212) | -4, +285 s | agrees | 17.0.0-rc.19 |
+| `h2-ironroot` (superseded) | fix | incomplete | incomplete | gemma4:31b | 10 (18) | 179,921 / 18,960 | 1,362 (428) | -8, +934 s | agrees | 17.0.0-rc.19 |
+| `h2-ironroot` | fix | incomplete | incomplete | gemma4:31b | 15 (18) | 214,905 / 19,709 | 1,333 (428) | -3, +905 s | agrees | 17.0.0-rc.21 |
+| `fix-tracemantle-f69ad0c58` | fix | incomplete | incomplete | gemma4:31b | 10 (20) | 47,742 / 2,592 | 544 (821) | -10, -277 s | agrees | 17.0.0-rc.19 |
+| `fix-tracemantle-c4dc276c4` (superseded) | fix | incomplete | complete | gemma4:31b | 14 (45) | 103,274 / 5,497 | 761 (1,507) | -31, -746 s | agrees | 17.0.0-rc.19 |
+| `fix-tracemantle-c4dc276c4` | fix | incomplete | incomplete | resident-heavy:24b | 7 (45) | 32,143 / 3,850 | 478 (1,507) | -38, -1,029 s | agrees | 17.0.0-rc.21 |
+| `fix-depose-09b01c1` | fix | incomplete | incomplete | gemma4:31b | 14 (28) | 145,744 / 14,876 | 1,152 (554) | -14, +598 s | agrees | 17.0.0-rc.19 |
+| `fix-claimcheck-d2f136c` | fix | incomplete | incomplete | gemma4:31b | 14 (60) | 98,715 / 3,136 | 300 (2,339) | -46, -2,039 s | agrees | 17.0.0-rc.19 |
+
+What the runs show. No run reported a state its judge contradicted, on the rows that stand; the one
+that did (c4dc276c4 on rc.19: three authored cases wrote config keys of their own and failed the
+human fix too) was traced, fixed in 17.0.0-rc.21 and run again, where the run and the judge agreed.
+No task was judged complete. On the rows that stand: the authored check still failed on the
+change and the change broke tests that passed at the base (fix-claimcheck); an authored claim still
+failed and the change broke tests (ironroot: the old module still defines _BUILTIN_CLAIMS); the
+authored check or claims held but the change broke tests (pubprep, t6), or added none of the tests
+the wording asks for (pubprep, h2, depose, which also broke tests); and four ran with no
+independent check because the author's attempts were all refused (upgrade, f69ad0c58, the
+claimcheck pick, and c4dc276c4's rerun, whose `auto` choice fell to resident-heavy:24b once the
+pass's incompletes put gemma4:31b under the even prior). Turns were fewer than recorded on every task. Wall time was lower
+on six and higher on four: ironroot (+140 s), t6 (+285 s), h2 (+905 s) and depose (+598 s), where
+writing and validating the authored check took part of the time.
+
+Evidence: `run-17/runs/<task>/rc19b` and `rc21` in the work root (run output, report, patch,
+judgment, replay), and the sessions under `~/.swarm/sessions` they name.
+

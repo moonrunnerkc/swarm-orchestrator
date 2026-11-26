@@ -33,11 +33,57 @@ export function failingCases(output: string): FailingCase[] {
     const title = (match[1] ?? "").split(" > ").at(-1)?.trim() ?? "";
     if (title.length > 0) cases.push({ title, error: (match[2] ?? "").trim() });
   }
-  for (const match of output.matchAll(/^FAILED \S+?::(\S+) - (.*)$/gm)) {
+  // pytest's summary cuts each message to the terminal's width, or gives none; the case's own
+  // section of the report holds its whole assertion, on its E lines.
+  const sections = pytestSections(output);
+  for (const match of output.matchAll(/^FAILED \S+?::(\S+?)(?: - (.*))?$/gm)) {
     const title = (match[1] ?? "").split("::").at(-1) ?? "";
-    if (title.length > 0) cases.push({ title, error: (match[2] ?? "").trim() });
+    const error = [match[2] ?? "", sections.get(title) ?? ""].join(" ").trim();
+    if (title.length > 0) cases.push({ title, error });
   }
   return cases;
+}
+
+/** Each failing pytest case's E lines, joined, by its name. */
+function pytestSections(output: string): Map<string, string> {
+  const found = new Map<string, string>();
+  const parts = output.split(/^_{3,} (\S+) _{3,}$/m);
+  for (let at = 1; at + 1 < parts.length; at += 2) {
+    const title = (parts[at] ?? "").split(".").at(-1) ?? "";
+    const lines = (parts[at + 1] ?? "")
+      .split("\n")
+      .filter((line) => /^E {2,}/.test(line))
+      .map((line) => line.replace(/^E\s+/, "").trim());
+    if (title.length > 0 && lines.length > 0) found.set(title, lines.join(" ").slice(0, 600));
+  }
+  return found;
+}
+
+const refusal =
+  /\b(?:unknown|unsupported|unrecognized|unexpected|invalid|no such|not found|not a valid)\b[^'"`\n]{0,40}['"`]([^'"`\n]{1,60})['"`]/gi;
+
+/**
+ * A name the code refused, quoted in a case's error at the base, that the task never names: the
+ * check fed the code an input of its own invention (a config key, an option), and a correct change
+ * refuses it too. tracemantle c4dc276c4 (2026-11-05, rc.19): cases wrote the keys 'strict', 'author'
+ * and 'key' and failed on "Unknown config key" at the base and with the human fix alike.
+ */
+export function refusedName(error: string, task: string): string | null {
+  // The names the task quotes, those quoted inside its quoted examples, and its flags.
+  const quoted = (text: string) =>
+    [...text.matchAll(/`([^`]+)`|'([^'\n]+)'|"([^"\n]+)"/g)].flatMap((match) =>
+      [match[1], match[2], match[3]].filter((one): one is string => one !== undefined),
+    );
+  const spans = quoted(task);
+  const named = new Set([
+    ...spans,
+    ...spans.flatMap(quoted),
+    ...(task.match(/--?[A-Za-z][\w-]*/g) ?? []),
+  ]);
+  for (const match of error.matchAll(refusal)) {
+    if (!named.has(match[1] ?? "")) return match[0].slice(0, 200);
+  }
+  return null;
 }
 
 const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;

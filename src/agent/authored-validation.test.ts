@@ -119,3 +119,32 @@ describe("an authored case that passes when run alone", () => {
     expect(ran.excluded).toEqual(["passes --reviewers to orchestrate"]);
   });
 });
+
+describe("a control case under a coverage threshold", () => {
+  // ironroot (2026-11-05, rc.19): run alone, it passed and pytest-cov printed the threshold's error.
+  it("is not taken for the code refusing", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "coverage-"));
+    const base = failing("test_scan_finds_the_pattern", "AssertionError: assert [] == ['x']");
+    const alone = "1 passed\nERROR: Coverage failure: total of 2 is less than fail-under=30\n";
+    const outcome = (output: string): ShellOutcome => ({
+      decision: "allowed",
+      output,
+      exitCode: 1,
+      record: "",
+    });
+    const chokepoint: Chokepoint = {
+      run: async () => outcome(""),
+      edit: async () => outcome(""),
+      check: async (command) => outcome(command.includes(" -k ") ? alone : base),
+    };
+    const content = "def test_control_scan_basic():\n    assert True\n";
+    const pytest = {
+      ...test,
+      path: "tests/test_scan_swarm_r1.py",
+      command: "python3 -m pytest -q tests/test_scan_swarm_r1.py",
+      content,
+    };
+    const ran = await runAtBase(chokepoint, workspace, pytest, task, "fix");
+    expect(ran.reasons.join(" ")).not.toMatch(/control case/);
+  });
+});

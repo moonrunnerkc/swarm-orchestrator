@@ -57,9 +57,11 @@ export async function controlsRefused(
     const ran = await chokepoint
       .check(alone, `authored control "${title}", alone at the base`)
       .finally(() => removeLaid(workspace, test.path));
-    const printed = printedError.exec(plainOutput(ran.output));
-    printedError.lastIndex = 0;
-    if (printed !== null)
+    // A runner's own report (a coverage threshold) is not the code refusing.
+    const printed = [...plainOutput(ran.output).matchAll(printedError)].find(
+      (match) => !/coverage/i.test(match[0]),
+    );
+    if (printed !== undefined)
       return `its control case "${title}" makes the code print "${printed[0].trim().slice(0, 200)}" at the base: a control drives behavior that succeeds now, so the setup does not reach the code; set it up as the repository's own tests do`;
   }
   return null;

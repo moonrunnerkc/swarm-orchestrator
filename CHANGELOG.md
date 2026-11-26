@@ -3,7 +3,15 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
-## Unreleased
+## 17.0.0 - 2026-11-05
+
+Completion now requires a witness the coding model did not write. On the ten sealed tasks of
+the release run, with 24B and 31B local models at Q4 (gemma4:31b, mistral-small3.2:24b) on an
+M5 Max, 0 of 10 completed, for three reasons: on four tasks every check the author wrote was
+refused at the base, so no independent check existed; patches broke tests that passed at the
+base; and patches did not add the tests the task asked for. A 16.x "complete" could rest on the
+model's own tests alone and may read as `incomplete: independent evidence missing` under 17.0.0.
+The run is in the [17.0.0 report](docs/plans/2026-11-05-17.0.0-report.md).
 
 **What "complete" means changes.** A run is complete only when each requirement is shown met by
 evidence the coding model did not write: a test written for R1 from the task's wording by a
