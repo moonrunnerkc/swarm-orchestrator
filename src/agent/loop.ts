@@ -29,9 +29,14 @@ const minimumReplyTokens = 256;
 const repeatLimit = 3;
 /** Replies in a row that follow no reply form before the model is called unusable here. */
 const unusableAfter = 4;
-/** Turns in a row, after the first edit, that change neither the tree nor any check's result. */
-const quietNudge = 2;
-const quietStop = 3;
+/**
+ * Turns in a row, after the first change, that change neither the tree nor any check's result
+ * before the model is told, and before the run ends. An edit that did not apply is an attempt to
+ * change the tree, answered with why, and is not counted unless it repeats: three of them in a
+ * row ended runs at their sixth and ninth turn of sixty (pubprep and ironroot, 2026-11-25).
+ */
+const quietNudge = 4;
+const quietStop = 6;
 const testCommand = /\b(vitest|jest|mocha|pytest|node\s+--test|npm\s+(run\s+)?test)\b/;
 
 /**
@@ -144,7 +149,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     }
     const stalled =
       quiet === quietNudge
-        ? `Your last ${quietNudge} turns changed neither the tree nor any check's result. ${stillFailing(measured, focus)} One more turn without a change ends the run.`
+        ? `Your last ${quietNudge} turns changed neither the tree nor any check's result. ${stillFailing(measured, focus)} ${quietStop - quietNudge} more turns without a change end the run.`
         : null;
     // Said once, for whichever budget runs short first.
     const budget = noticed
@@ -235,7 +240,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         withheld: options.checks?.withheld ?? [],
       });
       previous = { command: ran.fact.command, comparable: ran.comparable, repeats: ran.repeats };
-      undone = ran.undone;
+      // A new edit that did not apply is recovery under way, not a turn spent on nothing.
+      undone = ran.undone || (parsed.kind === "edit" && ran.repeats === 1);
       if (ran.repeats >= repeatLimit) {
         return result(
           "no-progress",

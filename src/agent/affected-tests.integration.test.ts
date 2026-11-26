@@ -66,14 +66,23 @@ describe("the declared suite runs whole only where a completion is at stake", ()
         "cat > twice.mjs <<'EOF'\nexport const twice = (n) => n * 3;\nEOF",
       ].join("\n"),
     );
-    const model = scripted([breakTwice, bash("cat twice.mjs"), bash("ls"), bash("pwd")]);
+    const model = scripted([
+      breakTwice,
+      bash("cat twice.mjs"),
+      bash("cat half.mjs"),
+      bash("ls"),
+      bash("pwd"),
+      bash("ls test"),
+      bash("git status --short"),
+      bash("wc -l half.mjs"),
+    ]);
     const ran = await (await fixture(modules)).run(model, { maxSteps: 25 });
     expect(ran.stop).toBe("no-progress");
     expect(ran.report.reason).toBe(
-      "3 turns changed neither the tree nor any check's result; every requirement's checks pass, and the change breaks tests that passed at the base: test/twice.test.mjs::twice holds",
+      "6 turns changed neither the tree nor any check's result; every requirement's checks pass, and the change breaks tests that passed at the base: test/twice.test.mjs::twice holds",
     );
     // The nudge before it says the same.
-    expect(model.seen[3]?.at(-1)?.content).toContain(
+    expect(model.seen[5]?.at(-1)?.content).toContain(
       "The change breaks tests that passed at the base: test/twice.test.mjs::twice holds.",
     );
   });
