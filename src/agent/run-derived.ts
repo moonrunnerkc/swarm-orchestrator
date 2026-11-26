@@ -79,6 +79,11 @@ export async function deriveForRun(input: {
       let authority: BehaviorCheckInput["authority"] = "user-acceptance";
       if (applies.length > 0 && options.security?.file != null) {
         file = await readSecurityFile(options.security.file);
+        const bound = file.checks.map((one) => one.class);
+        for (const name of applies.filter((one) => !bound.includes(one)))
+          notes.push(
+            `Security: ${options.security.file} holds no check of class ${name}, so that obligation stays unverified. Add one to the file.`,
+          );
       } else if (applies.length > 0) {
         const drafted = await draftSecurity({
           ...input,

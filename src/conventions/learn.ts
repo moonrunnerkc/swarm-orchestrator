@@ -49,7 +49,7 @@ export async function proposeConventions(
     ),
     ...commented("Samples that disagree with that configuration:", found.conflicts),
     "",
-    `# Formatting (quotes, semicolons, indentation) is never proposed: ${found.formatter ?? "no formatter configuration was found, and none"} owns it.`,
+    `# Formatting (quotes, semicolons, indentation) is never proposed: ${found.formatter === null ? "it belongs to a formatter, and no formatter configuration was found here" : `${found.formatter} owns it`}.`,
     ...commented(
       "Seen in the samples and never learned, because it is unsafe. Each with its safe form:",
       found.unsafe.map((one) => `${one.path}:${one.line} ${one.detail} ${one.safer}`),

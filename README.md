@@ -51,25 +51,18 @@ A task that lists several things, one per bullet or number, gets one requirement
 each needs a check of its own. Set a phrase of the task apart the same way with
 `--require "<its words>"`.
 
-## Your conventions
+## Your conventions and security checks
 
 ```sh
 swarm init --learn src          # propose conventions from examples; nothing is in effect yet
 swarm init --approve <proposal> # put the file you read and edited in effect for this repository
-swarm doctor --conventions      # what is approved, and what a run here works under
 ```
 
-An approved rule (named exports, camelCase functions, no `any`, and so on) is checked on the files
-each run changes. Preferences nothing can measure are passed to the model as guidance and never
-reported as proven.
-
-## Security checks
-
-For a JavaScript or TypeScript web API, a task that touches a per-user resource, a single-use
-token or an operation that must not repeat gets a requirement for it. Its check starts your
-server in a container and sends requests from a second one: the owner is served, another user is
-not. The run report says which obligations applied and why. Supply the binding yourself with
-`--security-check <file>`; see [the example](examples/invoice-api/README.md).
+An approved rule (named exports, camelCase functions, no `any`) becomes a requirement of every
+run, checked on the files the run changes. For a JavaScript or TypeScript web API, a task that
+touches a per-user resource, a single-use token or an operation that must not repeat also gets a
+security requirement, checked by real requests to your running server. The report says which
+applied and why. [The example](examples/invoice-api/README.md) runs both.
 
 ## What you get back
 
