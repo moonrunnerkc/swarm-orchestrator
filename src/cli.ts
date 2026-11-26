@@ -11,7 +11,9 @@ process.exitCode = await dispatch(
     run: async (args) => (await import("./cli-run.ts")).run(args),
     // The installed verifier's own commands, not a copy of them. Replay stays swarm-verify's.
     verify: verifierCommands.verify,
-    init: verifierCommands.init,
+    // The conventions profile is learned and approved here; anything else is the verifier's init.
+    init: async (args) =>
+      (await import("./cli-conventions.ts")).initCommand(args, verifierCommands.init),
     ci: verifierCommands.ci,
     doctor: async (args) => (await import("./cli-doctor.ts")).doctorCommand(args),
   },

@@ -124,9 +124,15 @@ export function doctorCommand(args: readonly string[]): Promise<number> {
       fix: { type: "boolean" },
       offline: { type: "boolean" },
       models: { type: "boolean" },
+      conventions: { type: "boolean" },
+      workspace: { type: "string" },
       context: { type: "string" },
     },
   });
+  if (values.conventions === true)
+    return import("./cli-conventions.ts").then((module) =>
+      module.conventionsReport(resolve(values.workspace ?? process.cwd())),
+    );
   if (values.models === true) {
     // The context a run tries first for a discovered model.
     const context = values.context === undefined ? 65_536 : Number(values.context);
