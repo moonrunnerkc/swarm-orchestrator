@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type ModelClient, ModelError } from "./model.ts";
-import { fixture, write } from "./test-doubles.ts";
+import { fixture, scripted, write } from "./test-doubles.ts";
 
 /** A change that is not the fix: the run goes on past it, to whatever ends it. */
 const wip = write("NOTES.md", "half: work in progress");
@@ -61,5 +61,26 @@ describe("a run that ends before the task is done", () => {
     expect(ran.report.requirements[0]?.limitation).toBe(
       "final verification did not run: the run was cancelled",
     );
+  });
+
+  it("does not report complete on a verification whose evidence was not published", async () => {
+    const probe = await fixture();
+    const key = process.env.SWARM_SIGNING_KEY;
+    // A signing key the verifier cannot read: the change is right, the evidence is not signed.
+    process.env.SWARM_SIGNING_KEY = "not a private key";
+    try {
+      const ran = await probe.run(
+        scripted([write("half.mjs", "export const half = (n) => n / 2;")]),
+      );
+      expect(ran.result?.state).toBe("complete");
+      expect(ran.report).toMatchObject({
+        state: "incomplete",
+        evidenceDelivery: "failed",
+        attestation: null,
+      });
+      expect(ran.report.notes.join("\n")).toContain("the verifier did not publish its evidence");
+    } finally {
+      process.env.SWARM_SIGNING_KEY = key;
+    }
   });
 });

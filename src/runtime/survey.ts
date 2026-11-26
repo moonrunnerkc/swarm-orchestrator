@@ -1,7 +1,8 @@
 import { eligibility } from "./capacity.ts";
 import { listOllama, ollamaBase, ollamaChat, ollamaVersion } from "./ollama.ts";
+import { describeRecord } from "./outcomes.ts";
 import { type ProbeResult, probeModel } from "./probe.ts";
-import { cachedProbe, profilePath, readProfile, withProbe, writeProfile } from "./profile.ts";
+import { cachedProbe, type ModelRecord, modelRecord, withProbe } from "./profile.ts";
 
 export interface SurveyRow {
   readonly name: string;
@@ -9,6 +10,8 @@ export interface SurveyRow {
   /** Why it is or is not a candidate, with its memory need where it could be estimated. */
   readonly capacity: string;
   readonly probe: ProbeResult | null;
+  /** Its finished tasks here as selection counts them, and what it does not count. */
+  readonly record: string;
 }
 
 const gib = 1024 ** 3;
@@ -21,14 +24,15 @@ const gib = 1024 ** 3;
 export async function surveyModels(input: {
   readonly contextTokens: number;
   readonly home: string;
+  readonly record?: ModelRecord;
   readonly log: (line: string) => void;
 }): Promise<{ readonly runtime: string; readonly rows: readonly SurveyRow[] }> {
   const base = ollamaBase();
   const version = await ollamaVersion(base);
   if (version === null)
     throw new Error(`Ollama is not answering at ${base}: start it with \`ollama serve\``);
-  const path = profilePath(input.home);
-  let profile = await readProfile(path);
+  const record = input.record ?? modelRecord(input.home, { log: input.log });
+  let profile = await record.read();
   const rows: SurveyRow[] = [];
   for (const one of eligibility(await listOllama(base), input.contextTokens)) {
     const model = one.model;
@@ -40,6 +44,7 @@ export async function surveyModels(input: {
         eligible: false,
         capacity: `${one.reason}${weights}`,
         probe: null,
+        record: describeRecord(profile.outcomes[model.digest]),
       });
       continue;
     }
@@ -60,9 +65,15 @@ export async function surveyModels(input: {
         input.contextTokens,
       );
       profile = withProbe(profile, identity, result);
-      await writeProfile(path, profile);
+      await record.write(profile);
     }
-    rows.push({ name: model.name, eligible: true, capacity: one.reason, probe: result });
+    rows.push({
+      name: model.name,
+      eligible: true,
+      capacity: one.reason,
+      probe: result,
+      record: describeRecord(profile.outcomes[model.digest]),
+    });
   }
   return { runtime: `Ollama ${version} at ${base}`, rows };
 }

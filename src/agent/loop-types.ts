@@ -121,6 +121,8 @@ export interface LoopResult {
   readonly turnsByRequirement: Readonly<Record<string, number>>;
   /** Check commands the harness ran, apart from the model's turns. */
   readonly harnessChecks: number;
+  /** Runs of the whole declared suite by the harness, the base's included. */
+  readonly suiteRuns: number;
   /** The model's own commands that ran a test runner. */
   readonly modelTestCommands: number;
 }

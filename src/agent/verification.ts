@@ -7,6 +7,7 @@ import {
   type Producer,
   requestVersion,
   snapshotWorkingTree,
+  type TrustedCheck,
   type VerifyResult,
   verifierVersion,
   verify,
@@ -51,7 +52,7 @@ export async function dependencyPolicy(workspace: string): Promise<"prepare" | "
 }
 
 /** The ledger as written so far: its digest and how many records it holds, for the signature. */
-export async function ledgerPrefix(
+async function ledgerPrefix(
   path: string,
 ): Promise<{ readonly ledgerSha256: string; readonly ledgerRecords: number }> {
   const text = await readFile(path, "utf8");
@@ -81,6 +82,8 @@ export function createVerifier(input: {
   readonly evidence: EvidenceRecorder;
   readonly producer: Pick<Producer, "name" | "version" | "promptSha256" | "instructions">;
   readonly model: () => string;
+  /** The user's command checks, run on the candidate under their authority; known after authoring. */
+  readonly trusted?: () => readonly TrustedCheck[];
   readonly signal?: AbortSignal | undefined;
 }): Verifier {
   let held: HeldResult | null = null;
@@ -95,6 +98,7 @@ export function createVerifier(input: {
         base: { commit: input.base },
         candidate: { kind: "patch", path: candidate.path, sha256: candidate.sha256 },
         requirements: [...record.requirements],
+        checks: [...(input.trusted?.() ?? [])],
         policy: { behaviorChange: input.behaviorChange, execution: input.execution },
         artifacts: { directory },
         producer: {
@@ -114,12 +118,15 @@ export function createVerifier(input: {
     snapshot,
     async tree(record) {
       count += 1;
-      const directory = join(input.evidence.directory, "verifications", String(count));
-      await mkdir(directory, { recursive: true, mode: 0o700 });
+      const verifications = join(input.evidence.directory, "verifications");
+      await mkdir(verifications, { recursive: true, mode: 0o700 });
+      // The verifier publishes a run only into a directory nothing else has written to, so the
+      // candidate's patch is kept beside it.
+      const directory = join(verifications, String(count));
       const taken = await snapshotWorkingTree(
         input.workspace,
         input.base,
-        join(directory, "candidate.patch"),
+        join(verifications, `${count}.patch`),
       );
       const digest = recordSha256(record);
       // The same patch under the same record is the same immutable input: its result stands.
@@ -151,7 +158,7 @@ export function behaviorChangeNote(result: VerifyResult | null): string {
  * requirement satisfied or self-attested, nothing regressed, the policy met. The model can do
  * nothing more about that; the run says so instead of asking it to.
  */
-export function onlyIndependenceMissing(result: VerifyResult): boolean {
+function onlyIndependenceMissing(result: VerifyResult): boolean {
   const required = result.requirements.filter((one) => one.required);
   return (
     result.state === "incomplete" &&

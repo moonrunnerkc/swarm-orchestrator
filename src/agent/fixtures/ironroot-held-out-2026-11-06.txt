@@ -1,0 +1,42 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.13, pytest-9.2.0, pluggy-1.7.0
+rootdir: /work/ironroot
+configfile: pyproject.toml
+plugins: platformdirs-4.14.5, hypothesis-6.170.15, cov-7.1.0, xdist-3.8.0, anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 3 items
+
+tests/integrity/test_builtin_claims_held_out.py .FF                      [100%]
+
+=================================== FAILURES ===================================
+__________________ test_falsification_no_longer_defines_them ___________________
+
+    def test_falsification_no_longer_defines_them() -> None:
+        defined = _defined_names(Path(inspect.getfile(falsification)))
+        for name in (*MOVED_FUNCTIONS, "_BUILTIN_CLAIMS"):
+>           assert name not in defined, f"falsification.py still defines {name}"
+E           AssertionError: falsification.py still defines _falsify_chain_seq_monotonic
+E           assert '_falsify_chain_seq_monotonic' not in {'FalsifiableClaim', 'FalsifiableClaimRegistry', 'FalsificationAttempt', 'FalsificationEvidence', 'FalsificationReport', 'Falsifier', ...}
+
+tests/integrity/test_builtin_claims_held_out.py:43: AssertionError
+_______________ test_old_import_path_and_registry_are_unchanged ________________
+
+    def test_old_import_path_and_registry_are_unchanged() -> None:
+        builtin = importlib.import_module("ironroot.verification.builtin_claims")
+>       assert falsification._BUILTIN_CLAIMS is builtin._BUILTIN_CLAIMS
+E       assert (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c567560>)) is (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c5c8c20>))
+E        +  where (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c567560>)) = falsification._BUILTIN_CLAIMS
+E        +  and   (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c5c8c20>)) = <module 'ironroot.verification.builtin_claims' from '/work/ironroot/src/ironroot/verification/builtin_claims.py'>._BUILTIN_CLAIMS
+
+tests/integrity/test_builtin_claims_held_out.py:59: AssertionError
+=========================== short test summary info ============================
+FAILED tests/integrity/test_builtin_claims_held_out.py::test_falsification_no_longer_defines_them - AssertionError: falsification.py still defines _falsify_chain_seq_monotonic
+assert '_falsify_chain_seq_monotonic' not in {'FalsifiableClaim', 'FalsifiableClaimRegistry', 'FalsificationAttempt', 'FalsificationEvidence', 'FalsificationReport', 'Falsifier', ...}
+FAILED tests/integrity/test_builtin_claims_held_out.py::test_old_import_path_and_registry_are_unchanged - assert (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c567560>)) is (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c5c8c20>))
+ +  where (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c567560>)) = falsification._BUILTIN_CLAIMS
+ +  and   (FalsifiableClaim(name='chain_seq_monotonic', description="Every belief row's seq is contiguous, starting at 1, with n...he stored size_bytes matches the on-disk size.", falsifier=<function _falsify_artifact_hash_stability at 0x10c5c8c20>)) = <module 'ironroot.verification.builtin_claims' from '/work/ironroot/src/ironroot/verification/builtin_claims.py'>._BUILTIN_CLAIMS
+========================= 2 failed, 1 passed in 0.08s ==========================
+/work/ironroot/.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))

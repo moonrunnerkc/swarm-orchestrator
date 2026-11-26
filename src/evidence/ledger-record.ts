@@ -17,7 +17,7 @@ export const genesisHash = "genesis";
  * record already written still validates, and readers switch on the type with a fallback.
  * Changing a field is the incompatible case, and that is what the version bump is for.
  */
-export const recordTypes = [
+const recordTypes = [
   "session-started",
   "model-call",
   "model-error",

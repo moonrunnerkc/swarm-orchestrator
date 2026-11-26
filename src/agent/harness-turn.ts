@@ -1,12 +1,13 @@
+import { diffSections, movedFiles } from "./context.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 import type { RegressionCheck, RequirementCheck, TurnChecks } from "./turn-checks.ts";
 
 /** The tree measured by the harness after a change. */
 export interface Measured {
   readonly checks: readonly RequirementCheck[];
-  /** Null where the declared tests were not run because a requirement's checks still fail. */
+  /** The tests the change reaches, or the whole suite where a completion was at stake; null where neither could run. */
   readonly regression: RegressionCheck | null;
-  /** Every required requirement has an independent check, each passes, nothing newly fails. */
+  /** Every independent check there is passes, and nothing newly fails. */
   readonly ready: boolean;
   /** No required requirement has an independent check: the model's completion is verified as asked. */
   readonly unchecked: boolean;
@@ -14,11 +15,6 @@ export interface Measured {
   readonly key: string;
 }
 
-/**
- * Each requirement's independent checks, then, only once they all pass, the declared tests
- * against the base: running the whole suite while the requirement still fails would say nothing
- * the next edit does not change, and the verifier reruns everything before any completion.
- */
 const testFile = /(?:^|\/)(?:test_[^/]*\.py|[^/]*_test\.py|[^/]*\.(?:test|spec)\.[cm]?[jt]sx?)$/;
 
 /** The test files a diff adds or changes, outside the harness's own `.swarm/`. */
@@ -28,12 +24,20 @@ export function testsTouched(diff: string): string[] {
     .filter((path) => testFile.test(path) && !path.startsWith(".swarm/"));
 }
 
+/**
+ * Each requirement's independent checks and the tests the files changed since the last measure
+ * reach, after every change. The whole declared suite runs once, the first time everything else
+ * passes: that is the first completion, and every verification after it runs the suite again.
+ * Running the whole suite after every turn cost t6 and depose most of their wall time (17.0.0).
+ */
 export async function measureTree(
   checks: TurnChecks,
   record: RequirementRecord,
   diff = "",
+  previous: string | null = null,
 ): Promise<Measured> {
-  const results = (await checks.requirements(record)).map((one) => {
+  const measured = await checks.requirements(record);
+  const results = measured.map((one) => {
     const asked = record.requirements.find((r) => r.id === one.requirement)?.testsAsked === true;
     if (!asked || one.status !== "passing" || testsTouched(diff).length > 0) return one;
     const detail = `the task asks for tests, and the change adds none yet: add them\n${one.detail}`;
@@ -41,11 +45,17 @@ export async function measureTree(
   });
   const checked = results.filter((one) => one.status !== "none");
   const passing = checked.length > 0 && checked.every((one) => one.status === "passing");
-  const regression = passing ? await checks.regression() : null;
-  const ready =
-    passing &&
-    results.every((one) => one.status !== "none") &&
-    (regression?.newFailures.length ?? 0) === 0;
+  const changed = movedFiles(diffSections(previous ?? ""), diffSections(diff));
+  let regression = await checks.affected(changed);
+  // The base's run is the first; the first completion's is the second, and the last here. The
+  // completion is the independent checks', whether or not the task's tests are written yet: a
+  // test run as a process is reached by no import, and only the suite shows it (c4dc276c4).
+  const held = measured.filter((one) => one.status !== "none");
+  const witnessed = held.length > 0 && held.every((one) => one.status === "passing");
+  if (witnessed && (regression?.newFailures.length ?? 0) === 0 && checks.suiteRuns() <= 1)
+    regression = await checks.suite();
+  // A requirement with no check here is the verifier's to judge from what the model maps to it.
+  const ready = passing && (regression?.newFailures.length ?? 0) === 0;
   const key = JSON.stringify([
     results.map((one) => [one.requirement, one.status, one.detail]),
     regression?.newFailures ?? null,
@@ -58,10 +68,12 @@ export function failureLine(detail: string): string {
   const [first = "", ...rest] = detail.split("\n");
   if (!first.endsWith(":")) return first;
   // A passing case's line (✓) can carry these words in its title (claimcheck, rc.13: a control).
-  const named = rest
-    .filter((line) => !/^\s*✓/.test(line))
-    .find((line) => /FAILED|FAIL |Error|assert|expected|✗|×/.test(line))
-    ?.trim();
+  const failing = rest.filter((line) => !/^\s*✓/.test(line));
+  // The runner's summary line first; then any line naming an error or an expectation, as words.
+  const named = (
+    failing.find((line) => /^\s*(?:FAILED|FAIL) |^\s*[×✗] /.test(line)) ??
+    failing.find((line) => /FAILED|FAIL |Error|assert|\bexpected\b|✗|×/.test(line))
+  )?.trim();
   return named === undefined ? first.slice(0, -1) : `${first} ${named.slice(0, 240)}`;
 }
 
@@ -90,10 +102,14 @@ export function checksNote(now: Measured, before: Measured | null): string {
   }
   if (now.regression === null) {
     if (!now.unchecked)
-      lines.push("- The declared tests run once every requirement's checks pass.");
+      lines.push("- The whole declared suite runs once every requirement's checks pass.");
   } else {
     const ref = now.regression.evidence === null ? "" : ` [evidence ${now.regression.evidence}]`;
-    lines.push(`- Regression${ref}:`, ...indent(now.regression.detail));
+    const scope =
+      now.regression.scope === "suite"
+        ? "the whole declared suite"
+        : "the tests your change reaches";
+    lines.push(`- Regression, ${scope}${ref}:`, ...indent(now.regression.detail));
   }
   lines.push(
     now.ready
@@ -120,6 +136,9 @@ export function withOpen(
     const line = failureLine(failing.detail);
     return `${why ?? "the turns ran out"}; ${failing.requirement} still fails: ${line}`;
   }
+  const broken = brokenLine(measured);
+  if (broken !== null)
+    return `${why ?? "the turns ran out"}; every requirement's checks pass, and the change breaks ${broken}`;
   if (measured?.unchecked === true)
     return `${why ?? "the turns ran out"}; R1 has no independent check here (see the report's independent checks), so nothing measured it`;
   if (measured === null && record.held !== undefined)
@@ -130,7 +149,16 @@ export function withOpen(
 /** What the nudge before a no-progress stop says is still failing, in the check's own words. */
 export function stillFailing(measured: Measured | null, focus: string | null): string {
   const failing = measured?.checks.find((one) => one.requirement === focus);
-  return failing === undefined
-    ? "Make the change the task asks for."
-    : `${failing.requirement} still fails: ${failureLine(failing.detail)}.`;
+  const broken = brokenLine(measured);
+  if (failing === undefined)
+    return broken === null ? "Make the change the task asks for." : `The change breaks ${broken}.`;
+  return `${failing.requirement} still fails: ${failureLine(failing.detail)}.`;
+}
+
+/** The tests that passed at the base and fail now, as the last measure read them; null for none. */
+function brokenLine(measured: Measured | null): string | null {
+  const failures = measured?.regression?.newFailures ?? [];
+  if (failures.length === 0) return null;
+  const more = failures.length > 3 ? ` and ${failures.length - 3} more` : "";
+  return `tests that passed at the base: ${failures.slice(0, 3).join(", ")}${more}`;
 }

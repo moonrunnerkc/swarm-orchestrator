@@ -62,3 +62,11 @@ export async function callModel(input: {
   });
   return { kind: "reply", reply, read, usage };
 }
+
+/** Why a reply stopped short, in words the model can act on. */
+export function cutNote(reply: Reply, turnTokens: number): string {
+  if (reply.overranMs !== undefined) {
+    return ` (it was still being written after ${Math.round(reply.overranMs / 1000)} s and none of it arrived; send a shorter reply, one small edit or command)`;
+  }
+  return reply.truncated ? ` (it was cut off at ${turnTokens} tokens)` : "";
+}

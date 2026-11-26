@@ -29,6 +29,28 @@ describe("the platform probe, run for real", () => {
       process.platform === "darwin" ? "BSD" : "GNU",
     );
     expect(probe.facts["sed.inplace"]).toBe(process.platform === "darwin" ? "suffix" : "bare");
+    expect(probe.facts["venv.python"]).toBeUndefined();
+  });
+
+  it("reads the version of the workspace's .venv python", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "probe-venv-"));
+    await mkdir(join(workspace, ".venv", "bin"), { recursive: true });
+    await writeFile(
+      join(workspace, ".venv", "bin", "python"),
+      "#!/bin/sh\necho 'Python 3.13.13'\n",
+      {
+        mode: 0o755,
+      },
+    );
+    const guard = createPolicyGuard({
+      workspaceRoot: workspace,
+      homeDir: homedir(),
+      shellAllowlist: defaultShellAllowlist,
+      deniedRoots: [],
+      childHomeDir: await mkdtemp(join(tmpdir(), "probe-home-")),
+    });
+    const probe = await probePlatform({ workspace, env: guard.childEnvironment.variables });
+    expect(probe.facts["venv.python"]).toBe("Python 3.13.13");
   });
 
   it("reads GNU in a Linux container", () => {

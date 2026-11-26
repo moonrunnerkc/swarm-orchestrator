@@ -14,8 +14,6 @@
  * it rather than describing it.
  */
 
-import { isolatedCoverageFloor, isolatedCoverageShortfall } from "../node-floor.ts";
-
 export interface GlobalEntry {
   readonly path: string;
   /** True when the global package directory is a symlink, which is what `npm link` leaves. */
@@ -41,7 +39,7 @@ export interface InstallSnapshot {
   readonly publishedVersion: string | null;
 }
 
-export type FindingSeverity = "broken" | "worth-knowing" | "healthy";
+type FindingSeverity = "broken" | "worth-knowing" | "healthy";
 
 export interface Finding {
   readonly severity: FindingSeverity;
@@ -52,34 +50,6 @@ export interface Finding {
 }
 
 const reinstall = ["npm rm -g swarm-orchestrator", "npm install -g swarm-orchestrator"] as const;
-
-/**
- * The Node this process found, and what that runtime cannot measure. Reported beside the
- * install findings rather than among them: an old Node is not a broken install, and nothing
- * `--fix` runs would change it.
- */
-export function runtimeFinding(nodeVersion: string): Finding {
-  const shortfall = isolatedCoverageShortfall(nodeVersion);
-  if (shortfall === null) {
-    return {
-      severity: "healthy",
-      summary: `Node ${nodeVersion} runs every measurement`,
-      detail:
-        `the changed-line coverage arm spawns node's test runner with process isolation named ` +
-        `on the command line, which needs Node ${isolatedCoverageFloor.major}.${isolatedCoverageFloor.minor} or newer, and this one is.`,
-      remedy: [],
-    };
-  }
-  return {
-    severity: "worth-knowing",
-    summary: `Node ${nodeVersion} runs swarm, and cannot measure changed-line coverage`,
-    detail:
-      `${shortfall}. Every command runs; that one arm reports unmeasured by name, the ratchet ` +
-      "cannot compare it, and a change touching covered lines fails on unmeasured coverage " +
-      "rather than passing.",
-    remedy: [],
-  };
-}
 
 /**
  * Findings worst first. A healthy install produces exactly one, saying so, because an empty

@@ -114,6 +114,24 @@ describe("the chat client", () => {
     await expect(refused.complete([], turn)).rejects.toThrow(ModelError);
   });
 
+  it("returns a reply that outlasted the time limit as cut off, without sending it again", async () => {
+    let calls = 0;
+    const slow = openAiCompatible({
+      endpoint: "http://model.test/v1",
+      model: "m",
+      apiKey: null,
+      timeoutMs: 20,
+      post: (_url, _headers, _body, { signal }) => {
+        calls += 1;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason));
+        });
+      },
+    });
+    expect(await slow.complete([], turn)).toMatchObject({ truncated: true, overranMs: 20 });
+    expect(calls).toBe(1);
+  });
+
   it("fails at once on a refused connection, and on the third server error in a row", async () => {
     const failing = (problem: () => Promise<{ status: number; text: string }>) => {
       let calls = 0;

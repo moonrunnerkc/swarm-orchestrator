@@ -25,6 +25,8 @@ export interface FinalizeInput {
   readonly held: HeldResult | null;
   /** Null to verify the snapshot now; otherwise why final verification cannot run. */
   readonly cannotVerify: string | null;
+  /** Why the run stopped before its first edit, where it did: the state is blocked, unverified. */
+  readonly blocked?: string | null;
   readonly verify: (snapshot: Snapshot) => Promise<VerifyResult>;
 }
 
@@ -84,6 +86,8 @@ export async function finalize(input: FinalizeInput): Promise<Finalized> {
   ) {
     result = input.held.result;
     verification = "reused";
+  } else if (input.blocked != null) {
+    unrun = `the run stopped before its first edit: ${input.blocked}`;
   } else if (input.cannotVerify === null) {
     if (input.held !== null)
       notes.push(
@@ -111,12 +115,21 @@ export async function finalize(input: FinalizeInput): Promise<Finalized> {
       `the working tree changed after it was snapshotted (sha256 ${again.sha256}); the result describes ${snapshot.sha256} only`,
     );
   const requirements = result?.requirements ?? unmeasured(input.record, unrun);
+  // The verifier's state is its own answer; whether its evidence was published is another, and a
+  // run is not complete on evidence nobody can inspect.
+  const undelivered = result?.delivery.status === "failed";
+  if (undelivered)
+    notes.push(
+      `the verifier did not publish its evidence, so the run is not complete: ${result?.delivery.problems.join("; ")}`,
+    );
   const state =
-    result === null || moved
-      ? result?.state === "blocked"
-        ? "blocked"
-        : "incomplete"
-      : result.state;
+    input.blocked != null
+      ? "blocked"
+      : result === null || moved || undelivered
+        ? result?.state === "blocked"
+          ? "blocked"
+          : "incomplete"
+        : result.state;
   await writeFile(join(input.directory, "result.json"), `${JSON.stringify(result, null, 2)}\n`, {
     mode: 0o600,
   });

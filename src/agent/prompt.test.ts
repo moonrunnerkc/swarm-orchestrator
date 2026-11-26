@@ -8,6 +8,7 @@ import {
   timeLeftNotice,
   truncate,
 } from "./prompt.ts";
+import { bash } from "./test-doubles.ts";
 
 describe("reading a reply", () => {
   it("takes the one bash block as the command", () => {
@@ -101,11 +102,45 @@ describe("reading an edit or write block", () => {
     });
   });
 
+  // fix-tracemantle-c4dc276c4 (Arm B, rc.8, 2026-11-07): the model sent two edit blocks for its
+  // own test file in one reply, four replies running, each refused for two blocks; the run ended
+  // as unusable replies. One file's edit blocks are one edit: its pairs, in the order sent.
+  it("reads edit blocks for one file as one edit, their pairs in order", () => {
+    const pair = (search: string, replace: string) =>
+      `\`\`\`edit t.py\n<<<<<<< SEARCH\n${search}\n=======\n${replace}\n>>>>>>> REPLACE\n\`\`\``;
+    expect(parseReply(`${pair("a = 1", "a = 2")}\n\n${pair("b = 1", "b = 2")}`)).toEqual({
+      kind: "edit",
+      edit: {
+        mode: "edit",
+        path: "t.py",
+        pairs: [
+          { search: "a = 1", replace: "a = 2" },
+          { search: "b = 1", replace: "b = 2" },
+        ],
+      },
+    });
+    // Another file's block, or a second whole write, is a second change.
+    const other = pair("c = 1", "c = 2").replace("edit t.py", "edit u.py");
+    expect(parseReply(`${pair("a = 1", "a = 2")}\n${other}`)).toMatchObject({ kind: "malformed" });
+  });
+
   it("refuses an edit block beside another block", () => {
     expect(parseReply(`${edit}\n\`\`\`bash\nls\n\`\`\``)).toMatchObject({
       kind: "malformed",
       reason: expect.stringContaining("the reply has more than one fenced block"),
     });
+  });
+
+  // t6 (Arm B, 2026-11-06): told one more quiet turn ended the run, gemma4:31b sent its fix as an
+  // edit block after a bash block of comments alone; the reply was refused for two blocks, and the
+  // run stopped with the fix unsent.
+  it("reads a bash block of comments alone beside another block as prose", () => {
+    const notes = "# First, fix the internal import\n\n# It was: x";
+    expect(parseReply(`${bash(notes)}\n\n${edit}`)).toMatchObject({ kind: "edit" });
+    // Alone, it is still the command it was: it runs, and prints nothing.
+    expect(parseReply(bash(notes))).toEqual({ kind: "command", command: notes });
+    // A block that runs something is a block, comments or not.
+    expect(parseReply(`${bash("# look\nls")}\n${edit}`)).toMatchObject({ kind: "malformed" });
   });
 
   it("describes both blocks in the system prompt", () => {

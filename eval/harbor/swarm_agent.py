@@ -53,7 +53,7 @@ class SwarmAgent(BaseInstalledAgent):
         command = (
             f". $HOME/.nvm/nvm.sh >/dev/null 2>&1; {_SNAPSHOT}; "
             f"swarm run {shlex.quote(instruction)} --endpoint {shlex.quote(os.environ['SWARM_EVAL_ENDPOINT'])} "
-            f"--model {shlex.quote(model)} --approve auto --max-steps {shlex.quote(steps)}; "
+            f"--model {shlex.quote(model)} --approve auto --accept-authored --max-steps {shlex.quote(steps)}; "
             # A budget stop exits nonzero, which is an outcome here rather than a harness error.
             'echo "swarm-exit $?"'
         )

@@ -69,7 +69,7 @@ async function nodeRunner(workspace: string): Promise<Runner | null> {
 }
 
 /** A name the task uses, where the base defines it. */
-export interface Definition {
+interface Definition {
   readonly name: string;
   readonly path: string;
   readonly line: number;

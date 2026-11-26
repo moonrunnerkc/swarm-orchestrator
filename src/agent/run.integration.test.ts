@@ -13,8 +13,6 @@ import {
 } from "./test-doubles.ts";
 
 const fix = write("half.mjs", "export const half = (n) => n / 2;");
-/** A change that is not the fix: the run goes on past it. */
-const _wip = write("NOTES.md", "half: work in progress");
 const mapped = recordAndComplete([
   { id: "R1", text: "x", kind: "fix", evidence: { tests: [{ name: "half" }] } },
 ]);
@@ -144,7 +142,10 @@ describe("swarm run", () => {
   });
 
   it("stops a blocked run with the verifier's reason, not just its state", async () => {
-    const ran = await (await fixture({ "swarm.toml": "[checks]\n" })).run(scripted([fix, mapped]));
+    // With a behavior change authorized, a run with no check of its own still reaches the
+    // verifier, which is what blocks it here.
+    const probe = await fixture({ "swarm.toml": "[checks]\n" });
+    const ran = await probe.run(scripted([fix, mapped]), { behaviorChange: "authorized" });
     expect(ran.stop).toBe("blocked");
     expect(ran.report.reason).toBe(
       "no checks are declared in swarm.toml or the project's manifests",

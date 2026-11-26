@@ -25,6 +25,7 @@ export function summaryLines(
   for (const one of report.requirements) lines.push(...summaryRequirementLines(one));
   for (const one of report.authoring)
     lines.push(`${pad("checks", 12)} ${one.requirement}: ${authoringLine(one)}`);
+  for (const one of report.accepted ?? []) lines.push(`${pad("checks", 12)} ${acceptedLine(one)}`);
   if (report.changed.length > 0) {
     const deleted = report.changed.filter((one) => one.status === "deleted").map((one) => one.path);
     const also = deleted.length === 0 ? "" : `, deleting ${deleted.join(", ")}`;
@@ -84,7 +85,7 @@ function changedLine(changed: RunReportFile["changed"]): string {
 }
 
 /** What was written apart from the change for one requirement, or why nothing was. */
-export function authoringLine(one: RunReportFile["authoring"][number]): string {
+function authoringLine(one: RunReportFile["authoring"][number]): string {
   const what = [
     ...(one.test === null ? [] : [`a test, run from ${one.test}`]),
     ...(one.claims === 0 ? [] : [`${one.claims} structure claim(s)`]),
@@ -94,6 +95,13 @@ export function authoringLine(one: RunReportFile["authoring"][number]): string {
   return what.length === 0
     ? `the task's own version constraints${kind}`
     : `${what.join(" and ")}${kind}, failing at the base, written without seeing the change`;
+}
+
+/** One of the user's checks: what it witnesses and what runs it. */
+function acceptedLine(one: NonNullable<RunReportFile["accepted"]>[number]): string {
+  const what =
+    one.requirement === null ? "a regression witness" : `${one.requirement}, user-acceptance`;
+  return `${what}: ${one.name}, ${one.runs}`;
 }
 
 export function renderMarkdown(report: RunReportFile): string {
@@ -110,6 +118,7 @@ export function renderMarkdown(report: RunReportFile): string {
     ...report.authoring.map(
       (one) => `- Independent checks for ${one.requirement}: ${authoringLine(one)}.`,
     ),
+    ...(report.accepted ?? []).map((one) => `- Your check: ${acceptedLine(one)}.`),
     `- Delivered patch: \`${report.snapshot.patch}\`, sha256 ${report.snapshot.patchSha256}, against base ${report.snapshot.base}.`,
     `- Verification of that patch: ${report.verification}.`,
     ...(report.changed.length === 0 ? [] : [`- Changed: ${changedLine(report.changed)}.`]),
@@ -122,7 +131,7 @@ export function renderMarkdown(report: RunReportFile): string {
     `- Applied to the workspace: ${report.delivery.applied ? "yes" : `no, ${report.delivery.reason}`}.`,
     `- Regression: ${report.regression ?? "not measured"}.`,
     `- Execution: ${report.execution ?? "not measured"}.`,
-    `- Attestation: ${report.attestation ?? "none"}.`,
+    `- Attestation: ${report.attestation ?? "none"}${report.attestationKey === null ? "" : `, verified with ${report.attestationKey}`}${report.evidenceDelivery === null ? "" : ` (evidence ${report.evidenceDelivery})`}.`,
     `- Instructions loaded: ${report.instructions.map((one) => `${one.path} (sha256 ${one.sha256})`).join(", ") || "none"}.`,
     `- Resources: ${report.resources.steps} model turn(s); ${report.resources.inputTokens} input and ${report.resources.outputTokens} output token(s)${report.resources.estimatedTurns > 0 ? ` (${report.resources.estimatedTurns} turn(s) estimated from text)` : " (reported by the runtime)"}; ${inferenceOf(report.resources)} and ${Math.round(report.resources.wallMs / 1000)} s of wall time; ${report.resources.retries} retried request(s); ${report.resources.escalations} escalation(s); ${report.resources.verifications} verification(s) in the loop; cost: ${report.resources.cost}.`,
     ...(report.review === null ? [] : [`- Review: ${reviewLine(report.review)}.`]),

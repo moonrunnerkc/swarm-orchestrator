@@ -1,17 +1,21 @@
 import { commandDefinitions as verifierDefinitions } from "swarm-verify/cli";
 
-export interface CommandDefinition {
+interface CommandDefinition {
   readonly name: string;
   readonly syntax: string;
   readonly description: string;
 }
 
-/** The subcommands, in the order help lists them. Help and the caps check both read this. */
+/**
+ * The subcommands, in the order help lists them. Help reads this, and so does the caps check
+ * (scripts/check-caps.mjs), by a path it computes.
+ * @public
+ */
 export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "run",
     syntax:
-      'run "<task>" [--model <name>|auto] [--endpoint <url>] [--context <tokens>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto] [--host [--linked-dependencies]] [--no-apply] [--authorize-behavior-change] [--review]',
+      'run "<task>" [--model <name>|auto] [--endpoint <url>] [--context <tokens>] [--max-steps <n>] [--max-tokens <n>] [--turn-tokens <n>] [--max-minutes <n>] [--approve ask|auto] [--host [--linked-dependencies]] [--no-apply] [--authorize-behavior-change] [--review] [--profile <name>|--no-record] [--require "<words of the task>"]... [--accept [R<n>=|keep=]<path>]... [--accept-cmd [R<n>=|keep=]<command>]... [--accept-authored|--review-checks|--write-checks <dir>]',
     description:
       "make the change, check each requirement, and report what is complete and what is not",
   },

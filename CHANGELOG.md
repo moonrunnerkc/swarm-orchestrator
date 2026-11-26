@@ -3,6 +3,61 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
+## 17.1.0 - unreleased
+
+Requires swarm-verify 3.1.0 and Node 22.13. 17.0.0 was never published; this section covers
+everything since 16.0.4 that the 17.0.0 section below does not.
+
+### Changed
+
+- **You supply the check that says the task is done.** `--accept <file or directory>` and
+  `--accept-cmd "<command>"` take your own failing test or command; `keep=` marks behavior that
+  must not change. Without one, a separate call drafts a check: at a terminal you approve, edit
+  or reject it, `--write-checks <dir>` writes it out and stops, and `--accept-authored` uses it
+  as written. A drafted check nobody approved is no longer used by default. Where no independent
+  check can exist, the run stops before its first edit.
+- **Each part of the task you set apart is a requirement of its own.** The items of a list in
+  the task, and phrases named with `--require "<words of the task>"`, become R2 and on: each
+  required, each with its own check, each reported separately. The model cannot change, drop or
+  downgrade one, and what it adds itself is recorded as an optional suggestion. A run is
+  complete only when every required requirement is satisfied.
+- **swarm-verify 3.1.0.** Containers are bounded, isolation that cannot be had runs nothing, and
+  replay authenticates first: `swarm-verify replay <dir> --key <key>`, with the key the run
+  prints. A verification whose evidence was not published leaves the run incomplete.
+- **Model selection counts only what measures the model.** A run that ended for missing
+  evidence, a time limit, a blocked verification, a cancellation or a server error is tallied
+  as unattributed and no longer lowers its model's rank. Existing records are carried forward
+  unchanged, marked as predating this, and the old file is kept as `<host>.v1.json`.
+  `--profile <name>` and `--no-record` keep experiments out of the record.
+- The harness runs the tests a change reaches after each turn and the whole suite once per
+  completion; a failing test the change adds is shown with its output; the stop line names the
+  failing requirement or the tests the change broke.
+- The README is rewritten around the first run, with guides for getting started, reference,
+  troubleshooting and architecture. Historical evidence moved to the tag
+  `archive/docs-2026-11-25`, indexed in `docs/history.md`.
+
+### Fixed
+
+- A check supplied for a requirement the task does not have (`--accept R2=...`) was validated,
+  sealed and never run. It is refused before the run, with the requirements the task has.
+- Every verification inside the loop lost its attestation under swarm-verify 3.x, because the
+  run kept the candidate patch in the directory the verifier publishes into.
+- A model record that did not parse was silently replaced by an empty one. It is kept aside.
+- A supplied directory's fixtures are laid beside its tests instead of being refused as tests; a
+  withheld check's path the model writes to is put back and the model's file kept apart.
+- Several edit blocks for one file are read as one edit; a bash block of comments alone is
+  prose; a refused reply or an action the harness undid is not counted as a turn without progress.
+- A run that rereads what it already read, turn after turn before its first change, ends.
+- A reply still being written at the request's time limit was requested twice more, for the
+  same wait each time, and the run then ended blaming a dropped connection. The model is now
+  told the reply never arrived and asked for a shorter one.
+
+### Removed
+
+- `scrubText`, `findKnownSecrets` and `findBlockingSecrets`, which nothing called; evidence is
+  scrubbed through one entry point, which now also walks JSON carried in a string.
+- The per-requirement share of turns, and the Node coverage-flag floor the verifier made moot.
+
 ## 17.0.0 - 2026-11-05
 
 Completion now requires a witness the coding model did not write. On the ten sealed tasks of

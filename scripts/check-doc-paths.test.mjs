@@ -182,3 +182,32 @@ describe("what it reports", () => {
     expect(found.fileCount).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("documents that left the active tree for an archive tag", () => {
+  it("resolves a path the archive tag's tree holds, and still misses one it does not", async () => {
+    await run(
+      "git",
+      ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "base"],
+      {
+        cwd: root,
+      },
+    );
+    await run("git", ["tag", "archive/test"], { cwd: root });
+    await run("git", ["rm", "-q", "docs/evidence/run.md"], { cwd: root });
+    await mkdir(join(root, "docs"), { recursive: true });
+    await writeFile(
+      join(root, "docs", "a.md"),
+      "see [the run](evidence/run.md) and [another](evidence/never.md)\n",
+    );
+    await track();
+    const found = await checkDocumentationPaths(root, ["archive/test"]);
+    expect(found.archived).toBe(1);
+    expect(found.misses.map((miss) => miss.raw)).toEqual(["evidence/never.md"]);
+    // Without the tag the same pointer is a miss: nothing is assumed archived.
+    const untagged = await checkDocumentationPaths(root, ["archive/absent"]);
+    expect(untagged.misses.map((miss) => miss.raw)).toEqual([
+      "evidence/run.md",
+      "evidence/never.md",
+    ]);
+  });
+});

@@ -6,11 +6,11 @@ import { assignmentLabel, isCredentialName, knownSecretPatterns } from "swarm-ve
  * idempotent and stops the export scan refusing a bundle precisely because write-time
  * scrubbing worked.
  */
-export const carriesRedaction = /\[redacted:[a-z-]+\]/;
-export const jsonNumber = /^-?\d+(?:\.\d+)?$/;
+const carriesRedaction = /\[redacted:[a-z-]+\]/;
+const jsonNumber = /^-?\d+(?:\.\d+)?$/;
 
 /** A four-digit PIN is the shortest credential anyone issues, so it is the floor for all of them. */
-export const shortestCredential = 4;
+const shortestCredential = 4;
 
 export type ValueVerdict = "not-credential" | "opaque" | "credential-shaped";
 
@@ -72,33 +72,26 @@ export function classifyValue(value: string): ValueVerdict {
  * `{` and `[` as it already stops before `}` and `)`, because an opening brace begins a
  * nested structure rather than being a scalar anybody assigned.
  */
-export const assignmentPattern =
+const assignmentPattern =
   /(?<=^|[\s,{[])["']?(\p{L}[\p{L}\p{N}_-]{0,63})["']?\s*[=:]\s*(?:(\[[^\]\n]*\])|"([^"]*)"|'([^']*)'|([^\s"',;{}[\])]+))/dgu;
 
 export interface SecretSpan {
   readonly label: string;
   readonly start: number;
   readonly end: number;
-  /** False for a match too loose to block a change on, only to redact one. */
-  readonly blocking: boolean;
 }
 
-export function shapeSpans(text: string): readonly SecretSpan[] {
+function shapeSpans(text: string): readonly SecretSpan[] {
   const spans: SecretSpan[] = [];
   for (const { label, source } of knownSecretPatterns) {
     for (const match of text.matchAll(new RegExp(source, "gi"))) {
-      spans.push({
-        label,
-        start: match.index,
-        end: match.index + match[0].length,
-        blocking: true,
-      });
+      spans.push({ label, start: match.index, end: match.index + match[0].length });
     }
   }
   return spans;
 }
 
-export function assignmentSpans(text: string): readonly SecretSpan[] {
+function assignmentSpans(text: string): readonly SecretSpan[] {
   const spans: SecretSpan[] = [];
   for (const match of text.matchAll(assignmentPattern)) {
     const name = match[1];
@@ -116,22 +109,16 @@ export function assignmentSpans(text: string): readonly SecretSpan[] {
     // A value that already carries a marker is judged as it stands, since joining would strip
     // the brackets the marker is recognized by and the second pass would redact its own work.
     const joinable = group === 2 && !carriesRedaction.test(value);
-    const verdict = classifyValue(joinable ? joinedElements(value) : value);
-    if (verdict === "not-credential") {
+    if (classifyValue(joinable ? joinedElements(value) : value) === "not-credential") {
       continue;
     }
-    spans.push({
-      label: assignmentLabel,
-      start: at[0],
-      end: at[1],
-      blocking: verdict === "credential-shaped",
-    });
+    spans.push({ label: assignmentLabel, start: at[0], end: at[1] });
   }
   return spans;
 }
 
 /** `[4, 8, 2]` and `["ab", "cd"]` as the one value they stand for. */
-export function joinedElements(bracketed: string): string {
+function joinedElements(bracketed: string): string {
   return bracketed
     .slice(1, -1)
     .split(",")

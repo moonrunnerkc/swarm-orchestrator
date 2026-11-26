@@ -1,71 +1,23 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { snapshotWorkingTree, type VerifyResult } from "swarm-verify";
+import { snapshotWorkingTree } from "swarm-verify";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
-import {
-  type ApprovalMode,
-  type ConfirmationPrompt,
-  createChokepoint,
-} from "../tools/chokepoint.ts";
-import { type Escalate, type Progress, runAttempts } from "./attempts.ts";
-import { authoringStage } from "./authoring.ts";
+import { createChokepoint } from "../tools/chokepoint.ts";
+import { type Progress, runAttempts } from "./attempts.ts";
+import { type CheckGate, checkGate } from "./check-gate.ts";
 import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
-import type { StopReason } from "./loop.ts";
-import type { ModelClient } from "./model.ts";
-import { assembleReport, type RunReportFile, recordStopped, writeReport } from "./report.ts";
+import { assembleReport, recordStopped, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
 import { runEnvironment } from "./run-environment.ts";
+import type { RunOptions, RunReport } from "./run-options.ts";
 import { stablePrefix } from "./stable-prefix.ts";
+import { suppliedPaths } from "./supplied.ts";
 import { behaviorChangeNote, createVerifier, swarmHome } from "./verification.ts";
 import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
 import { deliver, openWorkspace } from "./workspace.ts";
 
-export interface RunOptions {
-  readonly workspace: string;
-  readonly task: string;
-  readonly model: ModelClient;
-  /** Why this model, in one line, for the report. */
-  readonly modelReason: string;
-  /**
-   * Whom to hand the run to once, when this model stops making progress on a task of a kind:
-   * a model with a better record on that kind here, or none, with why.
-   */
-  readonly escalation?: Escalate | null;
-  /** The money a turn costs where it is known; "none (local runtime)" for a local model. */
-  readonly cost: string;
-  readonly contextTokens: number;
-  readonly maxSteps: number;
-  readonly maxTokens: number;
-  readonly turnTokens: number;
-  /** One wall-time budget for the whole run, final verification included; null for none. */
-  readonly maxWallMs: number | null;
-  /** Where the verifier runs the checks: a container (the default), or the host, reported so. */
-  readonly isolation: "isolated" | "host";
-  /** On the host, verify with the workspace's installed dependencies, reported as not reproducible. */
-  readonly dependencies?: "linked";
-  /** Whether to apply the delivered patch to the workspace when it is still as the run found it. */
-  readonly apply: boolean;
-  readonly approval: ApprovalMode;
-  /** The user's authorization to change what existing tests expect; never the model's. */
-  readonly behaviorChange?: "none" | "authorized";
-  /** One fresh-context review of a completed change; off unless asked for. */
-  readonly review?: boolean;
-  readonly confirm: ConfirmationPrompt;
-  readonly version: string;
-  readonly signal?: AbortSignal | undefined;
-  readonly log: (line: string) => void;
-}
-
-export interface RunReport {
-  readonly stop: StopReason | "cancelled" | "interrupted";
-  readonly report: RunReportFile;
-  readonly sessionDirectory: string;
-  readonly reportPath: string;
-  readonly result: VerifyResult | null;
-}
-
-export { swarmHome };
+export type { RunOptions, RunReport } from "./run-options.ts";
 
 /**
  * Runs the loop in a managed worktree seeded with the user's tree as it stands, finalizes the
@@ -89,6 +41,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     repository,
     join(dirname(repository), `.${basename(repository)}.swarm-${evidence.sessionId}`),
     final,
+    suppliedPaths(options.supplied ?? []),
   );
   try {
     const workspace = managed.directory;
@@ -134,7 +87,12 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     const progress: Progress = {
       model: options.model,
       loops: [],
-      record: initialRecord(options.task, stated.constraints, [...declared.notes, ...stated.notes]),
+      record: initialRecord(
+        options.task,
+        stated.constraints,
+        [...declared.notes, ...stated.notes],
+        options.obligations ?? [],
+      ),
       review: null,
       escalated: false,
     };
@@ -151,6 +109,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         instructions: digests,
       },
       model: () => progress.model.model,
+      trusted: () => gate?.trusted ?? [],
       signal: options.signal,
     });
     const chokepoint = createChokepoint({
@@ -164,10 +123,10 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
 
     let stop: RunReport["stop"] = "interrupted";
     let reason: string | null = null;
-    let authored: Awaited<ReturnType<typeof authoringStage>>["authored"] = [];
+    let gate: CheckGate | null = null;
     try {
-      // Checks for R1 written apart from the change, before its first edit (check-author.ts).
-      const authoring = await authoringStage({
+      // The user's checks, or the author's for R1 written apart from the change, before any edit.
+      gate = await checkGate({
         model: options.model,
         chokepoint,
         evidence,
@@ -177,50 +136,54 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         home,
         turnTokens: options.turnTokens,
         scratch: join(evidence.directory, "checks"),
+        supplied: options.supplied ?? [],
+        mode: options.checksMode ?? { kind: "accept-authored" },
+        behaviorChangeAuthorized: options.behaviorChange === "authorized",
         signal: options.signal,
       });
-      progress.record = authoring.record;
-      authored = authoring.authored;
-      ({ stop, reason } = await runAttempts({
-        shared: {
-          task: options.task,
-          chokepoint,
+      progress.record = gate.record;
+      if (gate.blocked !== null) [stop, reason] = ["blocked", gate.blocked];
+      else
+        ({ stop, reason } = await runAttempts({
+          shared: {
+            task: options.task,
+            chokepoint,
+            evidence,
+            environment: prefix.environment.block,
+            instructions: rendered,
+            status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
+            // The patch the verifier would judge, new files included, kept in the session.
+            diff: async () =>
+              readFile(
+                (await snapshotWorkingTree(workspace, base, join(evidence.directory, "turn.patch")))
+                  .path,
+                "utf8",
+              ),
+            verify: verifier.tree,
+            checks: gate.checks,
+            turnTokens: options.turnTokens,
+            turnTime: () => ({
+              leftMs: deadline - Date.now() - verifier.reserveMs(),
+              wallMs: options.maxWallMs ?? Number.POSITIVE_INFINITY,
+            }),
+            contextTokens: options.contextTokens,
+            outputs: { directory: join(workspace, ".swarm", "outputs"), root: workspace },
+            signal: options.signal,
+            log: options.log,
+          },
+          escalation: options.escalation ?? null,
+          review: options.review === true,
+          maxSteps: options.maxSteps,
+          // One allowance for the run: the check author's calls came out of it first.
+          maxTokens:
+            options.maxTokens -
+            gate.authored.reduce((sum, one) => sum + one.inputTokens + one.outputTokens, 0),
+          verifier,
           evidence,
-          environment: prefix.environment.block,
-          instructions: rendered,
-          status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
-          // The patch the verifier would judge, new files included, kept in the session.
-          diff: async () =>
-            readFile(
-              (await snapshotWorkingTree(workspace, base, join(evidence.directory, "turn.patch")))
-                .path,
-              "utf8",
-            ),
-          verify: verifier.tree,
-          checks: authoring.checks,
-          turnTokens: options.turnTokens,
-          turnTime: () => ({
-            leftMs: deadline - Date.now() - verifier.reserveMs(),
-            wallMs: options.maxWallMs ?? Number.POSITIVE_INFINITY,
-          }),
-          contextTokens: options.contextTokens,
-          outputs: { directory: join(workspace, ".swarm", "outputs"), root: workspace },
-          signal: options.signal,
-          log: options.log,
-        },
-        escalation: options.escalation ?? null,
-        review: options.review === true,
-        maxSteps: options.maxSteps,
-        // One allowance for the run: the check author's calls came out of it first.
-        maxTokens:
-          options.maxTokens -
-          authored.reduce((sum, one) => sum + one.inputTokens + one.outputTokens, 0),
-        verifier,
-        evidence,
-        base,
-        reviewDirectory: join(evidence.directory, "review"),
-        progress,
-      }));
+          base,
+          reviewDirectory: join(evidence.directory, "review"),
+          progress,
+        }));
     } catch (error) {
       stop = options.signal?.aborted ? "cancelled" : "interrupted";
       // A cancelled run says why it was cancelled, not which operation the abort interrupted.
@@ -235,6 +198,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       directory: final,
       record: progress.record,
       held: verifier.held(),
+      blocked: gate?.blocked ?? null,
       cannotVerify:
         stop === "cancelled"
           ? "the run was cancelled"
@@ -262,6 +226,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       digests,
       notes: [
         ...instructions.notes,
+        ...(gate?.notes ?? []),
         ...(progress.escalationNote === undefined
           ? []
           : [`Not escalated: ${progress.escalationNote}.`]),
@@ -271,7 +236,9 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       python,
       delivery,
       startedAt: started,
-      authored,
+      authored: gate?.authored ?? [],
+      user: gate?.user ?? [],
+      blocked: gate?.blocked ?? null,
     });
     const paths = await writeReport(final, report);
     await recordStopped(evidence, {

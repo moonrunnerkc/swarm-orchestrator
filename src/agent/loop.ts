@@ -12,15 +12,16 @@ import {
   stillFailing,
   withOpen,
 } from "./harness-turn.ts";
-import { callModel } from "./loop-model.ts";
+import { callModel, cutNote } from "./loop-model.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage } from "./loop-types.ts";
 import { createVerifyStep } from "./loop-verify.ts";
 import { stepsLeftNotice, systemPrompt, timeLeftNotice } from "./prompt.ts";
 import { runRequirementsStep } from "./requirements-step.ts";
+import { rereadNote, rereadReason, rereadStop, rereads } from "./rereads.ts";
 import { treeCycles } from "./tree-cycles.ts";
 import { noUsage } from "./usage.ts";
 
-export type { LoopOptions, LoopResult, StopReason, Usage, Verification } from "./loop-types.ts";
+export type { LoopOptions, LoopResult, StopReason, Verification } from "./loop-types.ts";
 
 /** The smallest reply worth asking for: one command and its fence. */
 const minimumReplyTokens = 256;
@@ -28,9 +29,14 @@ const minimumReplyTokens = 256;
 const repeatLimit = 3;
 /** Replies in a row that follow no reply form before the model is called unusable here. */
 const unusableAfter = 4;
-/** Turns in a row, after the first edit, that change neither the tree nor any check's result. */
-const quietNudge = 2;
-const quietStop = 3;
+/**
+ * Turns in a row, after the first change, that change neither the tree nor any check's result
+ * before the model is told, and before the run ends. An edit that did not apply is an attempt to
+ * change the tree, answered with why, and is not counted unless it repeats: three of them in a
+ * row ended runs at their sixth and ninth turn of sixty (pubprep and ironroot, 2026-11-25).
+ */
+const quietNudge = 4;
+const quietStop = 6;
 const testCommand = /\b(vitest|jest|mocha|pytest|node\s+--test|npm\s+(run\s+)?test)\b/;
 
 /**
@@ -62,7 +68,9 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let longestTurnMs = 0;
   let previous = { command: "", comparable: "", repeats: 0 };
   const cycles = treeCycles(repeatLimit);
+  const reread = rereads();
   let malformed = 0;
+  let undone = false;
   let proposedLast = false;
   let measured: Measured | null = null;
   let measuredDiff: string | null = options.settled ?? null;
@@ -72,7 +80,6 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let changedOnce = false;
   let modelTests = 0;
   const turnsBy = new Map<string, number>();
-  const required = Math.max(1, record.requirements.filter((one) => one.required).length);
   const result = (stop: StopReason, why: string | null = null): LoopResult => ({
     stop,
     reason:
@@ -84,6 +91,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     verifications: verifier.verifications(),
     turnsByRequirement: Object.fromEntries(turnsBy),
     harnessChecks: options.checks?.runs() ?? 0,
+    suiteRuns: options.checks?.suiteRuns() ?? 0,
     modelTestCommands: modelTests,
   });
 
@@ -109,7 +117,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     changedOnce ||= diff.trim().length > 0;
     if (options.checks && changedOnce && diff !== measuredDiff) {
       const before = measured;
-      measured = await measureTree(options.checks, record, diff);
+      measured = await measureTree(options.checks, record, diff, measuredDiff);
       measuredDiff = diff;
       checksText = checksNote(measured, before);
       options.log(
@@ -124,8 +132,12 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       }
     }
     // A turn that changed neither the tree nor any check's or the verifier's result made no progress.
+    // A reply refused for its form, or an action the harness undid, is not counted: the model has
+    // yet to read why (t6, 2026-11-06; c4dc276c4, 2026-11-07). Replies refused in a row end the
+    // run on their own count.
     const key = `${diff}\u0000${measured?.key ?? ""}\u0000${findings ?? ""}`;
-    quiet = changedOnce && key === lastKey ? quiet + 1 : 0;
+    quiet = changedOnce && key === lastKey ? quiet + (malformed > 0 || undone ? 0 : 1) : 0;
+    undone = false;
     lastKey = key;
     const focus = focusOf(measured);
     if (quiet >= quietStop) {
@@ -137,7 +149,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     }
     const stalled =
       quiet === quietNudge
-        ? `Your last ${quietNudge} turns changed neither the tree nor any check's result. ${stillFailing(measured, focus)} One more turn without a change ends the run.`
+        ? `Your last ${quietNudge} turns changed neither the tree nor any check's result. ${stillFailing(measured, focus)} ${quietStop - quietNudge} more turns without a change end the run.`
         : null;
     // Said once, for whichever budget runs short first.
     const budget = noticed
@@ -189,12 +201,6 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     steps += 1;
     const charged = focus ?? "R1";
     turnsBy.set(charged, (turnsBy.get(charged) ?? 0) + 1);
-    if (required > 1 && (turnsBy.get(charged) ?? 0) > Math.floor(options.maxSteps / required)) {
-      return result(
-        "step-budget",
-        `${charged} used its share of the turns with its checks still failing`,
-      );
-    }
     const { reply, read } = turn;
     if (reply.inputTokens !== null && prompt > 0) calibration = reply.inputTokens / prompt;
     const parsed = read.parsed;
@@ -210,7 +216,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
           `${malformed} replies in a row followed no reply form: ${parsed.reason}`,
         );
       }
-      const cut = reply.truncated ? ` (it was cut off at ${options.turnTokens} tokens)` : "";
+      const cut = cutNote(reply, options.turnTokens);
       note(
         "(a reply that followed no reply form)",
         `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash, edit, write or requirements block, or the completion marker alone.`,
@@ -234,13 +240,18 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         withheld: options.checks?.withheld ?? [],
       });
       previous = { command: ran.fact.command, comparable: ran.comparable, repeats: ran.repeats };
+      // A new edit that did not apply is recovery under way, not a turn spent on nothing.
+      undone = ran.undone || (parsed.kind === "edit" && ran.repeats === 1);
       if (ran.repeats >= repeatLimit) {
         return result(
           "no-progress",
           `the same command printed the same result ${ran.repeats} turns running`,
         );
       }
-      const shown = circlingNote(ran.note, ran.repeats, findings);
+      const command = parsed.kind === "edit" ? null : ran.fact.command;
+      const again = changedOnce ? 0 : reread(command, ran.comparable);
+      if (again >= rereadStop) return result("no-progress", rereadReason(again));
+      const shown = rereadNote(circlingNote(ran.note, ran.repeats, findings), again);
       conversation.add(commandExchange({ ...ran, reply: read.text, result: shown }));
       continue;
     }

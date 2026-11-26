@@ -1,0 +1,245 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import type { CheckReviewer } from "./check-review.ts";
+import { readSupplied } from "./supplied.ts";
+import { authoredHalf, bash, fixture, noAuthoredCheck, scripted, write } from "./test-doubles.ts";
+
+const fix = write("half.mjs", "export const half = (n) => n / 2;");
+const acceptance = (expected: string) =>
+  `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { half } from "../half.mjs";\ntest("the user's case", () => assert.equal(${expected}));\n`;
+// A base whose own test already passes: no failing test a change could make pass.
+const passingBase = {
+  "test/half.test.mjs": acceptance("half(0), 0").replace("the user's case", "zero"),
+};
+
+describe("the user supplies the oracle", () => {
+  it("seals a supplied check outside the candidate, where the model reads only its results", async () => {
+    const probe = await fixture(passingBase);
+    await probe.put("test/half.accept.test.mjs", acceptance("half(10), 5"));
+    const supplied = await readSupplied({
+      repository: probe.repo,
+      cwd: probe.repo,
+      files: ["test/half.accept.test.mjs"],
+      commands: [],
+    });
+    const model = scripted([bash("cat test/half.accept.test.mjs"), fix]);
+    const ran = await probe.run(model, { supplied });
+
+    expect(ran.report.state).toBe("complete");
+    // The author never ran: the user's check is R1's witness.
+    expect(model.authorSeen).toHaveLength(0);
+    const r1 = ran.result?.requirements.find((one) => one.id === "R1");
+    expect(r1).toMatchObject({ status: "satisfied", witness: "independent" });
+    expect(r1?.evidence.some((one) => one.authority === "user-acceptance")).toBe(true);
+    // Its source never reached the model; its path is answered with what it is.
+    const shown = model.seen
+      .flat()
+      .map((message) => message.content)
+      .join("\n");
+    expect(shown).not.toContain("the user's case");
+    expect(shown).toContain("is the independent check written apart from your change");
+    expect(ran.report.accepted).toEqual([
+      { name: "accept-R1-1", requirement: "R1", runs: "test/half.accept.test.mjs" },
+    ]);
+    // The user's own file is left where they had it.
+    expect(await readFile(join(probe.repo, "test/half.accept.test.mjs"), "utf8")).toContain(
+      "the user's case",
+    );
+  });
+
+  // fix-tracemantle-f69ad0c58 (Arm B, 2026-11-06): the held-out set is a test and the fixture
+  // files it reads; each fixture was taken for a test of its own and refused as not collected.
+  it("lays a supplied directory's other files beside its tests, as fixtures, never as checks", async () => {
+    const probe = await fixture(passingBase);
+    const reads = `import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { readFileSync } from "node:fs";\nimport { half } from "../half.mjs";\ntest("half of the fixture", () => assert.equal(half(Number(readFileSync(new URL("./fixtures/ten.txt", import.meta.url), "utf8"))), 5));\n`;
+    const outside = join(probe.root, "held");
+    await probe.put("../held/test/half.held.test.mjs", reads);
+    await probe.put("../held/test/fixtures/ten.txt", "10");
+    const given = await readSupplied({
+      repository: probe.repo,
+      cwd: probe.root,
+      files: [outside],
+      commands: [],
+    });
+    const model = scripted([bash("ls test/fixtures"), fix]);
+    const ran = await probe.run(model, { supplied: given });
+    expect(ran.report.state).toBe("complete");
+    expect(ran.report.accepted).toEqual([
+      { name: "accept-R1-1", requirement: "R1", runs: "test/half.held.test.mjs" },
+    ]);
+    expect(model.seen[1]?.at(-1)?.content).not.toContain("ten.txt");
+  });
+
+  // fix-tracemantle-c4dc276c4 (Arm B, rc.4, 2026-11-07): the model found the user's check path
+  // empty, wrote its own test there, and edited it for five turns. The harness laid the user's
+  // check over it for every run, so nothing ran the model's file; it was delivered, and the
+  // delivery collided with the user's own file at that path. On rc.5 the two writes put back
+  // there counted as turns that changed nothing, and with a failed `mv` they ended the run.
+  it("puts back a supplied check's path the model writes, keeping what it wrote apart", async () => {
+    const probe = await fixture(passingBase);
+    await probe.put("test/half.accept.test.mjs", acceptance("half(10), 5"));
+    const supplied = await readSupplied({
+      repository: probe.repo,
+      cwd: probe.repo,
+      files: ["test/half.accept.test.mjs"],
+      commands: [],
+    });
+    const own = acceptance("half(4), 2").replace("the user's case", "the model's case");
+    const model = scripted([
+      write("half.mjs", "export const half = (n) => n * 3;"),
+      write("test/half.accept.test.mjs", own),
+      bash(`cat > test/half.accept.test.mjs <<'EOF'\n${own}EOF`),
+      write("test/half.accept.test.mjs", own),
+      fix,
+    ]);
+    const ran = await probe.run(model, { supplied });
+
+    expect(ran.report.state).toBe("complete");
+    expect(ran.report.changed.map((one) => one.path)).toEqual(["half.mjs"]);
+    for (const turn of [2, 3, 4]) {
+      expect(model.seen[turn]?.at(-1)?.content).toMatch(
+        /test\/half\.accept\.test\.mjs holds an independent check the harness lays in only while it runs it, so the harness put the path back\. What you wrote is in \.swarm\/outputs\/\S+: move it from there to another path, such as test\/half\.accept\.own\.test\.mjs; anything written at test\/half\.accept\.test\.mjs is put back\./,
+      );
+    }
+    expect(await readFile(join(probe.repo, "test/half.accept.test.mjs"), "utf8")).toContain(
+      "the user's case",
+    );
+  });
+
+  it("refuses a supplied check that passes at the base, saying why and how to keep it", async () => {
+    const probe = await fixture(passingBase);
+    const supplied = [
+      {
+        kind: "file" as const,
+        requirement: "R1",
+        path: "test/half.accept.test.mjs",
+        content: acceptance("half(0), 0"),
+      },
+    ];
+    const model = scripted([fix]);
+    const ran = await probe.run(model, { supplied });
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
+    expect(ran.report.reason).toBe(
+      "your checks were refused: R1=test/half.accept.test.mjs: it passes at the base, so it cannot show the change; a check that should keep passing is --accept keep=test/half.accept.test.mjs",
+    );
+  });
+
+  it("runs a command the user supplies, and a kept check as a regression witness", async () => {
+    const probe = await fixture(passingBase);
+    const supplied = [
+      {
+        kind: "command" as const,
+        requirement: "R1",
+        command:
+          "node -e \"import('./half.mjs').then((m) => process.exit(m.half(8) === 4 ? 0 : 1))\"",
+      },
+      { kind: "command" as const, requirement: null, command: "node --test test/half.test.mjs" },
+    ];
+    const ran = await probe.run(scripted([fix]), { supplied });
+    expect(ran.report.state).toBe("complete");
+    expect(ran.report.accepted?.map((one) => one.requirement)).toEqual(["R1", null]);
+    const r1 = ran.result?.requirements.find((one) => one.id === "R1");
+    expect(r1?.evidence).toContainEqual(
+      expect.objectContaining({ kind: "check", ref: "accept-R1-1", authority: "user-acceptance" }),
+    );
+  });
+});
+
+describe("authored checks are shown, written out, or used as written", () => {
+  it("makes an approved authored check the user's own", async () => {
+    const probe = await fixture(passingBase);
+    const shown: string[] = [];
+    const reviewer: CheckReviewer = async (one) => {
+      shown.push(one.content);
+      return "approve";
+    };
+    const ran = await probe.run(scripted([fix], { author: [authoredHalf] }), {
+      checksMode: { kind: "review", reviewer },
+    });
+    expect(shown[0]).toContain("half(4) is 2, written apart");
+    expect(ran.report.state).toBe("complete");
+    expect(ran.report.accepted?.[0]).toMatchObject({ name: "reviewed-R1-1", requirement: "R1" });
+  });
+
+  it("runs an edited check at the base again, and shows it again where the edit is refused", async () => {
+    const probe = await fixture(passingBase);
+    const problems: (string | null)[] = [];
+    const reviewer: CheckReviewer = async (one) => {
+      problems.push(one.problem);
+      if (problems.length > 1) return "reject";
+      await writeFile(one.file, acceptance("half(0), 0"));
+      return "edit";
+    };
+    const ran = await probe.run(scripted([fix], { author: [authoredHalf] }), {
+      checksMode: { kind: "review", reviewer },
+    });
+    expect(problems[0]).toBeNull();
+    expect(problems[1]).toMatch(/it passes at the base, so it cannot show the change/);
+    // Rejected, R1 is left with no independent check, and the run stops before any edit.
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
+  });
+
+  it("writes the authored checks out and stops, naming the command that supplies them back", async () => {
+    const probe = await fixture(passingBase);
+    const directory = join(probe.root, "checks");
+    const ran = await probe.run(scripted([fix], { author: [authoredHalf] }), {
+      checksMode: { kind: "write", directory },
+    });
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
+    expect(ran.report.reason).toContain(`--accept ${directory}`);
+    const written = await readFile(join(directory, "test/half.swarm-r1.test.mjs"), "utf8");
+    expect(written).toContain("half(4) is 2, written apart");
+    // Supplied back, it is the user's: laid at its path under the directory.
+    const back = await readSupplied({
+      repository: probe.repo,
+      cwd: probe.root,
+      files: [directory],
+      commands: [],
+    });
+    expect(back).toEqual([
+      { kind: "file", requirement: "R1", path: "test/half.swarm-r1.test.mjs", content: written },
+    ]);
+  });
+});
+
+describe("a run with no independent check stops before its first edit", () => {
+  // upgrade-claimcheck, fix-tracemantle-f69ad0c58, fix-claimcheck-d2f136c and c4dc276c4's rerun
+  // (17.0.0 sealed set): every author attempt was refused, and each run spent its turns on a task
+  // whose completion nothing could witness.
+  it("says so, and how to supply one", async () => {
+    const model = scripted([fix], { author: [noAuthoredCheck] });
+    const ran = await (await fixture(passingBase)).run(model);
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.stop).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
+    expect(model.seen).toHaveLength(0);
+    expect(ran.report.reason).toMatch(/^no independent check for R1 \(/);
+    expect(ran.report.reason).toContain(
+      'swarm run "Make half(n) return n / 2." --accept <test file>',
+    );
+  });
+
+  // tracemantle (f69ad0c58, c4dc276c4, replayed 2026-11-06): the base's only failing test was a
+  // README test-count claim, which no fix of the task's would make pass.
+  it("is not kept going by a failing base test that has nothing to do with the task", async () => {
+    const model = scripted([fix], { author: [noAuthoredCheck] });
+    const unrelated = {
+      ...passingBase,
+      "test/readme-count.test.mjs":
+        'import { test } from "node:test";\nimport assert from "node:assert/strict";\ntest("readme count", () => assert.equal(786, 789));\n',
+    };
+    const ran = await (await fixture(unrelated)).run(model);
+    expect(ran.report.state).toBe("blocked");
+    expect(ran.report.resources.steps).toBe(0);
+  });
+
+  it("goes on where a test fails at the base, which a change could make pass", async () => {
+    const model = scripted([fix], { author: [noAuthoredCheck] });
+    const ran = await (await fixture()).run(model);
+    expect(ran.report.resources.steps).toBeGreaterThan(0);
+  });
+});

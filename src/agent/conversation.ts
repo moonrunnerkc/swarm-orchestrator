@@ -49,7 +49,7 @@ export function recordBlock(record: RequirementRecord): string {
     JSON.stringify(one.id === "R1" ? { ...one, text: "(the task above)" } : one),
   );
   return [
-    "Requirements as recorded (a requirements block replaces them; R1 is the task above):",
+    "Requirements as recorded (R1 is the task above; every one marked required must be satisfied):",
     `[\n${requirements.join(",\n")}\n]`,
   ].join("\n");
 }

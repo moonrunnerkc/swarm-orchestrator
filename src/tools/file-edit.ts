@@ -146,12 +146,14 @@ export function closestLines(text: string, search: string): string {
     if (shared > best.shared) best = { at, shared };
   }
   if (best.at < 0) return "";
-  const shown = file
-    .slice(best.at, best.at + size)
-    .map((line, offset) => `${String(best.at + offset + 1).padStart(5)}  ${line}`)
-    .join("\n");
-  return `. The file's closest lines, numbered as in the file:\n${shown}\n`;
+  return `. The file's closest lines, numbered as in the file:\n${numbered(file, best.at, size)}\n`;
 }
+
+const numbered = (file: readonly string[], at: number, size: number) =>
+  file
+    .slice(at, at + size)
+    .map((line, offset) => `${String(at + offset + 1).padStart(5)}  ${line}`)
+    .join("\n");
 
 /** A SEARCH part longer than this is hard to copy exactly, and is better changed in parts. */
 const longSearch = 40;
@@ -182,7 +184,10 @@ export function whereItDiffers(text: string, search: string): string | null {
     wanted.length > longSearch
       ? ` A SEARCH of ${wanted.length} lines is hard to copy exactly: change the block in smaller parts, or write the whole file with a write block.`
       : "";
-  return `. Its first ${best.run} line(s) match the file from line ${best.at + 1}; its line ${best.run + 1} reads ${JSON.stringify(mine)}, where the file's line ${best.at + best.run + 1} reads ${theirs === undefined ? "nothing (the file ends)" : JSON.stringify(theirs)}${spacing}.${advice}\n`;
+  // The file's own lines over the span, with room for lines it has between the SEARCH's: one
+  // differing line per refusal took c4dc276c4 (Arm B, rc.7) three edits that never applied.
+  const there = numbered(file, best.at, Math.min(wanted.length + 4, 30));
+  return `. Its first ${best.run} line(s) match the file from line ${best.at + 1}; its line ${best.run + 1} reads ${JSON.stringify(mine)}, where the file's line ${best.at + best.run + 1} reads ${theirs === undefined ? "nothing (the file ends)" : JSON.stringify(theirs)}${spacing}.${advice} The file's lines there, numbered as in the file:\n${there}\n`;
 }
 
 /**

@@ -1,20 +1,21 @@
-import { resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import type { Escalate } from "./agent/attempts.ts";
+import type { ChecksMode } from "./agent/check-gate.ts";
+import { gitText } from "./agent/git.ts";
 import { summaryLines } from "./agent/report.ts";
+import { obligationsOf } from "./agent/requirement-record.ts";
 import { type RunReport, runAgent } from "./agent/run.ts";
+import { readSupplied, type Supplied, SuppliedCheckError } from "./agent/supplied.ts";
 import { swarmHome } from "./agent/verification.ts";
 import { buildVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
+import { recordFor } from "./cli-record.ts";
+import { terminalReviewer } from "./cli-review.ts";
 import { readAgentConfig } from "./config/agent-config.ts";
-import {
-  finishedOutcome,
-  type Profile,
-  profilePath,
-  readProfile,
-  recordOutcome,
-} from "./runtime/profile.ts";
+import { attribute, recordOutcome } from "./runtime/outcomes.ts";
+import type { Profile } from "./runtime/profile.ts";
 import {
   NoModelError,
   type ResolvedModel,
@@ -73,6 +74,14 @@ export async function run(args: readonly string[]): Promise<number> {
       review: { type: "boolean" },
       "linked-dependencies": { type: "boolean" },
       approve: { type: "string" },
+      profile: { type: "string" },
+      "no-record": { type: "boolean" },
+      require: { type: "string", multiple: true },
+      accept: { type: "string", multiple: true },
+      "accept-cmd": { type: "string", multiple: true },
+      "accept-authored": { type: "boolean" },
+      "review-checks": { type: "boolean" },
+      "write-checks": { type: "string" },
     },
   });
   const task = positionals.join(" ").trim();
@@ -82,6 +91,8 @@ export async function run(args: readonly string[]): Promise<number> {
       "--linked-dependencies needs --host: a container never runs on the workspace's installed dependencies",
     );
   }
+  const set = obligationsOf(task, values.require ?? []);
+  if (set.refused.length > 0) throw new UsageError(set.refused.join("; "));
   const workspace = resolve(values.workspace ?? process.cwd());
   // swarm.toml is optional: without one, the model is discovered and the defaults below apply.
   const agent = await readAgentConfig(workspace);
@@ -106,7 +117,18 @@ export async function run(args: readonly string[]): Promise<number> {
         ? discoveredContexts
         : [defaultContextTokens];
 
+  const record = recordFor(values.profile, values["no-record"] === true);
+  const supplied = await suppliedChecks(workspace, values.accept ?? [], values["accept-cmd"] ?? []);
+  const checksMode = modeOf(values);
+  const top = await gitText(workspace, ["rev-parse", "--show-toplevel"]);
+  if (checksMode.kind === "write" && !relative(top, checksMode.directory).startsWith(".."))
+    throw new UsageError(
+      `--write-checks needs a directory outside the repository, which is the tree the model works in: ${checksMode.directory}`,
+    );
   write(`task         ${task}`);
+  for (const [at, text] of set.obligations.entries())
+    write(`requires     R${at + 2} ${JSON.stringify(text)}`);
+  write(`record       ${record.name}${record.writes ? "" : ", read only (--no-record)"}`);
   let model: ResolvedModel;
   let contextTokens: number;
   try {
@@ -117,6 +139,7 @@ export async function run(args: readonly string[]): Promise<number> {
         apiKey: process.env[keyName] ?? null,
         contextTokens: context,
         home: swarmHome(),
+        record,
         log: (line) => process.stderr.write(`${line}\n`),
       }),
     ));
@@ -134,12 +157,15 @@ export async function run(args: readonly string[]): Promise<number> {
     model: model.client,
     modelReason: model.reason,
     // Once, and only to a model whose record on R1's kind of task is better here.
-    escalation: escalateAmong(model, await readProfile(profilePath(swarmHome()))),
+    escalation: escalateAmong(model, await record.read()),
     contextTokens,
     apply: values["no-apply"] !== true,
     // Only the user changes what existing tests may expect; nothing the model says can.
     behaviorChange: values["authorize-behavior-change"] === true ? "authorized" : "none",
     review: values.review === true,
+    obligations: set.obligations,
+    supplied,
+    checksMode,
     cost: model.cost,
     maxSteps,
     // Unset, the token budget is what the steps could use at this context, so steps and time end
@@ -157,18 +183,58 @@ export async function run(args: readonly string[]): Promise<number> {
     signal: controller.signal,
     log: (line) => process.stderr.write(`${line}\n`),
   });
-  // A finished run joins its model's record here, which selection reads once there are enough.
-  const finished = finishedOutcome({
-    stop: ran.stop,
-    state: ran.report.state,
-    escalated: ran.report.resources.escalations > 0,
-  });
+  // A finished run joins its model's record here. Selection reads what the model completed or
+  // stopped short of on its own; a run that measures nothing about it is tallied apart.
   const kind = ran.report.requirements.find((one) => one.id === "R1")?.kind ?? null;
-  if (finished !== null) await recordOutcome(swarmHome(), model.digest, finished, kind);
+  await recordOutcome(record, model.digest, attribute(ran.stop, ran.report), kind);
   for (const line of summaryLines(ran.report, { markdown: ran.reportPath })) write(line);
   write(`evidence     ${ran.sessionDirectory}`);
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
+  if (ran.report.attestationKey !== null) write(`key          ${ran.report.attestationKey}`);
   return exitCodeOf(ran.report.state, ran.report.requirements);
+}
+
+/** The user's checks, read before the run seeds its workspace; a refused one is a usage error. */
+async function suppliedChecks(
+  workspace: string,
+  files: readonly string[],
+  commands: readonly string[],
+): Promise<Supplied[]> {
+  try {
+    const repository = await gitText(workspace, ["rev-parse", "--show-toplevel"]);
+    return await readSupplied({ repository, cwd: process.cwd(), files, commands });
+  } catch (error) {
+    if (error instanceof SuppliedCheckError) throw new UsageError(error.message);
+    throw error;
+  }
+}
+
+/**
+ * What happens to the author's checks: one of the three flags, else shown for approval at a
+ * terminal, else written out for the user, since nobody is there to approve them.
+ */
+function modeOf(values: {
+  readonly "accept-authored"?: boolean | undefined;
+  readonly "review-checks"?: boolean | undefined;
+  readonly "write-checks"?: string | undefined;
+}): ChecksMode {
+  const chosen = [
+    values["accept-authored"] === true,
+    values["review-checks"] === true,
+    values["write-checks"] !== undefined,
+  ].filter(Boolean).length;
+  if (chosen > 1)
+    throw new UsageError(
+      "--accept-authored, --review-checks and --write-checks are one choice: pass one",
+    );
+  if (values["accept-authored"] === true) return { kind: "accept-authored" };
+  const write = values["write-checks"];
+  if (write !== undefined) return { kind: "write", directory: resolve(write) };
+  if (values["review-checks"] === true && !process.stdin.isTTY)
+    throw new UsageError("--review-checks needs a terminal; use --write-checks <dir> instead");
+  if (process.stdin.isTTY) return { kind: "review", reviewer: terminalReviewer() };
+  const stamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15);
+  return { kind: "write", directory: join(swarmHome(), "checks", stamp) };
 }
 
 /** The context a named model or server is used with: room for the task, instructions and a diff. */

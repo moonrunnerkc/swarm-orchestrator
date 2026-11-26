@@ -6,7 +6,7 @@ import type { RequirementOutcome } from "swarm-verify";
  */
 
 /** The model's reading: the kind and every piece of evidence it said would show the requirement. */
-export function readingOf(one: RequirementOutcome): string {
+function readingOf(one: RequirementOutcome): string {
   const { tests, checks, structure, packages } = one.expected;
   const parts = [
     ...packages.map(
@@ -46,7 +46,7 @@ export function readingOf(one: RequirementOutcome): string {
 }
 
 /** The versions the wording itself holds the change to, read by code; null where it names none. */
-export function heldTo(one: RequirementOutcome): string | null {
+function heldTo(one: RequirementOutcome): string | null {
   if (one.versions.length === 0) return null;
   return one.versions
     .map(
@@ -63,7 +63,7 @@ const sub = (text: string) => `${"".padEnd(12)} ${text.padEnd(8)}`;
 export function summaryRequirementLines(one: RequirementOutcome): string[] {
   const held = heldTo(one);
   return [
-    `${label(one.id)} ${"asked".padEnd(8)} ${one.text}`,
+    `${label(one.id)} ${(one.required ? "asked" : "suggested").padEnd(8)} ${one.text}`,
     `${sub("read as")} ${readingOf(one)}`,
     ...(held === null ? [] : [`${sub("held to")} ${held}`]),
     `${sub("status")} ${one.status}, witness ${one.witness}${one.limitation === null ? "" : `: ${one.limitation}`}`,
@@ -79,5 +79,5 @@ export const requirementTableHeader = [
 
 export function requirementRow(one: RequirementOutcome): string {
   const evidence = one.evidence.map((ref) => `${ref.ref} (${ref.outcome}, ${ref.authority})`);
-  return `| ${one.id}: ${cell(one.text)} | ${one.source} | ${cell(readingOf(one))} | ${cell(heldTo(one) ?? "")} | ${one.status} | ${one.witness} | ${cell(evidence.join("; ") || "none")} | ${cell(one.limitation ?? "")} |`;
+  return `| ${one.id}: ${cell(one.text)} | ${one.source}, ${one.required ? "required" : "a suggestion, not required"} | ${cell(readingOf(one))} | ${cell(heldTo(one) ?? "")} | ${one.status} | ${one.witness} | ${cell(evidence.join("; ") || "none")} | ${cell(one.limitation ?? "")} |`;
 }

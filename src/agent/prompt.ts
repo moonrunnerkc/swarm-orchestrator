@@ -40,8 +40,10 @@ export const systemPrompt = [
   "the whole text of the file",
   "```",
   "",
-  "3. One fenced requirements block: a JSON array that records what the task requires and which",
-  "   tests show it. R1 is the task itself; keep its id. Add R2 and on for parts you separate.",
+  "3. One fenced requirements block: a JSON array that records which tests show what the task",
+  "   requires. R1 is the task itself; keep its id. Requirements already recorded after it are",
+  "   parts of the task the user set apart: each is required, and you cannot change or drop one.",
+  "   You may add entries of your own under new ids; they are suggestions and decide nothing.",
   '   Each entry: {"id": "R1", "text": "...", "kind": "fix" | "feature" | "refactor" | "upgrade" | "other",',
   '   "assumptions": ["..."], "evidence": {"tests": [{"name": "test name"}], "checks": ["check name"],',
   '   "structure": [{"path": "file", "contains": "text"}], "packages": [{"name": "pkg", "ecosystem": "npm", "version": "x.y.z"}]}}.',
@@ -61,15 +63,16 @@ export const systemPrompt = [
   `4. ${completionMarker} on a line of its own, when the task is done.`,
   "",
   "After every change, the harness runs the task's checks on your tree and shows you the results:",
-  "a test written for R1 by someone who has not seen your change (you see what it prints, never its",
-  "source), any structure and version checks, and, once those pass, the project's own tests. You do",
+  "for each required requirement, a test written by someone who has not seen your change (you see",
+  "what it prints, never its source), any structure and version checks, and, once those pass, the",
+  "project's own tests. You do",
   "not need to run them yourself. When every check passes, the harness verifies the tree in a clean",
   "checkout and the run ends. Mark the task complete only where no check reports otherwise; a",
   "completion over failing checks is answered with them.",
   "",
   "The verifier decides each requirement's status from executed results only. Your own statements",
-  "never decide it, and neither do tests you write: R1 is satisfied by evidence you did not write.",
-  "R1 is the task; requirements you add (R2 and on) record how you split it and do not decide it.",
+  "never decide it, and neither do tests you write: a required requirement is satisfied by evidence",
+  "you did not write. The task is done only when every required requirement is satisfied.",
   "",
   "Write scratch files (helper scripts, notes) under .swarm/scratch/: nothing under .swarm/ is",
   "delivered, and paths outside the repository are refused.",
@@ -105,6 +108,15 @@ const markerFence = new RegExp(
   "gm",
 );
 
+/**
+ * Two or more edit blocks naming one file: one edit, its pairs applied in the order sent.
+ * fix-tracemantle-c4dc276c4 (Arm B, rc.8, 2026-11-07) sent its test file's two changes so four
+ * replies running, each refused for two blocks, and the run ended as unusable replies.
+ */
+const oneFile = (edits: readonly { readonly language: string; readonly info: string }[]) =>
+  edits.length > 1 &&
+  edits.every((one) => one.language === "edit" && one.info.trim() === edits[0]?.info.trim());
+
 export function parseReply(reply: string): ParsedReply {
   const content = reply.replace(markerFence, completionMarker);
   const blocks = [...content.matchAll(fenced)].map((match) => ({
@@ -113,7 +125,12 @@ export function parseReply(reply: string): ParsedReply {
     raw: match[4] ?? "",
     body: (match[4] ?? "").trim(),
   }));
-  const commands = blocks.filter((block) => shells.has(block.language));
+  // A bash block of comments alone, beside another block, is prose that runs nothing (t6,
+  // 2026-11-06: notes ahead of the edit they described). A bare fence is not read so: it may be
+  // the rest of a write block's text, closed early on a line of its own.
+  const prose = (block: (typeof blocks)[number]) =>
+    blocks.length > 1 && block.language !== "" && !/^[ \t]*[^#\s]/m.test(block.body);
+  const commands = blocks.filter((block) => shells.has(block.language) && !prose(block));
   const records = blocks.filter((block) => block.language === "requirements");
   const edits = blocks.filter((block) => editors.has(block.language));
   const outside = content.replace(fenced, "");
@@ -121,6 +138,18 @@ export function parseReply(reply: string): ParsedReply {
   // An edit or write block whose own text holds a fence closes early, and its rest reads as more.
   const fourBackticks =
     "where a block's text holds a line of three backticks, fence the block with four";
+  const sameFile = commands.length + records.length === 0 && oneFile(edits);
+  if (sameFile && !blocks.some((block) => block.language === "") && !/^`{3,}/m.test(outside)) {
+    const pairs: { search: string; replace: string }[] = [];
+    let path = "";
+    for (const one of edits) {
+      const read = readEditBlock(one.info, one.raw);
+      if ("malformed" in read) return { kind: "malformed", reason: read.malformed };
+      if (read.mode === "edit") pairs.push(...read.pairs);
+      path = read.path;
+    }
+    return { kind: "edit", edit: { mode: "edit", path, pairs } };
+  }
   if (commands.length + records.length + edits.length > 1) {
     // A bare fence after an edit or write block is that block's own text closing it early; two
     // whole blocks are two changes, which go in two replies (t6, 2026-11-03, sent two writes).

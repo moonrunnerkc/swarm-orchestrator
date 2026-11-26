@@ -143,7 +143,7 @@ export async function openLedger(options: LedgerOptions): Promise<Ledger> {
   };
 }
 
-export interface ChainProblem {
+interface ChainProblem {
   readonly sequence: number;
   readonly detail: string;
 }

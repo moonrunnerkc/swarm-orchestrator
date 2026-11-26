@@ -18,6 +18,8 @@ const report: RunReportFile = {
   regression: "unresolved",
   execution: null,
   attestation: null,
+  attestationKey: null,
+  evidenceDelivery: null,
   startingState: { head: "h", base: "b", edits: [], python: null },
   delivery: { applied: true },
   instructions: [],
@@ -29,6 +31,7 @@ const report: RunReportFile = {
     prefillMs: null,
     generationMs: null,
     harnessChecks: 0,
+    suiteRuns: 0,
     modelTestCommands: 0,
     turnsByRequirement: {},
     inputTokens: 1,
@@ -150,7 +153,7 @@ describe("each requirement as asked, as read, and as judged", () => {
       "| Requirement | Source | Read as | Held to | Status | Witness | Evidence | Limitation |",
     );
     expect(markdown).toContain(
-      `| R1: ${task} | user | upgrade: npm:@stryker-mutator/core 10.1.1; tests strykerVersionFor > returns the Stryker version for vitest major 4; checks test; src/adapters/worktree-toolchain.ts contains "strykerVersionFor"; assumes npm can resolve a newer Stryker 9.x release | npm:@stryker-mutator/core within the latest 9.x (from "Stryker packages to the latest 9.x") | failed |`,
+      `| R1: ${task} | user, required | upgrade: npm:@stryker-mutator/core 10.1.1; tests strykerVersionFor > returns the Stryker version for vitest major 4; checks test; src/adapters/worktree-toolchain.ts contains "strykerVersionFor"; assumes npm can resolve a newer Stryker 9.x release | npm:@stryker-mutator/core within the latest 9.x (from "Stryker packages to the latest 9.x") | failed |`,
     );
   });
 });

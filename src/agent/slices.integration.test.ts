@@ -38,7 +38,15 @@ function replays(probe: Fixture, ran: RunReport): void {
   const evidence = dirname(ran.report.attestation ?? "");
   const replayed = spawnSync(
     process.execPath,
-    [verifierCli, "replay", evidence, "--workspace", probe.repo],
+    [
+      verifierCli,
+      "replay",
+      evidence,
+      "--key",
+      ran.report.attestationKey ?? "",
+      "--workspace",
+      probe.repo,
+    ],
     { encoding: "utf8", env: { ...process.env, SWARM_HOME: join(probe.root, "home") } },
   );
   const why = `replay exited ${replayed.status} (signal ${replayed.signal}): ${replayed.stderr}`;
@@ -69,19 +77,6 @@ describe("a task of each kind, end to end", () => {
         { author: [authorTest("feature", doubleTest("double(4) is 8, written apart"))] },
       ),
     );
-    console.log(
-      "DEBUG",
-      JSON.stringify(
-        {
-          a: ran.report.authoring,
-          r: ran.report.requirements,
-          reasons: ran.result?.reasons,
-          held: ran.result?.heldOut,
-        },
-        null,
-        1,
-      ),
-    );
     expect(ran.report.state).toBe("complete");
     expect(ran.report.requirements[0]).toMatchObject({
       id: "R1",
@@ -106,7 +101,7 @@ describe("a task of each kind, end to end", () => {
         checker,
         bundle,
         "--key",
-        join(bundle, "..", "attestation.pub.pem"),
+        ran.report.attestationKey ?? "",
         "--patch",
         ran.report.snapshot.patch,
       ],

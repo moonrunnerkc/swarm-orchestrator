@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { hostname, totalmem } from "node:os";
+import { hostname } from "node:os";
 import { join } from "node:path";
-import { z } from "zod";
 import type { ProbeResult } from "./probe.ts";
+import { type Profile, readProfile, writeProfile } from "./profile-store.ts";
+
+export type { Profile } from "./profile-store.ts";
 
 /** The identity a probe result belongs to: change any part and the model is probed again. */
 export interface ProbeIdentity {
@@ -16,88 +17,78 @@ export interface ProbeIdentity {
   readonly contextTokens: number;
 }
 
-const probeSchema = z.object({
-  ready: z.boolean(),
-  reason: z.string(),
-  latencyMs: z.number(),
-  tokensPerSecond: z.number().nullable(),
-  at: z.string(),
-});
-
-const profileSchema = z.object({
-  version: z.literal(1),
-  machine: z.object({
-    hostname: z.string(),
-    platform: z.string(),
-    arch: z.string(),
-    totalMemory: z.number(),
-  }),
-  probes: z.record(
-    z.string(),
-    z.object({ identity: z.record(z.string(), z.unknown()), result: probeSchema }),
-  ),
-  /**
-   * Finished tasks by model digest: how often the run ended complete, and the same by the kind of
-   * task R1 was (fix, feature, refactor, upgrade, other), which escalation reads.
-   */
-  outcomes: z.record(
-    z.string(),
-    z.object({
-      complete: z.number().int(),
-      other: z.number().int(),
-      kinds: z
-        .record(z.string(), z.object({ complete: z.number().int(), other: z.number().int() }))
-        .optional(),
-    }),
-  ),
-});
-export type Profile = z.infer<typeof profileSchema>;
-
-export const identityKey = (identity: ProbeIdentity) =>
+const identityKey = (identity: ProbeIdentity) =>
   createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 
-/** This machine's profile under the swarm home: one file, keyed by host name. */
-export function profilePath(home: string): string {
-  return join(home, "profiles", `${hostname()}.json`);
+/**
+ * This machine's profile under the swarm home: one file, keyed by host name, and one more for each
+ * named profile (`<host>@<name>.json`), which measured, CI and development runs write instead.
+ */
+export function profilePath(home: string, name = defaultProfile): string {
+  const suffix = name === defaultProfile ? "" : `@${name}`;
+  return join(home, "profiles", `${hostname()}${suffix}.json`);
 }
 
-const empty = (): Profile => ({
-  version: 1,
-  machine: {
-    hostname: hostname(),
-    platform: process.platform,
-    arch: process.arch,
-    totalMemory: totalmem(),
-  },
-  probes: {},
-  outcomes: {},
-});
+const defaultProfile = "default";
+const profileName = /^[A-Za-z0-9][\w.-]{0,63}$/;
 
-/**
- * The profile, or an empty one where there is none or it belongs to another machine (a home
- * directory shared or copied between machines). A file that does not parse is replaced, never
- * trusted in part.
- */
-export async function readProfile(path: string): Promise<Profile> {
-  const text = await readFile(path, "utf8").catch(() => null);
-  if (text === null) return empty();
-  try {
-    const parsed = profileSchema.parse(JSON.parse(text));
-    const here = empty().machine;
-    return parsed.machine.hostname === here.hostname &&
-      parsed.machine.totalMemory === here.totalMemory
-      ? parsed
-      : empty();
-  } catch {
-    return empty();
+export class ProfileNameError extends Error {
+  constructor(name: string) {
+    super(
+      `"${name}" is not a profile name: use letters, digits, dots, dashes and underscores, as in --profile dev`,
+    );
+    this.name = "ProfileNameError";
   }
 }
 
-export async function writeProfile(path: string, profile: Profile): Promise<void> {
-  await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(profile, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporary, path);
+/** The model record a run reads and writes: which profile, and whether anything is written. */
+export interface ModelRecord {
+  readonly name: string;
+  readonly writes: boolean;
+  read(): Promise<Profile>;
+  write(profile: Profile): Promise<void>;
+}
+
+/**
+ * A named profile starts as a copy of the default one, so selection begins where the machine's
+ * record stands, and from then on only it is written. `--no-record` reads and writes nothing.
+ */
+export function modelRecord(
+  home: string,
+  choice: {
+    readonly profile?: string | undefined;
+    readonly write?: boolean;
+    /** Told when a file is unusable or kept aside; silent where the caller has nowhere to say it. */
+    readonly log?: (line: string) => void;
+  } = {},
+): ModelRecord {
+  const name = choice.profile ?? defaultProfile;
+  if (!profileName.test(name)) throw new ProfileNameError(name);
+  const path = profilePath(home, name);
+  const writes = choice.write !== false;
+  const log = choice.log ?? (() => {});
+  const warned = new Set<string>();
+  return {
+    name,
+    writes,
+    async read() {
+      const own = await readProfile(path);
+      const from = own.standing === "absent" && name !== defaultProfile ? profilePath(home) : path;
+      const { standing, profile } = from === path ? own : await readProfile(from);
+      if ((standing === "unreadable" || standing === "foreign") && !warned.has(from)) {
+        warned.add(from);
+        const why =
+          standing === "unreadable" ? "could not be read" : "was written on another machine";
+        log(
+          `the model record at ${from} ${why}: selection starts without it, and the file is kept aside before anything replaces it`,
+        );
+      }
+      return { ...profile, profile: name };
+    },
+    async write(profile) {
+      if (writes) await writeProfile(path, { ...profile, profile: name }, log);
+    },
+  };
 }
 
 export function cachedProbe(profile: Profile, identity: ProbeIdentity): ProbeResult | null {
@@ -109,52 +100,4 @@ export function withProbe(profile: Profile, identity: ProbeIdentity, result: Pro
     ...profile,
     probes: { ...profile.probes, [identityKey(identity)]: { identity: { ...identity }, result } },
   };
-}
-
-type Tally = { readonly complete: number; readonly other: number };
-const tallied = (before: Tally, complete: boolean): Tally =>
-  complete ? { ...before, complete: before.complete + 1 } : { ...before, other: before.other + 1 };
-
-export function withOutcome(
-  profile: Profile,
-  digest: string,
-  complete: boolean,
-  kind: string | null = null,
-): Profile {
-  const before = profile.outcomes[digest] ?? { complete: 0, other: 0 };
-  const known = before.kinds ?? {};
-  const kinds =
-    kind === null
-      ? known
-      : { ...known, [kind]: tallied(known[kind] ?? { complete: 0, other: 0 }, complete) };
-  const after = { ...tallied(before, complete), kinds };
-  return { ...profile, outcomes: { ...profile.outcomes, [digest]: after } };
-}
-
-/** Stops that say nothing about the model: the user, the endpoint or an interruption ended them. */
-const notTheModels = new Set(["cancelled", "interrupted", "model-error"]);
-
-/**
- * Whether a run counts toward its model's record, and as complete or not: null where the model
- * did not finish it on its own (an escalation, a stop the model did not cause, or a verification
- * the environment blocked).
- */
-export function finishedOutcome(run: {
-  readonly stop: string;
-  readonly state: string;
-  readonly escalated: boolean;
-}): boolean | null {
-  if (run.escalated || run.state === "blocked" || notTheModels.has(run.stop)) return null;
-  return run.state === "complete";
-}
-
-/** Adds one finished run to the model's record in this machine's profile. */
-export async function recordOutcome(
-  home: string,
-  digest: string,
-  complete: boolean,
-  kind: string | null = null,
-): Promise<void> {
-  const path = profilePath(home);
-  await writeProfile(path, withOutcome(await readProfile(path), digest, complete, kind));
 }

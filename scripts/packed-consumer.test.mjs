@@ -115,6 +115,8 @@ describe("the packed agent against the packed verifier", () => {
         "stub",
         "--approve",
         "auto",
+        // The author's check used as written: nobody is at a terminal to approve it.
+        "--accept-authored",
         "--host",
       ],
       {

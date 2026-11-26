@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { signatureTypes } from "./signature-types.ts";
 
 /** A source file the task names by path, as the base has it: its imports and declarations. */
 export interface NamedFile {
@@ -32,23 +33,34 @@ export async function namedFiles(
     return hits.length === 1 && hits[0] !== undefined ? [hits[0]] : [];
   });
   const files: NamedFile[] = [];
+  const types: NamedFile[] = [];
   for (const path of [...new Set(paths)].slice(0, 3)) {
     const text = await readFile(join(workspace, path), "utf8").catch(() => "");
-    const lines = text.split("\n");
-    const outline: string[] = [];
-    for (const [at, line] of lines.entries()) {
-      if (!outlineLine.test(line)) continue;
-      outline.push(line.trimEnd().slice(0, 160));
-      // A signature or import list over several lines is followed to its close.
-      const open = /[(,]\s*$/.test(line) || (/\{\s*$/.test(line) && listing.test(line));
-      if (!open) continue;
-      for (const next of lines.slice(at + 1, at + 9)) {
-        outline.push(next.trimEnd().slice(0, 160));
-        if (/^[)}]/.test(next.trim())) break;
-      }
-    }
-    outline.splice(outlineLines);
+    const outline = outlineOf(text);
     if (outline.length > 0) files.push({ path, outline });
+    types.push(...(await signatureTypes(workspace, tracked, path, text, outline)));
+  }
+  // A type's file the task names is already shown whole.
+  for (const one of types) {
+    if (!files.some((file) => file.path === one.path)) files.push(one);
   }
   return files;
+}
+
+/** A file's top-level import and declaration lines, each signature followed to its close. */
+function outlineOf(text: string): string[] {
+  const lines = text.split("\n");
+  const outline: string[] = [];
+  for (const [at, line] of lines.entries()) {
+    if (!outlineLine.test(line)) continue;
+    outline.push(line.trimEnd().slice(0, 160));
+    // A signature or import list over several lines is followed to its close.
+    const open = /[(,]\s*$/.test(line) || (/\{\s*$/.test(line) && listing.test(line));
+    if (!open) continue;
+    for (const next of lines.slice(at + 1, at + 9)) {
+      outline.push(next.trimEnd().slice(0, 160));
+      if (/^[)}]/.test(next.trim())) break;
+    }
+  }
+  return outline.slice(0, outlineLines);
 }

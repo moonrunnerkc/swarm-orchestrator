@@ -1,7 +1,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { startStubModel } from "../eval/stub-model.mjs";
@@ -30,8 +30,6 @@ beforeEach(async () => {
   );
   git("add", "-A");
   git("commit", "-qm", "base");
-  // The fix is already in the working tree, so a verdict on it can only come from the verifier.
-  await writeFile(join(repo, "half.mjs"), "export const half = (n) => n / 2;\n");
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
@@ -83,14 +81,13 @@ describe("swarm run against the stub endpoint", () => {
     await stub.close();
     // The check author's call met the 404 first; the loop's first turn met it again and stopped.
     expect(stub.requests).toHaveLength(2);
-    // The fix was already in the working tree when the run began: part of its starting state, so
-    // the run itself changed nothing and R1 is unverified.
+    // The run changed nothing, so R1 is unverified and the base's failing test is inherited.
     expect(ran.code).toBe(4);
     expect(ran.stdout).toMatch(/^stop {9}model-error: the model endpoint failed: HTTP 404/m);
     expect(ran.stdout).toMatch(/^state {8}incomplete$/m);
     expect(ran.stdout).toMatch(/^R1 {11}asked {4}Make half\(n\) return n \/ 2\.$/m);
     expect(ran.stdout).toMatch(/^ {13}status {3}unverified, witness none: no change observed$/m);
-    expect(ran.stdout).toMatch(/^regression {3}none$/m);
+    expect(ran.stdout).toMatch(/^regression {3}unresolved \(1 inherited failure\(s\)\)$/m);
   });
 
   it("stops on a refused connection the same way", async () => {
@@ -101,7 +98,7 @@ describe("swarm run against the stub endpoint", () => {
     expect(ran.stdout).toMatch(
       /^stop {9}model-error: the model endpoint failed: connection refused at/m,
     );
-    expect(ran.stdout).toMatch(/^regression {3}none$/m);
+    expect(ran.stdout).toMatch(/^regression {3}unresolved \(1 inherited failure\(s\)\)$/m);
   });
 
   it("finalizes a run stopped by SIGINT, SIGTERM or SIGHUP as cancelled and removes its worktree", async () => {
@@ -175,6 +172,26 @@ describe("swarm run against the stub endpoint", () => {
     expect(linked.stdout).toMatch(/^execution {4}host, not isolated/m);
   });
 
+  it("refuses to write the author's checks into the tree the model works in", async () => {
+    const ran = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "run",
+        "task",
+        "--write-checks",
+        "checks",
+        "--endpoint",
+        "http://127.0.0.1:9/v1",
+        "--model",
+        "stub",
+      ],
+      { cwd: repo, encoding: "utf8", env: { ...process.env, SWARM_HOME: join(root, "home") } },
+    );
+    expect(ran.stderr).toContain("--write-checks needs a directory outside the repository");
+    expect(ran.status).not.toBe(0);
+  });
+
   it("refuses linked dependencies in a container, which the verifier would refuse", async () => {
     const ran = spawnSync(
       process.execPath,
@@ -203,10 +220,60 @@ describe("swarm run against the stub endpoint", () => {
     const [file] = await readdir(profiles);
     const profile = JSON.parse(await readFile(join(profiles, file ?? ""), "utf8"));
     // And under R1's kind, here the default the check author's unusable reply left.
+    expect(profile.version).toBe(2);
     expect(profile.outcomes[`${endpoint}#stub`]).toEqual({
       complete: 0,
       other: 1,
-      kinds: { other: { complete: 0, other: 1 } },
+      legacyOther: 0,
+      unattributed: 0,
+      kinds: { other: { complete: 0, other: 1, unattributed: 0 } },
     });
+  });
+
+  // 2026-11-05: the day's development runs moved gemma4:31b under the prior for untried models
+  // in the machine's record, and `auto` then chose a worse model for the measured pass.
+  it("keeps a run under a named profile out of the machine's default record", async () => {
+    const profiles = join(root, "home", "profiles");
+    await mkdir(profiles, { recursive: true });
+    const host = hostname();
+    const machine = {
+      hostname: host,
+      platform: process.platform,
+      arch: process.arch,
+      totalMemory: totalmem(),
+    };
+    const seeded = `${JSON.stringify({ version: 1, machine, probes: {}, outcomes: { kept: { complete: 12, other: 2 } } }, null, 2)}\n`;
+    await writeFile(join(profiles, `${host}.json`), seeded);
+    const stub = await startStubModel();
+    const endpoint = `http://127.0.0.1:${stub.port}/v1`;
+    const ran = await swarmRun(endpoint, ["--max-steps", "1", "--profile", "dev"]);
+    await stub.close();
+    expect(ran.stdout).toContain("record       dev");
+    expect(await readFile(join(profiles, `${host}.json`), "utf8")).toBe(seeded);
+    const dev = JSON.parse(await readFile(join(profiles, `${host}@dev.json`), "utf8"));
+    // Seeded from the default, so selection starts where the machine's record stands.
+    expect(dev.profile).toBe("dev");
+    expect(dev.outcomes.kept).toEqual({ complete: 12, other: 2, legacyOther: 2, unattributed: 0 });
+    expect(await readdir(profiles)).toHaveLength(2);
+    expect(dev.outcomes[`${endpoint}#stub`]).toMatchObject({ complete: 0, other: 1 });
+  });
+
+  it("writes no record at all under --no-record", async () => {
+    const stub = await startStubModel();
+    const endpoint = `http://127.0.0.1:${stub.port}/v1`;
+    const ran = await swarmRun(endpoint, ["--max-steps", "1", "--no-record"]);
+    await stub.close();
+    expect(ran.stdout).toContain("record       default, read only (--no-record)");
+    await expect(readdir(join(root, "home", "profiles"))).rejects.toThrow();
+    // And where the machine has a record, it is left byte for byte as it was.
+    const profiles = join(root, "home", "profiles");
+    await mkdir(profiles, { recursive: true });
+    const seeded = '{"version": 1, "a record this build cannot read": ';
+    await writeFile(join(profiles, `${hostname()}.json`), seeded);
+    const again = await startStubModel();
+    await swarmRun(`http://127.0.0.1:${again.port}/v1`, ["--max-steps", "1", "--no-record"]);
+    await again.close();
+    expect(await readFile(join(profiles, `${hostname()}.json`), "utf8")).toBe(seeded);
+    expect(await readdir(profiles)).toEqual([`${hostname()}.json`]);
   });
 });

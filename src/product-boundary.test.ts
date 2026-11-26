@@ -31,12 +31,18 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("the agent and the verifier it consumes", () => {
-  it("heads the root README with the agent and its product promise", () => {
+  it("heads the root README with the agent, names its command, and links the guides it ships", () => {
     const readme = read("README.md");
     expect(readme.startsWith("# swarm-orchestrator\n")).toBe(true);
-    expect(readme).toMatch(
-      /^Give Swarm an engineering task\. It makes the change, checks each requirement/m,
-    );
+    // The agent is the subject and the verifier a named dependency, not the other way round.
+    expect(readme.indexOf("coding agent")).toBeGreaterThan(-1);
+    expect(readme.indexOf("coding agent")).toBeLessThan(readme.indexOf("swarm-verify"));
+    expect(readme).toContain("npm install -g swarm-orchestrator");
+    expect(readme).toContain("swarm run ");
+    expect(readme).toContain("tamper-evident");
+    expect(readme).not.toMatch(/tamper-proof/i);
+    for (const link of readme.matchAll(/\]\((docs\/[^)#]+)/g))
+      expect(existsSync(join(root, link[1] ?? "")), link[1]).toBe(true);
   });
 
   it("names the root package as the coding agent and its binary as swarm", () => {
