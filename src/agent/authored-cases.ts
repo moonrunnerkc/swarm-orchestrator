@@ -25,7 +25,7 @@ export interface FailingCase {
 /**
  * The failing cases a run's plain output names, with their errors: vitest and jest print each
  * as `FAIL file > suite > title` and the error on the next line; pytest's summary as
- * `FAILED path::name - Error: message`. Other runners name none here.
+ * `FAILED path::name - Error: message`; node:test under `failing tests:`. Other runners name none.
  */
 export function failingCases(output: string): FailingCase[] {
   const cases: FailingCase[] = [];
@@ -41,6 +41,9 @@ export function failingCases(output: string): FailingCase[] {
     const error = [match[2] ?? "", sections.get(title) ?? ""].join(" ").trim();
     if (title.length > 0) cases.push({ title, error });
   }
+  // node:test lists each failure after "failing tests:": where it is, its title, then its error.
+  for (const match of output.matchAll(/^test at \S+\n✖ (.+?) \([\d.]+ms\)\n\s*([^\n]*)/gm))
+    cases.push({ title: (match[1] ?? "").trim(), error: (match[2] ?? "").trim() });
   return cases;
 }
 

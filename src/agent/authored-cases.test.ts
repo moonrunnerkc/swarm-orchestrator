@@ -76,3 +76,37 @@ describe("pytest's failing cases", () => {
     ]);
   });
 });
+
+describe("node:test output", () => {
+  // As recorded at the base of a live run on 2026-11-26, where a failing control went unread.
+  const output = [
+    "✖ returns invoice JSON for the owner (0.555423ms)",
+    "✖ control: authenticated user can access their own data (0.075294ms)",
+    "ℹ tests 2",
+    "ℹ fail 2",
+    "",
+    "✖ failing tests:",
+    "",
+    "test at test/invoices.swarm-r1.test.ts:9:1",
+    "✖ returns invoice JSON for the owner (0.555423ms)",
+    "  AssertionError [ERR_ASSERTION]: Test requires an invoice owned by the user",
+    "      at TestContext.<anonymous> (file:///repo/test/invoices.swarm-r1.test.ts:13:10)",
+    "",
+    "test at test/invoices.swarm-r1.test.ts:61:1",
+    "✖ control: authenticated user can access their own data (0.075294ms)",
+    "  AssertionError [ERR_ASSERTION]: User should have at least one invoice",
+  ].join("\n");
+
+  it("names each failing case with its error, a control among them", () => {
+    expect(failingCases(output)).toEqual([
+      {
+        title: "returns invoice JSON for the owner",
+        error: "AssertionError [ERR_ASSERTION]: Test requires an invoice owned by the user",
+      },
+      {
+        title: "control: authenticated user can access their own data",
+        error: "AssertionError [ERR_ASSERTION]: User should have at least one invoice",
+      },
+    ]);
+  });
+});
