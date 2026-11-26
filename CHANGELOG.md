@@ -48,6 +48,9 @@ everything since 16.0.4 that the 17.0.0 section below does not.
 - Several edit blocks for one file are read as one edit; a bash block of comments alone is
   prose; a refused reply or an action the harness undid is not counted as a turn without progress.
 - A run that rereads what it already read, turn after turn before its first change, ends.
+- A reply still being written at the request's time limit was requested twice more, for the
+  same wait each time, and the run then ended blaming a dropped connection. The model is now
+  told the reply never arrived and asked for a shorter one.
 
 ### Removed
 

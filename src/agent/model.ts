@@ -25,7 +25,23 @@ export interface Reply {
   readonly retries: number;
   /** The endpoint stopped at the turn's completion cap. */
   readonly truncated: boolean;
+  /** The reply was still being written after this long, and none of it arrived. */
+  readonly overranMs?: number;
 }
+
+/**
+ * A reply that outlasted the request's time limit. Requests are sent at temperature 0, so the
+ * same request again would wait as long for the same reply: the loop asks for a shorter one.
+ */
+export const overrun = (ms: number, retries: number): Reply => ({
+  content: "",
+  inputTokens: null,
+  outputTokens: null,
+  inferenceMs: ms,
+  retries,
+  truncated: true,
+  overranMs: ms,
+});
 
 interface TurnOptions {
   readonly signal?: AbortSignal | undefined;
@@ -127,7 +143,8 @@ export function openAiCompatible(options: {
       let failures = 0;
       let waits = 0;
       while (failures < 3) {
-        const timeout = AbortSignal.timeout(options.timeoutMs ?? 600_000);
+        const limit = options.timeoutMs ?? 600_000;
+        const timeout = AbortSignal.timeout(limit);
         let response: { readonly status: number; readonly text: string };
         try {
           response = await send(
@@ -147,6 +164,7 @@ export function openAiCompatible(options: {
           );
         } catch (error) {
           if (signal?.aborted) throw error;
+          if (timeout.aborted) return overrun(limit, failures + waits);
           const code = (error as NodeJS.ErrnoException).code;
           // A refused connection to localhost arrives as an AggregateError with no message.
           const problem = (error instanceof Error && error.message) || code || String(error);

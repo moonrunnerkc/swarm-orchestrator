@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { type Message, type ModelClient, ModelError, nodePost, type Post } from "../agent/model.ts";
+import {
+  type Message,
+  type ModelClient,
+  ModelError,
+  nodePost,
+  overrun,
+  type Post,
+} from "../agent/model.ts";
 
 /** Ollama's address: OLLAMA_HOST where it is set, as Ollama itself reads it, else the default. */
 export function ollamaBase(
@@ -215,13 +222,15 @@ export function ollamaChat(options: {
       // A connection dropped mid-turn is sent again: Ollama may be restarting. One that is gone
       // refuses the next attempt, which names the step to take.
       while (response === null) {
-        const timeout = AbortSignal.timeout(options.timeoutMs ?? 900_000);
+        const limit = options.timeoutMs ?? 900_000;
+        const timeout = AbortSignal.timeout(limit);
         try {
           response = await send(url, { "content-type": "application/json" }, body, {
             signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
           });
         } catch (error) {
           if (signal?.aborted) throw error;
+          if (timeout.aborted) return overrun(limit, retries);
           const code = (error as NodeJS.ErrnoException).code;
           if (code === "ECONNREFUSED") {
             throw new ModelError(

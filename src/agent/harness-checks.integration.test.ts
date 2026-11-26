@@ -119,6 +119,17 @@ describe("the harness runs the checks, not the model", () => {
     expect(ran.report.resources.turnsByRequirement).toEqual({ R1: 2 });
   });
 
+  // The refactor task on 2026-11-25: one reply ran past the request's 900 s limit, the same
+  // request went out twice more for the same wait, and the run ended on a "dropped connection".
+  it("asks for a shorter reply when one outlasts the request's limit, and carries on", async () => {
+    const model = scripted([{ content: "", overranMs: 900_000 }, fix, bash("echo never sent")]);
+    const ran = await (await fixture()).run(model, { maxSteps: 20 });
+    expect(ran).toMatchObject({ stop: "complete", report: { state: "complete" } });
+    expect(model.seen[1]?.at(-1)?.content).toContain(
+      "it was still being written after 900 s and none of it arrived; send a shorter reply",
+    );
+  });
+
   it("keeps a task that asks for tests open until the change adds one", async () => {
     const task = "Make half(n) return n / 2, with a test.";
     const own = write(

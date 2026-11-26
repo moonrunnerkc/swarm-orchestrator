@@ -59,6 +59,30 @@ describe("Ollama's native chat", () => {
     expect(calls()).toBe(3);
   });
 
+  it("returns a reply that outlasted the time limit as cut off, without sending it again", async () => {
+    let calls = 0;
+    const post: Post = (_url, _headers, _body, { signal }) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason));
+      });
+    };
+    const chat = ollamaChat({
+      base: "http://localhost:11434",
+      model: "q",
+      contextTokens: 8192,
+      post,
+      timeoutMs: 20,
+    });
+    expect(await chat.complete([], turn)).toMatchObject({
+      content: "",
+      truncated: true,
+      overranMs: 20,
+      retries: 0,
+    });
+    expect(calls).toBe(1);
+  });
+
   it("stops the run on a reply that is not JSON instead of crashing it", async () => {
     const { chat } = client([{ status: 200, text: "<html>proxy error</html>" }]);
     await expect(chat.complete([], turn)).rejects.toThrow(

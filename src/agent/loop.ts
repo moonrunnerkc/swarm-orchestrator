@@ -12,7 +12,7 @@ import {
   stillFailing,
   withOpen,
 } from "./harness-turn.ts";
-import { callModel } from "./loop-model.ts";
+import { callModel, cutNote } from "./loop-model.ts";
 import type { LoopOptions, LoopResult, StopReason, Usage } from "./loop-types.ts";
 import { createVerifyStep } from "./loop-verify.ts";
 import { stepsLeftNotice, systemPrompt, timeLeftNotice } from "./prompt.ts";
@@ -216,7 +216,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
           `${malformed} replies in a row followed no reply form: ${parsed.reason}`,
         );
       }
-      const cut = reply.truncated ? ` (it was cut off at ${options.turnTokens} tokens)` : "";
+      const cut = cutNote(reply, options.turnTokens);
       note(
         "(a reply that followed no reply form)",
         `Your reply was not used: ${parsed.reason}${cut}. Reply with exactly one bash, edit, write or requirements block, or the completion marker alone.`,

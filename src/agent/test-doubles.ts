@@ -21,7 +21,7 @@ export interface SplitReply {
  * by default it writes the check an author would for the fixture's task, `authoredHalf`.
  */
 export function scripted(
-  replies: readonly (string | SplitReply)[],
+  replies: readonly (string | SplitReply | { content: string; overranMs: number })[],
   options: {
     readonly counts?: "reported" | "unreported";
     readonly author?: readonly string[];
