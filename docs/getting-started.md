@@ -54,8 +54,9 @@ checkout.
 
 The closing summary gives the state, each requirement's status, and three paths:
 
-- `patch`: the delivered change. It is applied to your working tree unless you changed the tree
-  during the run or passed `--no-apply`.
+- `patch`: the delivered change. It is applied to your working tree whatever the state, complete
+  or not, unless you changed the tree during the run or passed `--no-apply`. Read the state
+  before you commit it; `git apply -R <patch>` takes it back out.
 - `report`: `report.md`, with a table of requirements, the evidence for each, what was
   regression-checked, and the resources used. `report.json` beside it is the same as data.
 - `evidence`: the session directory, with the ledger of every command and model reply.
