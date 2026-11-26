@@ -22,3 +22,15 @@ under the first file's header (fixed in 16.0.2). Evidence: docs/acceptance/2026-
 Reruns for 16.0.2. Reproduce: `acceptance/closing/run-task.sh t6-tracemantle --model auto` in the
 work root, or judge any agent's patch with the command in
 docs/acceptance/2026-10-31/t6-comparison/README.md.
+
+## A local model's drafted check for a TypeScript `node:test` project is often unusable
+
+On the invoice example (`examples/invoice-api`), gemma4:31b drafting the check for "Add GET
+/invoices/:id/download ..." wrote, three attempts running, a test that reads a field the data does
+not have (`userId` for `ownerId`) and calls a placeholder it defines itself; for the repair task
+it wrote CommonJS `require` in an ES module. 17.1.0-rc.15 refuses each draft at the base and
+blocks before the first edit; before the `node:test` reader fix (rc.14 and the starting version)
+the draft was sealed and a correct change ended incomplete. Reproduce: copy the example into a
+new repository and run `swarm run "$(cat task.txt)" --accept-authored --model gemma4:31b`.
+Supplying the check with `--accept` completes the same task. The author is shown how the
+repository writes tests, not the shapes of the data its tests would need.

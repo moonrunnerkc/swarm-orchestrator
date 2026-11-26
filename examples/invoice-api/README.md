@@ -20,8 +20,11 @@ swarm init --learn src
 swarm init --approve ~/.swarm/conventions/proposals/<the file it printed>
 swarm doctor --conventions
 
-# 2. Run the task. security.json says how to start the server and who owns inv-1.
-swarm run "$(cat task.txt)" --accept-authored --security-check security.json
+# 2. Run the task. The acceptance test is yours (it lives beside this example, outside the
+#    repository the model works in); security.json says how to start the server and who owns inv-1.
+swarm run "$(cat task.txt)" \
+  --accept <swarm checkout>/examples/invoice-api-checks/feature \
+  --security-check security.json
 ```
 
 A later run in the same repository uses the approved profile without asking again.
@@ -37,6 +40,9 @@ A later run in the same repository uses the approved profile without asking agai
   until the server refuses it or the budget ends. It is never reported complete in between.
 - `security.json` in the run's own copy of the tree is not the one that judges: the file is read
   from your path before the model starts.
+
+`examples/invoice-api-checks/repair` is the acceptance test for a second task: start from a
+download route that serves any signed-in user, and ask Swarm to restrict it to the owner.
 
 `security.json` is a binding you stand behind (`user-acceptance`). Without `--security-check` a
 separate model call drafts one from the repository; the report then says nobody reviewed it and
