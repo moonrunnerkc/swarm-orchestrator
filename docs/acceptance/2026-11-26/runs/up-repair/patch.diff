@@ -1,0 +1,13 @@
+diff --git a/src/app.ts b/src/app.ts
+index 526d36b..d2ed38c 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -26,7 +26,7 @@ export function handle(request: IncomingMessage, response: ServerResponse): void
+   }
+   const match = /^\/invoices\/([\w-]+)\/download$/.exec(path);
+   const invoice = invoices.find((one) => one.id === match?.[1]);
+-  if (request.method === "GET" && invoice !== undefined) {
++  if (request.method === "GET" && invoice !== undefined && invoice.ownerId === user.id) {
+     send(response, 200, {
+       number: invoice.number,
+       totalCents: invoice.totalCents,

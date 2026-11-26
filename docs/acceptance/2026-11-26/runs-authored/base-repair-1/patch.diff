@@ -1,0 +1,41 @@
+diff --git a/src/app.ts b/src/app.ts
+index 526d36b..926ee29 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,7 +1,6 @@
+ import type { IncomingMessage, ServerResponse } from "node:http";
+ import { authenticate } from "./auth.ts";
+-import { invoices } from "./data.ts";
+-import { listInvoices } from "./invoices.ts";
++import { listInvoices, downloadInvoice } from "./invoices.ts";
+ 
+ function send(response: ServerResponse, status: number, body: unknown): void {
+   response.writeHead(status, { "content-type": "application/json" });
+@@ -25,7 +24,7 @@ export function handle(request: IncomingMessage, response: ServerResponse): void
+     return;
+   }
+   const match = /^\/invoices\/([\w-]+)\/download$/.exec(path);
+-  const invoice = invoices.find((one) => one.id === match?.[1]);
++  const invoice = downloadInvoice(user, match?.[1] ?? "");
+   if (request.method === "GET" && invoice !== undefined) {
+     send(response, 200, {
+       number: invoice.number,
+diff --git a/src/invoices.ts b/src/invoices.ts
+index cabcab3..5441dcb 100644
+--- a/src/invoices.ts
++++ b/src/invoices.ts
+@@ -1,4 +1,4 @@
+-import { invoices, type User } from "./data.ts";
++import { invoices, type User, type Invoice } from "./data.ts";
+ 
+ /** An invoice as the list shows it: enough to pick one, not its lines. */
+ export interface InvoiceSummary {
+@@ -13,3 +13,8 @@ export function listInvoices(user: User): InvoiceSummary[] {
+     .filter((invoice) => invoice.ownerId === user.id)
+     .map(({ id, number, totalCents }) => ({ id, number, totalCents }));
+ }
++
++/** An invoice owned by the user, or undefined if not found or not owned. */
++export function downloadInvoice(user: User, id: string): Invoice | undefined {
++  return invoices.find((invoice) => invoice.id === id && invoice.ownerId === user.id);
++}

@@ -1,0 +1,261 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Add GET /invoices/:id/download, which returns the invoice as JSON (its number, totalCents and lines) to the authenticated user who owns it.",
+  "model": {
+    "name": "gemma4:31b",
+    "reason": "named by --model"
+  },
+  "stop": "no-progress",
+  "reason": "6 turns changed neither the tree nor any check's result; R1 still fails: its authored test fails: AssertionError [ERR_ASSERTION]: Test requires an invoice owned by the user",
+  "state": "incomplete",
+  "snapshot": {
+    "base": "12b29cfdda254bf0bd741055efd817dc74699e05",
+    "patchSha256": "3d95253bcb55dbddb195e85505bf9f2161a6b43b8a739f5ccb72af70065c33c2",
+    "patch": "/Users/brad/projects/recovery-2026-10-31/run-assure/runs/base-feature-1/home/sessions/20261126T224241-e3957b/final/delivered.patch",
+    "treeSha256": "4b3c0a9ec1104418b603a27aa6d56834c2483b2fa54aada9101ece82a752a721"
+  },
+  "verification": "fresh",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "src/app.ts",
+      "status": "modified"
+    },
+    {
+      "path": "src/invoices.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Add GET /invoices/:id/download, which returns the invoice as JSON (its number, totalCents and lines) to the authenticated user who owns it.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "failed",
+      "witness": "none",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/invoices.swarm-r1.test.ts::GET /invoices/:id/download denies access to non-owners",
+          "authority": "independently-generated",
+          "outcome": "failing",
+          "detail": "new-failure"
+        },
+        {
+          "kind": "test",
+          "ref": "test/invoices.swarm-r1.test.ts::GET /invoices/:id/download returns invoice JSON for the owner",
+          "authority": "independently-generated",
+          "outcome": "failing",
+          "detail": "new-failure"
+        },
+        {
+          "kind": "test",
+          "ref": "test/invoices.swarm-r1.test.ts::control: authenticated user can access their own data",
+          "authority": "independently-generated",
+          "outcome": "failing",
+          "detail": "new-failure"
+        }
+      ],
+      "limitation": "failing: test/invoices.swarm-r1.test.ts::GET /invoices/:id/download denies access to non-owners, test/invoices.swarm-r1.test.ts::GET /invoices/:id/download returns invoice JSON for the owner, test/invoices.swarm-r1.test.ts::control: authenticated user can access their own data",
+      "nextAction": "repair the failing evidence"
+    }
+  ],
+  "authoring": [
+    {
+      "requirement": "R1",
+      "kind": "feature",
+      "test": "test/invoices.swarm-r1.test.ts",
+      "claims": 0,
+      "failure": null,
+      "attempts": 1
+    }
+  ],
+  "accepted": [],
+  "regression": "none",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container",
+  "attestation": "/Users/brad/projects/recovery-2026-10-31/run-assure/runs/base-feature-1/home/sessions/20261126T224241-e3957b/final/verification/attestation.sigstore.json",
+  "attestationKey": "/Users/brad/projects/recovery-2026-10-31/run-assure/runs/base-feature-1/home/sessions/20261126T224241-e3957b/final/verification/attestation.pub.pem",
+  "evidenceDelivery": "signed",
+  "startingState": {
+    "head": "12b29cfdda254bf0bd741055efd817dc74699e05",
+    "base": "12b29cfdda254bf0bd741055efd817dc74699e05",
+    "edits": [],
+    "python": null
+  },
+  "delivery": {
+    "applied": false,
+    "reason": "kept as a patch, as asked"
+  },
+  "instructions": [],
+  "notes": [],
+  "review": null,
+  "resources": {
+    "steps": 16,
+    "author": {
+      "turns": 1,
+      "inputTokens": 1341,
+      "outputTokens": 670
+    },
+    "inputTokens": 63887,
+    "outputTokens": 2223,
+    "estimatedTurns": 0,
+    "inferenceMs": 186471,
+    "inferenceTurns": 16,
+    "prefillMs": 107169,
+    "generationMs": 74367,
+    "wallMs": 233450,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 0,
+    "harnessChecks": 2,
+    "suiteRuns": 1,
+    "modelTestCommands": 0,
+    "turnsByRequirement": {
+      "R1": 16
+    },
+    "cost": "none (local runtime)",
+    "turns": [
+      {
+        "inputTokens": 1652,
+        "outputTokens": 11,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3520,
+        "generationMs": 442
+      },
+      {
+        "inputTokens": 1694,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 614,
+        "generationMs": 487
+      },
+      {
+        "inputTokens": 1770,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 601,
+        "generationMs": 495
+      },
+      {
+        "inputTokens": 2106,
+        "outputTokens": 13,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1313,
+        "generationMs": 532
+      },
+      {
+        "inputTokens": 2275,
+        "outputTokens": 99,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 884,
+        "generationMs": 4617
+      },
+      {
+        "inputTokens": 2430,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 989,
+        "generationMs": 496
+      },
+      {
+        "inputTokens": 2836,
+        "outputTokens": 236,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1569,
+        "generationMs": 11389
+      },
+      {
+        "inputTokens": 4088,
+        "outputTokens": 720,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3522,
+        "generationMs": 35261
+      },
+      {
+        "inputTokens": 4813,
+        "outputTokens": 51,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 9955,
+        "generationMs": 2273
+      },
+      {
+        "inputTokens": 5054,
+        "outputTokens": 306,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 10717,
+        "generationMs": 14974
+      },
+      {
+        "inputTokens": 5637,
+        "outputTokens": 20,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 12285,
+        "generationMs": 859
+      },
+      {
+        "inputTokens": 5769,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 12591,
+        "generationMs": 491
+      },
+      {
+        "inputTokens": 5181,
+        "outputTokens": 13,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 10991,
+        "generationMs": 543
+      },
+      {
+        "inputTokens": 5411,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 11652,
+        "generationMs": 501
+      },
+      {
+        "inputTokens": 5871,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 12822,
+        "generationMs": 503
+      },
+      {
+        "inputTokens": 5959,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 13144,
+        "generationMs": 504
+      }
+    ]
+  }
+}
