@@ -58,6 +58,7 @@ export async function checkGate(input: {
   readonly supplied: readonly Supplied[];
   readonly mode: ChecksMode;
   readonly behaviorChangeAuthorized: boolean;
+  readonly derived?: Parameters<typeof createTurnChecks>[0]["derived"];
   readonly signal?: AbortSignal | undefined;
 }): Promise<CheckGate> {
   const conventions = await testConventions(input.workspace, input.task);
@@ -134,6 +135,7 @@ export async function checkGate(input: {
     scratch: input.scratch,
     conventions,
     user,
+    derived: input.derived,
   });
   // A run cancelled while its checks were written is cancelled, not blocked for want of them.
   input.signal?.throwIfAborted();

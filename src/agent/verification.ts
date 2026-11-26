@@ -3,6 +3,7 @@ import { access, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  type BehaviorCheckInput,
   type ExecutionPolicy,
   type Producer,
   requestVersion,
@@ -80,10 +81,15 @@ export function createVerifier(input: {
   readonly execution: ExecutionPolicy;
   readonly behaviorChange: "none" | "authorized";
   readonly evidence: EvidenceRecorder;
-  readonly producer: Pick<Producer, "name" | "version" | "promptSha256" | "instructions">;
+  readonly producer: Pick<
+    Producer,
+    "name" | "version" | "promptSha256" | "instructions" | "profile"
+  >;
   readonly model: () => string;
   /** The user's command checks, run on the candidate under their authority; known after authoring. */
   readonly trusted?: () => readonly TrustedCheck[];
+  /** Checks of the running application, fixed before the first edit. */
+  readonly behavior?: () => readonly BehaviorCheckInput[];
   readonly signal?: AbortSignal | undefined;
 }): Verifier {
   let held: HeldResult | null = null;
@@ -99,6 +105,7 @@ export function createVerifier(input: {
         candidate: { kind: "patch", path: candidate.path, sha256: candidate.sha256 },
         requirements: [...record.requirements],
         checks: [...(input.trusted?.() ?? [])],
+        behavior: [...(input.behavior?.() ?? [])],
         policy: { behaviorChange: input.behaviorChange, execution: input.execution },
         artifacts: { directory },
         producer: {

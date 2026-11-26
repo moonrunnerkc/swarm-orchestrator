@@ -1,6 +1,7 @@
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
+import { securityClasses } from "swarm-verify";
 import type { Escalate } from "./agent/attempts.ts";
 import type { ChecksMode } from "./agent/check-gate.ts";
 import { gitText } from "./agent/git.ts";
@@ -82,6 +83,9 @@ export async function run(args: readonly string[]): Promise<number> {
       "accept-authored": { type: "boolean" },
       "review-checks": { type: "boolean" },
       "write-checks": { type: "string" },
+      security: { type: "string", multiple: true },
+      "no-security": { type: "string", multiple: true },
+      "security-check": { type: "string" },
     },
   });
   const task = positionals.join(" ").trim();
@@ -166,6 +170,11 @@ export async function run(args: readonly string[]): Promise<number> {
     obligations: set.obligations,
     supplied,
     checksMode,
+    security: {
+      apply: settled(values.security),
+      exclude: settled(values["no-security"]),
+      file: values["security-check"] === undefined ? null : resolve(values["security-check"]),
+    },
     cost: model.cost,
     maxSteps,
     // Unset, the token budget is what the steps could use at this context, so steps and time end
@@ -192,6 +201,16 @@ export async function run(args: readonly string[]): Promise<number> {
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
   if (ran.report.attestationKey !== null) write(`key          ${ran.report.attestationKey}`);
   return exitCodeOf(ran.report.state, ran.report.requirements);
+}
+
+/** The security obligations named with --security or --no-security, each one this version checks. */
+function settled(given: readonly string[] | undefined): string[] {
+  const unknown = (given ?? []).find((one) => !securityClasses.some((known) => known === one));
+  if (unknown !== undefined)
+    throw new UsageError(
+      `${unknown} is not a security obligation; they are ${securityClasses.join(", ")}`,
+    );
+  return [...(given ?? [])];
 }
 
 /** The user's checks, read before the run seeds its workspace; a refused one is a usage error. */

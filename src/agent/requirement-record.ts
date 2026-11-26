@@ -144,8 +144,27 @@ export function initialRecord(
   };
 }
 
-/** Whether a requirement was fixed before the first edit: the task, or one of its obligations. */
-const fixed = (one: Requirement) => one.required && one.source === "user";
+/**
+ * Whether a requirement was fixed before the first edit: the task, one of its obligations, or one
+ * derived for the run (the approved conventions, a security obligation). A model's own are never
+ * required, so every required one is.
+ */
+const fixed = (one: Requirement) => one.required;
+
+/**
+ * The record with requirements derived for the run added after the user's, each under the next
+ * free id and its own source, so none is ever read as the user's wording.
+ */
+export function withDerived(
+  record: RequirementRecord,
+  make: readonly ((id: string) => Requirement)[],
+): RequirementRecord {
+  const next = Math.max(...record.requirements.map((one) => Number(one.id.slice(1)))) + 1;
+  return {
+    ...record,
+    requirements: [...record.requirements, ...make.map((one, at) => one(`R${next + at}`))],
+  };
+}
 
 /**
  * The record after a proposal. R1 keeps the task's wording and source and takes the proposed
@@ -187,7 +206,9 @@ export function applyProposal(
     if (obligation !== undefined) {
       if (normalize(entry.text) !== normalize(obligation.text) || entry.required === false)
         notes.push(
-          `${entry.id} is part of the task as the user wrote it, fixed before the first edit; a proposal cannot change or drop it`,
+          obligation.source === "user"
+            ? `${entry.id} is part of the task as the user wrote it, fixed before the first edit; a proposal cannot change or drop it`
+            : `${entry.id} was fixed before the first edit (source ${obligation.source}); a proposal cannot change or drop it`,
         );
       continue;
     }

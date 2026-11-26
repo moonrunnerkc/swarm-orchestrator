@@ -138,7 +138,7 @@ export async function openWorkspace(
 }
 
 /** sha256 of no bytes: the patch of a working tree with no edits. */
-const emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+export const emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 export type Delivery =
   | { readonly applied: true }

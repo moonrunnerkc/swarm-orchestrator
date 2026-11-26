@@ -10,13 +10,14 @@ import { finalize } from "./finalize.ts";
 import { gitText } from "./git.ts";
 import { assembleReport, recordStopped, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
+import { deriveForRun } from "./run-derived.ts";
 import { runEnvironment } from "./run-environment.ts";
 import type { RunOptions, RunReport } from "./run-options.ts";
 import { stablePrefix } from "./stable-prefix.ts";
 import { suppliedPaths } from "./supplied.ts";
 import { behaviorChangeNote, createVerifier, swarmHome } from "./verification.ts";
 import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
-import { deliver, openWorkspace } from "./workspace.ts";
+import { deliver, emptySha256, openWorkspace } from "./workspace.ts";
 
 export type { RunOptions, RunReport } from "./run-options.ts";
 
@@ -56,11 +57,13 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       childHome: join(evidence.directory, "home"),
       started,
     });
+    const derived = await deriveForRun({ home, repository, workspace, options, evidence });
     // After the Python environment, so the probe and the layout see the .venv the model will.
     const prefix = await stablePrefix({
       workspace,
       executor,
       task: options.task,
+      conventions: derived.block,
       signal: options.signal,
     });
     const { instructions, rendered, digests, promptSha256 } = prefix;
@@ -80,6 +83,8 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         instructions: digests,
         instructionNotes: instructions.notes,
         behaviorChange: options.behaviorChange ?? "none",
+        conventions: derived.profile ?? null,
+        security: derived.applicability.map((one) => ({ ...one })),
       },
     });
 
@@ -108,9 +113,11 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         version: options.version,
         promptSha256,
         instructions: digests,
+        ...(derived.profile === undefined ? {} : { profile: derived.profile }),
       },
       model: () => progress.model.model,
       trusted: () => gate?.trusted ?? [],
+      behavior: derived.behavior,
       signal: options.signal,
     });
     const chokepoint = createChokepoint({
@@ -127,7 +134,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     let reason: string | null = null;
     let gate: CheckGate | null = null;
     // Why nothing may run: no container could be made, or the base's dependencies did not install.
-    let early = unavailable;
+    let early = unavailable ?? derived.blocked;
     const setupNotes: string[] = [];
     try {
       // In a container the base's dependencies are installed there, before anything else runs.
@@ -154,9 +161,11 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           supplied: options.supplied ?? [],
           mode: options.checksMode ?? { kind: "accept-authored" },
           behaviorChangeAuthorized: options.behaviorChange === "authorized",
+          derived: derived.turnChecks(base),
           signal: options.signal,
         });
-        progress.record = gate.record;
+        // Derived requirements join the user's here, once, and are fixed with them.
+        progress.record = await derived.fix(gate.record);
         if (gate.blocked !== null) [stop, reason] = ["blocked", gate.blocked];
         else
           ({ stop, reason } = await runAttempts({
@@ -198,6 +207,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
             // One allowance for the run: the check author's calls came out of it first.
             maxTokens:
               options.maxTokens -
+              derived.tokens() -
               gate.authored.reduce((sum, one) => sum + one.inputTokens + one.outputTokens, 0),
             verifier,
             evidence,
@@ -249,6 +259,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       notes: [
         ...instructions.notes,
         ...setupNotes,
+        ...derived.notes(),
         ...(gate?.notes ?? []),
         ...(progress.escalationNote === undefined
           ? []
@@ -283,6 +294,3 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     await managed.remove();
   }
 }
-
-/** sha256 of no bytes: a patch that changes nothing. */
-const emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";

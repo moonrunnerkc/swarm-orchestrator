@@ -5,6 +5,7 @@ import {
   type DeclaredCheck,
   declaredChecks,
   parseReport,
+  type Requirement,
   reportPlans,
   structureEvidence,
   type TestReport,
@@ -61,6 +62,10 @@ export function createTurnChecks(input: {
   readonly conventions: TestConventions | null;
   /** The user's checks (`--accept`), validated at the base. */
   readonly user?: readonly UserCheck[];
+  /** Further checks of a requirement the run derived, such as the approved conventions. */
+  readonly derived?:
+    | ((one: Requirement) => Promise<{ ok: boolean; line: string; evidence: null }[]>)
+    | undefined;
 }) {
   const { chokepoint, workspace, conventions } = input;
   let suite: readonly DeclaredCheck[] = [];
@@ -160,6 +165,7 @@ export function createTurnChecks(input: {
             evidence: null,
           });
         }
+        parts.push(...((await input.derived?.(requirement)) ?? []));
         for (const constraint of requirement.versions) {
           const read = await constraintEvidence(workspace, constraint, undefined);
           // The registry's latest is the verifier's to look up; within the range holds here.

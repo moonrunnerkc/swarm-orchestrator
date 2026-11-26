@@ -17,7 +17,7 @@ afterAll(async () => {
 const secret = "synthetic-key-91c7";
 /** Paths built at run time from HOME, which is three levels inside the store the run must not reach. */
 const steal =
-  "node -e \"const fs=require('fs'),p=require('path');const up=p.resolve(process.env.HOME,'..','..','..');try{console.log(String(fs.readFileSync(p.join(up,'trusted-material'))))}catch(e){console.log('read refused '+e.code)};try{fs.writeFileSync(p.join(up,'..','escaped.txt'),'x');console.log('wrote outside')}catch(e){console.log('write refused '+e.code)}\"";
+  "node -e \"const fs=require('fs'),p=require('path');const up=p.resolve(process.env.HOME,'..','..','..');try{console.log(String(fs.readFileSync(p.join(up,'trusted-material'))))}catch(e){console.log('read refused '+e.code)};try{fs.writeFileSync(p.join(up,'..','escaped.txt'),'x');console.log('wrote outside')}catch(e){console.log('write refused '+e.code)};try{fs.mkdirSync(p.join(up,'conventions'),{recursive:true});fs.writeFileSync(p.join(up,'conventions','global.json'),'{}');console.log('rewrote profile')}catch(e){console.log('profile refused '+e.code)}\"";
 const fixed = [
   bash(steal),
   write("half.mjs", "export const half = (n) => n / 2;"),
@@ -45,6 +45,9 @@ describe("the model's commands", () => {
     expect(said).toMatch(/write refused E(?:NOENT|ACCES|ROFS)/);
     expect(said).not.toContain(secret);
     expect(existsSync(join(probe.root, "escaped.txt"))).toBe(false);
+    // Nor the approved conventions: a candidate cannot approve or rewrite a profile.
+    expect(said).toMatch(/profile refused E/);
+    expect(existsSync(join(probe.root, "home", "conventions", "global.json"))).toBe(false);
     expect(ran.report.state).toBe("complete");
     expect(ran.report.commands).toMatch(
       /^isolated: each command in a container of node:24@sha256:/,

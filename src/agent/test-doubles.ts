@@ -7,6 +7,7 @@ import { authorPrompt } from "./author-prompt.ts";
 import type { Message, ModelClient } from "./model.ts";
 import { completionMarker } from "./prompt.ts";
 import { type RunOptions, runAgent } from "./run.ts";
+import { securityPrompt } from "./security-author.ts";
 
 /** A reply the endpoint split: its content, and what a reasoning parser moved out of it. */
 export interface SplitReply {
@@ -25,18 +26,33 @@ export function scripted(
   options: {
     readonly counts?: "reported" | "unreported";
     readonly author?: readonly string[];
+    /** Replies to the call that drafts the security checks' binding. */
+    readonly security?: readonly string[];
   } = {},
 ): ModelClient & { seen: Message[][]; authorSeen: Message[][] } {
   const seen: Message[][] = [];
   const authorSeen: Message[][] = [];
   const reported = (options.counts ?? "reported") === "reported";
   const authorReplies = options.author ?? [authoredHalf];
+  let drafts = 0;
   return {
     model: "scripted",
     seen,
     authorSeen,
     async complete(messages) {
       const authoring = messages[0]?.content === authorPrompt;
+      if (messages[0]?.content === securityPrompt) {
+        drafts += 1;
+        const content = options.security?.[drafts - 1] ?? options.security?.at(-1) ?? "UNKNOWN";
+        return {
+          content,
+          inputTokens: 90,
+          outputTokens: 10,
+          inferenceMs: 1,
+          retries: 0,
+          truncated: false,
+        };
+      }
       const log = authoring ? authorSeen : seen;
       log.push([...messages]);
       const script = authoring ? authorReplies : replies;
