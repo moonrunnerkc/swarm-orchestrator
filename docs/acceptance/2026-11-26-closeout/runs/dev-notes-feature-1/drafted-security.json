@@ -1,0 +1,38 @@
+{
+  "target": {
+    "start": "node service/main.ts",
+    "port": 8080,
+    "env": {},
+    "ready": {
+      "path": "/",
+      "timeoutMs": 30000
+    }
+  },
+  "checks": [
+    {
+      "class": "ownership",
+      "resource": {
+        "method": "GET",
+        "path": "/notes",
+        "headers": {}
+      },
+      "owner": {
+        "x-api-key": "key-lin"
+      },
+      "other": {
+        "x-api-key": "key-omar"
+      },
+      "signedIn": {
+        "method": "GET",
+        "path": "/notes",
+        "headers": {}
+      },
+      "success": [
+        200
+      ],
+      "ownerSees": [
+        "first"
+      ]
+    }
+  ]
+}

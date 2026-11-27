@@ -1,0 +1,30 @@
+# swarm run: blocked
+
+Task: Add a currency field with the value "USD" to the JSON that GET /invoices/:id/download returns to the invoice's owner.
+
+Model: mistral-small3.2:24b (named by --model). Stopped: blocked, no independent check for R1 (the check author's 2 attempts were rejected: the reply has no `kind: <fix|feature|...>` line), and no test fails at the base for a change to make pass; supply one that fails today: swarm run "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner." --accept <test file> or --accept-cmd "<command>".
+
+| Requirement | Source | Read as | Held to | Status | Witness | Evidence | Limitation |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| R1: Add a currency field with the value "USD" to the JSON that GET /invoices/:id/download returns to the invoice's owner. | user, required | other, with no evidence named |  | unverified | none | none | final verification did not run: the run stopped before its first edit: no independent check for R1 (the check author's 2 attempts were rejected: the reply has no `kind: <fix\|feature\|...>` line), and no test fails at the base for a change to make pass; supply one that fails today: swarm run "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner." --accept <test file> or --accept-cmd "<command>" |
+| R2: The files the change adds or edits follow the approved coding conventions: exports named, function-names camelCase, variable-names camelCase, type-names PascalCase, file-names kebab-case, explicit-any forbidden, exported-return-types explicit, exported-docs documented | profile, required | other, with no evidence named |  | unverified | none | none | final verification did not run: the run stopped before its first edit: no independent check for R1 (the check author's 2 attempts were rejected: the reply has no `kind: <fix\|feature\|...>` line), and no test fails at the base for a change to make pass; supply one that fails today: swarm run "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner." --accept <test file> or --accept-cmd "<command>" |
+| R3: Only its owner can reach the resource the task serves: another user, another role and an unauthenticated request are refused by the server, and the owner is still served (its check sends GET /invoices/inv-1/download and requests like it straight to the server) | security, required | other, with no evidence named |  | unverified | none | none | final verification did not run: the run stopped before its first edit: no independent check for R1 (the check author's 2 attempts were rejected: the reply has no `kind: <fix\|feature\|...>` line), and no test fails at the base for a change to make pass; supply one that fails today: swarm run "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner." --accept <test file> or --accept-cmd "<command>" |
+
+- Independent checks for R1: none: the check author's 2 attempts were rejected: the reply has no `kind: <fix|feature|...>` line.
+- Delivered patch: `/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-invoice-seeded-3-mistral/home/sessions/20261127T051605-602cb2/final/delivered.patch`, sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855, against base a8faecd565cdbeb3407f661faa1093307d54ab5d.
+- Verification of that patch: not run.
+- Blocked: no independent check for R1 (the check author's 2 attempts were rejected: the reply has no `kind: <fix|feature|...>` line), and no test fails at the base for a change to make pass; supply one that fails today: swarm run "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner." --accept <test file> or --accept-cmd "<command>".
+- Starting state: HEAD a8faecd565cdbeb3407f661faa1093307d54ab5d, no uncommitted edits.
+- Applied to the workspace: no, kept as a patch, as asked.
+- Regression: not measured.
+- The model's commands: isolated: each command in a container of node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed, only the workspace writable.
+- Verification: not measured.
+- Attestation: none.
+- Instructions loaded: none.
+- Resources: 0 model turn(s); 5476 input and 503 output token(s) (reported by the runtime); inference time not reported by the runtime and 40 s of wall time; 0 retried request(s); 0 escalation(s); 0 verification(s) in the loop; cost: none (local runtime).
+- Note: Conventions: the approved profile swarm.conventions/v1, sha256 3e7b0ed67bc370f0317c7975f132c9a46adee4613f2b0fec8804247e1eea1fa9, as it stood when the run started.
+- Note: Security: ownership applies: the task names a resource that belongs to one user ("owner"), and the repository holds an HTTP API (routes in src/server.ts).
+- Note: Security: single-use-token does not apply: the task does not name a token, link or code that is redeemed.
+- Note: Security: duplicate-operation does not apply: the task does not name an operation that must not be applied twice.
+- Note: Security: the security checks' binding was drafted by a model call that read the base and never the change: /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-invoice-seeded-3-mistral/home/sessions/20261127T051605-602cb2/security.json. It is used as drafted because --accept-authored was passed; nobody reviewed it. To stand behind it, read it and pass it with --security-check.
+- Note: Security: the binding, sha256 0b69b6f76d65445cfdde9cccc32b00028085144e501a07b6e555d9d6662a09f2, was tried at the base with real requests before the first edit (security-ownership-1: each named user is signed in, and a request without credentials is not: pass; another user is refused: fail; an unauthenticated request is refused: pass; a user of another role is refused: fail; the owner is served: fail).

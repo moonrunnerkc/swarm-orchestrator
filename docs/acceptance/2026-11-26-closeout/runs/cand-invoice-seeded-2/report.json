@@ -1,0 +1,344 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner.",
+  "model": {
+    "name": "gemma4:31b",
+    "reason": "named by --model"
+  },
+  "stop": "no-progress",
+  "reason": "the same command printed the same result 3 turns running",
+  "state": "incomplete",
+  "snapshot": {
+    "base": "0f9aa8e2e63fc36224c5d32a41200fd7808f7419",
+    "patchSha256": "9fe4aed8393416a61d14dc3603bfa26a6513e59ddb235d1bfd9ecc904baff995",
+    "patch": "/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/cand-invoice-seeded-2/home/sessions/20261127T060846-044a2a/final/delivered.patch",
+    "treeSha256": "e3d9d857ea8344b2c4ac43b0d502f102717aea091ecc313b113541657ae5bf79"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "src/app.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "satisfied",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/invoices.swarm-r1.test.ts::GET /invoices/:id/download returns currency USD to the owner",
+          "authority": "independently-generated",
+          "outcome": "fixed"
+        },
+        {
+          "kind": "test",
+          "ref": "test/invoices.swarm-r1.test.ts::control: GET /invoices/:id/download returns existing fields to the owner",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R2",
+      "text": "The files the change adds or edits follow the approved coding conventions: exports named, function-names camelCase, variable-names camelCase, type-names PascalCase, file-names kebab-case, explicit-any forbidden, exported-return-types explicit, exported-docs documented",
+      "source": "profile",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": [],
+        "conventions": {
+          "exports": "named",
+          "function-names": "camelCase",
+          "variable-names": "camelCase",
+          "type-names": "PascalCase",
+          "file-names": "kebab-case",
+          "explicit-any": "forbidden",
+          "exported-return-types": "explicit",
+          "exported-docs": "documented"
+        }
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "satisfied",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "convention",
+          "ref": "exports: named",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "function-names: camelCase",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "variable-names: camelCase",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "type-names: PascalCase",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "file-names: kebab-case",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "explicit-any: forbidden",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "exported-return-types: explicit",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "exported-docs: documented",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R3",
+      "text": "Only its owner can reach the resource the task serves: another user, another role and an unauthenticated request are refused by the server, and the owner is still served (its check sends GET /invoices/inv-1/download and requests like it straight to the server)",
+      "source": "security",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "failed",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::each named user is signed in, and a request without credentials is not",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::another user is refused",
+          "authority": "independently-generated",
+          "outcome": "failing",
+          "detail": "new-failure"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::an unauthenticated request is refused",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::a user of another role is refused",
+          "authority": "independently-generated",
+          "outcome": "failing",
+          "detail": "new-failure"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::the owner is served",
+          "authority": "independently-generated",
+          "outcome": "fixed"
+        }
+      ],
+      "limitation": "failing: behavior security-ownership-1::another user is refused, behavior security-ownership-1::a user of another role is refused",
+      "nextAction": "repair the failing evidence"
+    }
+  ],
+  "authoring": [
+    {
+      "requirement": "R1",
+      "kind": "feature",
+      "test": "test/invoices.swarm-r1.test.ts",
+      "claims": 0,
+      "failure": null,
+      "attempts": 1
+    }
+  ],
+  "accepted": [],
+  "regression": "none",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container",
+  "commands": "isolated: each command in a container of node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed, only the workspace writable",
+  "attestation": "/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/cand-invoice-seeded-2/home/sessions/20261127T060846-044a2a/verifications/1/attestation.sigstore.json",
+  "attestationKey": "/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/cand-invoice-seeded-2/home/sessions/20261127T060846-044a2a/verifications/1/attestation.pub.pem",
+  "evidenceDelivery": "signed",
+  "startingState": {
+    "head": "0f9aa8e2e63fc36224c5d32a41200fd7808f7419",
+    "base": "0f9aa8e2e63fc36224c5d32a41200fd7808f7419",
+    "edits": [],
+    "python": null
+  },
+  "delivery": {
+    "applied": false,
+    "reason": "kept as a patch, as asked"
+  },
+  "instructions": [],
+  "notes": [
+    "Conventions: the approved profile swarm.conventions/v1, sha256 3e7b0ed67bc370f0317c7975f132c9a46adee4613f2b0fec8804247e1eea1fa9, as it stood when the run started.",
+    "Security: ownership applies: the task names a resource that belongs to one user (\"owner\"), and the repository holds an HTTP API (routes in src/server.ts).",
+    "Security: single-use-token does not apply: the task does not name a token, link or code that is redeemed.",
+    "Security: duplicate-operation does not apply: the task does not name an operation that must not be applied twice.",
+    "Security: the security checks' binding was drafted by a model call that read the base and never the change: /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/cand-invoice-seeded-2/home/sessions/20261127T060846-044a2a/security.json. It is used as drafted because --accept-authored was passed; nobody reviewed it. To stand behind it, read it and pass it with --security-check.",
+    "Security: the binding, sha256 cdadddfe2f69c4f648d5db260bf0ccce5f4ac3dd1a4a47723f2f8c81d2100e1e, was tried at the base with real requests before the first edit (security-ownership-1: each named user is signed in, and a request without credentials is not: pass; another user is refused: fail; an unauthenticated request is refused: pass; a user of another role is refused: fail; the owner is served: fail)."
+  ],
+  "review": null,
+  "resources": {
+    "steps": 9,
+    "author": {
+      "turns": 1,
+      "inputTokens": 2848,
+      "outputTokens": 515
+    },
+    "inputTokens": 33730,
+    "outputTokens": 1060,
+    "estimatedTurns": 0,
+    "inferenceMs": 61029,
+    "inferenceTurns": 9,
+    "prefillMs": 36253,
+    "generationMs": 22537,
+    "wallMs": 127567,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 1,
+    "harnessChecks": 2,
+    "suiteRuns": 2,
+    "modelTestCommands": 0,
+    "turnsByRequirement": {
+      "R1": 9
+    },
+    "cost": "none (local runtime)",
+    "turns": [
+      {
+        "inputTokens": 2142,
+        "outputTokens": 11,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3711,
+        "generationMs": 394
+      },
+      {
+        "inputTokens": 2187,
+        "outputTokens": 14,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 993,
+        "generationMs": 513
+      },
+      {
+        "inputTokens": 2243,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1003,
+        "generationMs": 434
+      },
+      {
+        "inputTokens": 2700,
+        "outputTokens": 347,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1715,
+        "generationMs": 14713
+      },
+      {
+        "inputTokens": 3103,
+        "outputTokens": 113,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 2690,
+        "generationMs": 4602
+      },
+      {
+        "inputTokens": 4087,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3011,
+        "generationMs": 464
+      },
+      {
+        "inputTokens": 4493,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 6986,
+        "generationMs": 471
+      },
+      {
+        "inputTokens": 4957,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 7958,
+        "generationMs": 466
+      },
+      {
+        "inputTokens": 4970,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 8186,
+        "generationMs": 480
+      }
+    ]
+  }
+}

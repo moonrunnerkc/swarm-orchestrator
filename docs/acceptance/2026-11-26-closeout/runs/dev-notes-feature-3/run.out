@@ -1,0 +1,26 @@
+task         Add DELETE /notes/:slug: the account that owns the note deletes it and gets 204; any other account gets 404.
+record       default
+model        gemma4:31b (named by --model)
+state        complete
+stop         complete
+R1           asked    Add DELETE /notes/:slug: the account that owns the note deletes it and gets 204; any other account gets 404.
+             read as  feature: tests spec/notes.test.ts
+             status   satisfied, witness independent
+R2           asked    The files the change adds or edits follow the approved coding conventions: exports named, function-names camelCase, variable-names camelCase, type-names PascalCase, file-names kebab-case, explicit-any forbidden, exported-return-types explicit, exported-docs documented
+             read as  other, with no evidence named
+             status   satisfied, witness independent
+R3           asked    Only its owner can reach the resource the task serves: another user, another role and an unauthenticated request are refused by the server, and the owner is still served (its check sends DELETE /notes/n-1 and requests like it straight to the server)
+             read as  other, with no evidence named
+             status   satisfied, witness independent
+checks       R1: a test, run from spec/notes.swarm-r1.test.ts (read as feature), failing at the base, written without seeing the change
+changed      1 file(s)
+regression   none
+commands     isolated: each command in a container of node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed, only the workspace writable
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container
+patch        /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/final/delivered.patch (sha256 49417c83f08216c708a82012361ab4660613c50df11a5cbbaf6046cf7ca72502)
+applied      no: kept as a patch, as asked
+report       /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/final/report.md
+evidence     /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9
+attestation  /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/verifications/1/attestation.sigstore.json
+key          /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/verifications/1/attestation.pub.pem
+exit 0

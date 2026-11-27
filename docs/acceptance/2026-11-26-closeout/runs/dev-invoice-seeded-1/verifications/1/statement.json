@@ -1,0 +1,723 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "tree",
+      "digest": {
+        "sha256": "e3d9d857ea8344b2c4ac43b0d502f102717aea091ecc313b113541657ae5bf79"
+      }
+    },
+    {
+      "name": "change.patch",
+      "digest": {
+        "sha256": "9fe4aed8393416a61d14dc3603bfa26a6513e59ddb235d1bfd9ecc904baff995"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/moonrunnerkc/swarm-verify/result/v1",
+  "predicate": {
+    "state": "incomplete",
+    "scope": "requirements",
+    "reasons": [
+      "behavior check security-ownership-1 failed"
+    ],
+    "base": {
+      "commit": "9c0d7bcc205643408a3871df2c11b19aec103ad7"
+    },
+    "change": {
+      "source": "patch",
+      "applied": true,
+      "files": [
+        {
+          "path": "src/app.ts",
+          "status": "modified"
+        }
+      ]
+    },
+    "requirements": [
+      {
+        "id": "R1",
+        "text": "Add a currency field with the value \"USD\" to the JSON that GET /invoices/:id/download returns to the invoice's owner.",
+        "source": "user",
+        "kind": "feature",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "testsAsked": false,
+        "behaviorAsked": false,
+        "status": "satisfied",
+        "witness": "independent",
+        "evidence": [
+          {
+            "kind": "test",
+            "ref": "test/invoices.swarm-r1.test.ts::GET /invoices/:id/download returns currency USD to the invoice's owner",
+            "authority": "independently-generated",
+            "outcome": "fixed"
+          },
+          {
+            "kind": "test",
+            "ref": "test/invoices.swarm-r1.test.ts::control: GET /invoices/:id/download returns existing fields to the invoice's owner",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      },
+      {
+        "id": "R2",
+        "text": "The files the change adds or edits follow the approved coding conventions: exports named, function-names camelCase, variable-names camelCase, type-names PascalCase, file-names kebab-case, explicit-any forbidden, exported-return-types explicit, exported-docs documented",
+        "source": "profile",
+        "kind": "other",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [],
+          "structure": [],
+          "packages": [],
+          "conventions": {
+            "exports": "named",
+            "function-names": "camelCase",
+            "variable-names": "camelCase",
+            "type-names": "PascalCase",
+            "file-names": "kebab-case",
+            "explicit-any": "forbidden",
+            "exported-return-types": "explicit",
+            "exported-docs": "documented"
+          }
+        },
+        "versions": [],
+        "testsAsked": false,
+        "behaviorAsked": false,
+        "status": "satisfied",
+        "witness": "independent",
+        "evidence": [
+          {
+            "kind": "convention",
+            "ref": "exports: named",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "function-names: camelCase",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "variable-names: camelCase",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "type-names: PascalCase",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "file-names: kebab-case",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "explicit-any: forbidden",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "exported-return-types: explicit",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "exported-docs: documented",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 1 changed file(s)"
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      },
+      {
+        "id": "R3",
+        "text": "Only its owner can reach the resource the task serves: another user, another role and an unauthenticated request are refused by the server, and the owner is still served (its check sends GET /invoices/inv-1/download and requests like it straight to the server)",
+        "source": "security",
+        "kind": "other",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "testsAsked": false,
+        "behaviorAsked": false,
+        "status": "failed",
+        "witness": "independent",
+        "evidence": [
+          {
+            "kind": "test",
+            "ref": "behavior security-ownership-1::each named user is signed in, and a request without credentials is not",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-ownership-1::another user is refused",
+            "authority": "independently-generated",
+            "outcome": "failing",
+            "detail": "new-failure"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-ownership-1::an unauthenticated request is refused",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-ownership-1::a user of another role is refused",
+            "authority": "independently-generated",
+            "outcome": "failing",
+            "detail": "new-failure"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-ownership-1::the owner is served",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          }
+        ],
+        "limitation": "failing: behavior security-ownership-1::another user is refused, behavior security-ownership-1::a user of another role is refused",
+        "nextAction": "repair the failing evidence"
+      }
+    ],
+    "regression": {
+      "status": "none",
+      "newFailures": [],
+      "inherited": [],
+      "removed": [],
+      "unresolved": [],
+      "flaky": []
+    },
+    "checks": [
+      {
+        "name": "test",
+        "command": "node --test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 1,
+        "exitCode": 0,
+        "durationMs": 1689,
+        "outputSha256": "2396884c36e080b974f833ac68c155b465b15c150e853d108de6c1c519667d20",
+        "tests": {
+          "runner": "node",
+          "collected": {
+            "base": 1,
+            "candidate": 1
+          },
+          "counts": {
+            "preserved": 1,
+            "renamed": 0,
+            "fixed": 0,
+            "newFailures": 0,
+            "inherited": 0,
+            "removed": 0,
+            "superseded": 0,
+            "expectationChanges": 0,
+            "added": 0,
+            "addedFailing": 0,
+            "witnesses": 0,
+            "skipped": 0,
+            "flaky": 0
+          },
+          "fixed": [],
+          "newFailures": [],
+          "inherited": [],
+          "removed": [],
+          "renamed": [],
+          "superseded": [],
+          "expectationChanges": [],
+          "added": [],
+          "addedFailing": [],
+          "witnesses": [],
+          "flaky": [],
+          "reruns": []
+        }
+      }
+    ],
+    "behavior": [
+      {
+        "check": {
+          "name": "security-ownership-1",
+          "class": "ownership",
+          "authority": "independently-generated",
+          "requirements": [
+            "R3"
+          ],
+          "target": {
+            "start": "node src/server.ts",
+            "port": 3000,
+            "env": {},
+            "ready": {
+              "path": "/",
+              "timeoutMs": 30000
+            }
+          },
+          "cases": [
+            {
+              "name": "each named user is signed in, and a request without credentials is not",
+              "role": "allowed",
+              "steps": [
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices",
+                    "headers": {
+                      "Authorization": "Bearer token-ada"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                },
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices",
+                    "headers": {
+                      "Authorization": "Bearer token-grace"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                },
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices",
+                    "headers": {
+                      "Authorization": "Bearer token-sam"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                },
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices",
+                    "headers": {}
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      401,
+                      403
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "another user is refused",
+              "role": "refused",
+              "steps": [
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices/inv-1/download",
+                    "headers": {
+                      "Authorization": "Bearer token-grace"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      403,
+                      404
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": [
+                      "INV-2026-0001"
+                    ]
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "an unauthenticated request is refused",
+              "role": "refused",
+              "steps": [
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices/inv-1/download",
+                    "headers": {}
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      401,
+                      403
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": [
+                      "INV-2026-0001"
+                    ]
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "a user of another role is refused",
+              "role": "refused",
+              "steps": [
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices/inv-1/download",
+                    "headers": {
+                      "Authorization": "Bearer token-sam"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      403,
+                      404
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": [
+                      "INV-2026-0001"
+                    ]
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "the owner is served",
+              "role": "allowed",
+              "steps": [
+                {
+                  "request": {
+                    "method": "GET",
+                    "path": "/invoices/inv-1/download",
+                    "headers": {
+                      "Authorization": "Bearer token-ada"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [
+                      "INV-2026-0001"
+                    ],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                }
+              ]
+            }
+          ]
+        },
+        "sha256": "43474528a0c05d2927c87b9f0c3c275d927305604d5c7ff845397faf94659eca",
+        "assurance": "external driver, isolated target",
+        "notRun": null,
+        "cases": [
+          {
+            "name": "each named user is signed in, and a request without credentials is not",
+            "role": "allowed",
+            "base": "pass",
+            "candidate": "pass",
+            "detail": ""
+          },
+          {
+            "name": "another user is refused",
+            "role": "refused",
+            "base": "fail",
+            "candidate": "fail",
+            "detail": "step 1 (GET /invoices/inv-1/download): expected status 403 or 404, got 200 ({\"number\":\"INV-2026-0001\",\"totalCents\":12900,\"currency\":\"USD\",\"lines\":[\"Hosting, November\"]})"
+          },
+          {
+            "name": "an unauthenticated request is refused",
+            "role": "refused",
+            "base": "pass",
+            "candidate": "pass",
+            "detail": ""
+          },
+          {
+            "name": "a user of another role is refused",
+            "role": "refused",
+            "base": "fail",
+            "candidate": "fail",
+            "detail": "step 1 (GET /invoices/inv-1/download): expected status 403 or 404, got 200 ({\"number\":\"INV-2026-0001\",\"totalCents\":12900,\"currency\":\"USD\",\"lines\":[\"Hosting, November\"]})"
+          },
+          {
+            "name": "the owner is served",
+            "role": "allowed",
+            "base": "pass",
+            "candidate": "pass",
+            "detail": ""
+          }
+        ]
+      }
+    ],
+    "baseline": {
+      "status": "measured",
+      "cached": false,
+      "environmentSha256": "d46420abb3550ad37a1d9b912b35874d597463ac9ebfcf01b5197bdad5e6462c",
+      "checks": [
+        {
+          "name": "test",
+          "command": "node --test",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": 1,
+          "exitCode": 0,
+          "durationMs": 1760,
+          "outputSha256": "bfe4d8ed93148626dd2ebcef893d74ea966e9be56724f11265b34aa0510ed975"
+        }
+      ],
+      "heldOut": [
+        {
+          "name": "authored-R1",
+          "command": "node --test test/invoices.swarm-r1.test.ts",
+          "kind": "test",
+          "authority": "independently-generated",
+          "result": "fail",
+          "collected": 2,
+          "exitCode": 1,
+          "durationMs": 1779,
+          "outputSha256": "717b7c0c537c4bea42ec7edc042b16308cbc42d1c74fee94189f5ea3778164ca"
+        }
+      ]
+    },
+    "heldOut": {
+      "status": "measured",
+      "checks": [
+        {
+          "name": "authored-R1",
+          "command": "node --test test/invoices.swarm-r1.test.ts",
+          "kind": "test",
+          "authority": "independently-generated",
+          "result": "pass",
+          "collected": 2,
+          "exitCode": 0,
+          "durationMs": 1747,
+          "outputSha256": "27a094e54d91d095375eac12d5fb8a4ef8b3b5a60a8de25abe5ae5f349511cb4"
+        }
+      ],
+      "visiblePassRate": 1,
+      "heldOutPassRate": 1,
+      "gap": 0,
+      "judge": {
+        "processes": 2,
+        "assertionCalls": 6
+      }
+    },
+    "artifacts": [
+      {
+        "path": "src/app.ts",
+        "category": "source"
+      }
+    ],
+    "testFiles": {
+      "added": [],
+      "modified": [],
+      "deleted": [],
+      "moved": [],
+      "movedAndEdited": [],
+      "relocated": []
+    },
+    "coverage": {
+      "status": "measured",
+      "tool": "v8",
+      "changedLines": 1,
+      "coveredLines": 0,
+      "files": [
+        {
+          "path": "src/app.ts",
+          "covered": [],
+          "uncovered": [
+            33
+          ]
+        }
+      ]
+    },
+    "mutation": {
+      "status": "unmeasured",
+      "reason": "no changed source line has an operator to mutate"
+    },
+    "producer": {
+      "name": "swarm-orchestrator",
+      "version": "17.1.0-rc.16",
+      "model": "gemma4:31b",
+      "promptSha256": "b61220ae3eeb94acf1abe354f8d4139ce743f7b830223ed5cce6e6d7c15bd83f",
+      "ledgerSha256": "d49dd623b9798277ceec4e11a7207174129a79b141081a2fcf2c74e5133bfdd6",
+      "ledgerRecords": 29,
+      "reportSha256": "4d5f7a1d5a09076f05643aac09705845f4ed06c8360ed719dfb9590d0726a221",
+      "profile": {
+        "version": "swarm.conventions/v1",
+        "sha256": "3e7b0ed67bc370f0317c7975f132c9a46adee4613f2b0fec8804247e1eea1fa9"
+      },
+      "instructions": []
+    },
+    "environment": {
+      "sha256": "d46420abb3550ad37a1d9b912b35874d597463ac9ebfcf01b5197bdad5e6462c",
+      "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+      "platform": "linux-arm64",
+      "git": "2.54.0 (Apple Git-157)",
+      "dependencies": "none",
+      "dependencyTreeSha256": null,
+      "reproducible": true
+    },
+    "execution": {
+      "mode": "isolated",
+      "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container",
+      "network": "closed",
+      "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+      "dependencies": {
+        "mode": "none",
+        "reproducible": false,
+        "lockfiles": {},
+        "treeSha256": null,
+        "note": "no dependencies were prepared"
+      },
+      "policyMet": true,
+      "problems": [],
+      "resources": {
+        "requested": {
+          "memoryMiB": 4096,
+          "cpus": 2
+        },
+        "effective": {
+          "memoryBytes": 4294967296,
+          "swapBytes": 0,
+          "cpus": 2,
+          "cgroup": "v2"
+        },
+        "scope": "per-container"
+      }
+    },
+    "policy": {
+      "behaviorChange": "none",
+      "reruns": 3,
+      "acceptance": "swarm-verify.acceptance/v1",
+      "redaction": {
+        "policy": "swarm-verify.redaction/v1",
+        "markers": {}
+      }
+    },
+    "unmeasured": [
+      "mutation: no changed source line has an operator to mutate"
+    ],
+    "logs": [
+      {
+        "name": "observations.json",
+        "sha256": "9362617580c27c9bccf8ed9d357b6264412a980a07f4d28a58d59b9c0d93da31"
+      },
+      {
+        "name": "logs/test.txt",
+        "sha256": "2396884c36e080b974f833ac68c155b465b15c150e853d108de6c1c519667d20"
+      },
+      {
+        "name": "behavior/security-ownership-1.base.txt",
+        "sha256": "5abbb924ea4cc884e11e1cca50aa897bc5d27485c8740be565fece75ef6441bb"
+      },
+      {
+        "name": "behavior/security-ownership-1.candidate.txt",
+        "sha256": "96f389817977c5b5d62c03205c3b10ee125b6aaefbe3603fbb2cd96f023e48c6"
+      },
+      {
+        "name": "sealed/sealed.json",
+        "sha256": "9a38dcecdf222210df3c157b0e60a8514b7da26126928799b295456da90de56c"
+      },
+      {
+        "name": "sealed/files/test/invoices.swarm-r1.test.ts",
+        "sha256": "bf24921135adfdb3aaa54c9ee86e5f2f29f321cb6d629416b10c79618cbf1b10"
+      }
+    ],
+    "verifier": {
+      "name": "swarm-verify",
+      "version": "3.2.0-rc.9"
+    }
+  }
+}

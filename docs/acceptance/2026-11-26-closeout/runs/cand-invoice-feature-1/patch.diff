@@ -1,0 +1,63 @@
+diff --git a/src/app.ts b/src/app.ts
+index 8dd66a5..3a60943 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,6 +1,6 @@
+ import type { IncomingMessage, ServerResponse } from "node:http";
+ import { authenticate } from "./auth.ts";
+-import { listInvoices } from "./invoices.ts";
++import { listInvoices, getInvoiceDownload } from "./invoices.ts";
+ 
+ function send(response: ServerResponse, status: number, body: unknown): void {
+   response.writeHead(status, { "content-type": "application/json" });
+@@ -23,5 +23,16 @@ export function handle(request: IncomingMessage, response: ServerResponse): void
+     send(response, 200, { invoices: listInvoices(user) });
+     return;
+   }
++  if (request.method === "GET" && path.startsWith("/invoices/") && path.endsWith("/download")) {
++    const parts = path.split("/");
++    const id = parts[2];
++    const invoice = getInvoiceDownload(user, id);
++    if (invoice === null) {
++      send(response, 404, { error: "not found" });
++      return;
++    }
++    send(response, 200, invoice);
++    return;
++  }
+   send(response, 404, { error: "not found" });
+ }
+diff --git a/src/invoices.ts b/src/invoices.ts
+index cabcab3..9960ad2 100644
+--- a/src/invoices.ts
++++ b/src/invoices.ts
+@@ -7,9 +7,29 @@ export interface InvoiceSummary {
+   readonly totalCents: number;
+ }
+ 
++/** An invoice as the download endpoint returns it. */
++export interface InvoiceDownload {
++  readonly number: string;
++  readonly totalCents: number;
++  readonly lines: readonly string[];
++}
++
+ /** The invoices a user owns, in the order they were issued. */
+ export function listInvoices(user: User): InvoiceSummary[] {
+   return invoices
+     .filter((invoice) => invoice.ownerId === user.id)
+     .map(({ id, number, totalCents }) => ({ id, number, totalCents }));
+ }
++
++/** An invoice owned by the user, or null if it doesn't exist or isn't owned by them. */
++export function getInvoiceDownload(user: User, id: string): InvoiceDownload | null {
++  const invoice = invoices.find((i) => i.id === id && i.ownerId === user.id);
++  if (invoice === undefined) {
++    return null;
++  }
++  return {
++    number: invoice.number,
++    totalCents: invoice.totalCents,
++    lines: invoice.lines,
++  };
++}

@@ -1,0 +1,112 @@
+{
+  "example": "invoice",
+  "variant": "feature",
+  "base": "f14a6ace9afbe9d3be2c4345e9cafbfabdfb1355",
+  "patchSha256": "282aaaa14645bba39452816183449d9e2df5457310a93a24dc9fd35e2026ee8c",
+  "delivered": {
+    "state": "complete",
+    "ownership": "satisfied",
+    "conventions": "satisfied",
+    "cases": [
+      "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+      "another user is refused: base pass, candidate pass",
+      "an unauthenticated request is refused: base pass, candidate pass",
+      "a user of another role is refused: base pass, candidate pass",
+      "the owner is served: base fail, candidate pass"
+    ],
+    "conventionFailures": [],
+    "regression": "none"
+  },
+  "independentTest": {
+    "pass": true,
+    "tail": "ℹ tests 1 | ℹ pass 1 | ℹ fail 0"
+  },
+  "generatedTest": {
+    "path": "test/invoices.swarm-r1.test.ts",
+    "sha256": "84dcf2e3f1859acd10ae75a9edab6ace979011da39c14912c91f9822f1ab0d4a",
+    "atBase": {
+      "pass": false,
+      "tail": "✖ GET /invoices/:id/download returns invoice details to the owner (11.668489ms) | ℹ tests 4 | ℹ pass 3 | ℹ fail 1 | ✖ failing tests: | ✖ GET /invoices/:id/download returns invoice details to the owner (11.668489ms)"
+    },
+    "onCorrectReference": {
+      "pass": true,
+      "tail": "ℹ tests 4 | ℹ pass 4 | ℹ fail 0"
+    },
+    "onFaultyReference": {
+      "pass": false,
+      "tail": "✖ GET /invoices/:id/download returns 403 or 404 when user does not own the invoice (3.266552ms) | ℹ tests 4 | ℹ pass 3 | ℹ fail 1 | ✖ failing tests: | ✖ GET /invoices/:id/download returns 403 or 404 when user does not own the invoice (3.266552ms)"
+    }
+  },
+  "draftedBinding": {
+    "sha256": "3dc0941d47c2038acb788b15bb6947e496db55d941c6655ff709552ba041993d",
+    "binding": {
+      "target": {
+        "start": "node src/server.ts",
+        "port": 3000,
+        "env": {},
+        "ready": {
+          "path": "/",
+          "timeoutMs": 30000
+        }
+      },
+      "checks": [
+        {
+          "class": "ownership",
+          "resource": {
+            "method": "GET",
+            "path": "/invoices/inv-1/download",
+            "headers": {}
+          },
+          "owner": {
+            "Authorization": "Bearer token-ada"
+          },
+          "other": {
+            "Authorization": "Bearer token-grace"
+          },
+          "otherRole": {
+            "Authorization": "Bearer token-sam"
+          },
+          "signedIn": {
+            "method": "GET",
+            "path": "/invoices",
+            "headers": {}
+          },
+          "success": [
+            200
+          ],
+          "ownerSees": [
+            "INV-2026-0001"
+          ]
+        }
+      ]
+    },
+    "onCorrectReference": {
+      "state": "complete",
+      "ownership": "satisfied",
+      "conventions": "satisfied",
+      "cases": [
+        "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+        "another user is refused: base pass, candidate pass",
+        "an unauthenticated request is refused: base pass, candidate pass",
+        "a user of another role is refused: base pass, candidate pass",
+        "the owner is served: base fail, candidate pass"
+      ],
+      "conventionFailures": [],
+      "regression": "none"
+    },
+    "onFaultyReference": {
+      "state": "incomplete",
+      "ownership": "failed",
+      "conventions": "satisfied",
+      "cases": [
+        "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+        "another user is refused: base pass, candidate fail (step 1 (GET /invoices/inv-1/download): expected status 403 or 404, got 200 ({\"number\":\"INV-2026-0001\",\"totalCents\":12900,\"lines\":[\"Hosting, November\"]}))",
+        "an unauthenticated request is refused: base pass, candidate pass",
+        "a user of another role is refused: base pass, candidate fail (step 1 (GET /invoices/inv-1/download): expected status 403 or 404, got 200 ({\"number\":\"INV-2026-0001\",\"totalCents\":12900,\"lines\":[\"Hosting, November\"]}))",
+        "the owner is served: base fail, candidate pass"
+      ],
+      "conventionFailures": [],
+      "regression": "none"
+    }
+  }
+}

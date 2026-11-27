@@ -1,0 +1,162 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Add DELETE /notes/:slug: the account that owns the note deletes it and gets 204; any other account gets 404.",
+  "model": {
+    "name": "gemma4:31b",
+    "reason": "named by --model"
+  },
+  "stop": "cancelled",
+  "reason": "stopped by SIGINT",
+  "state": "incomplete",
+  "snapshot": {
+    "base": "74ac0ae43a1b5e933a3cd479c6576711f6cf5de3",
+    "patchSha256": "0912e93dfc3a8644dbb7f5a540d58d70cdb441fe6b929c0bca8dede3590e52d0",
+    "patch": "/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-1/home/sessions/20261127T042014-77ffbe/final/delivered.patch",
+    "treeSha256": null
+  },
+  "verification": "not run",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Add DELETE /notes/:slug: the account that owns the note deletes it and gets 204; any other account gets 404.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "unverified",
+      "witness": "none",
+      "evidence": [],
+      "limitation": "final verification did not run: the run was cancelled",
+      "nextAction": "verify the delivered patch with swarm-verify"
+    },
+    {
+      "id": "R2",
+      "text": "The files the change adds or edits follow the approved coding conventions: exports named, function-names camelCase, variable-names camelCase, type-names PascalCase, file-names kebab-case, explicit-any forbidden, exported-return-types explicit, exported-docs documented",
+      "source": "profile",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": [],
+        "conventions": {
+          "exports": "named",
+          "function-names": "camelCase",
+          "variable-names": "camelCase",
+          "type-names": "PascalCase",
+          "file-names": "kebab-case",
+          "explicit-any": "forbidden",
+          "exported-return-types": "explicit",
+          "exported-docs": "documented"
+        }
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "unverified",
+      "witness": "none",
+      "evidence": [],
+      "limitation": "final verification did not run: the run was cancelled",
+      "nextAction": "verify the delivered patch with swarm-verify"
+    },
+    {
+      "id": "R3",
+      "text": "Only its owner can reach the resource the task serves: another user, another role and an unauthenticated request are refused by the server, and the owner is still served (its check sends GET /notes and requests like it straight to the server)",
+      "source": "security",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "unverified",
+      "witness": "none",
+      "evidence": [],
+      "limitation": "final verification did not run: the run was cancelled",
+      "nextAction": "verify the delivered patch with swarm-verify"
+    }
+  ],
+  "authoring": [
+    {
+      "requirement": "R1",
+      "kind": "feature",
+      "test": "spec/notes.swarm-r1.test.ts",
+      "claims": 0,
+      "failure": null,
+      "attempts": 1
+    }
+  ],
+  "accepted": [],
+  "regression": null,
+  "execution": null,
+  "commands": "isolated: each command in a container of node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed, only the workspace writable",
+  "attestation": null,
+  "attestationKey": null,
+  "evidenceDelivery": null,
+  "startingState": {
+    "head": "74ac0ae43a1b5e933a3cd479c6576711f6cf5de3",
+    "base": "74ac0ae43a1b5e933a3cd479c6576711f6cf5de3",
+    "edits": [],
+    "python": null
+  },
+  "delivery": {
+    "applied": false,
+    "reason": "kept as a patch, as asked"
+  },
+  "instructions": [],
+  "notes": [
+    "Conventions: the approved profile swarm.conventions/v1, sha256 3e7b0ed67bc370f0317c7975f132c9a46adee4613f2b0fec8804247e1eea1fa9, as it stood when the run started.",
+    "Security: ownership applies: the task names a resource that belongs to one user (\"owns\"), and the repository holds an HTTP API (routes in service/http.ts).",
+    "Security: single-use-token does not apply: the task does not name a token, link or code that is redeemed.",
+    "Security: duplicate-operation does not apply: the task does not name an operation that must not be applied twice.",
+    "Security: the security checks' binding was drafted by a model call that read the base and never the change: /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-1/home/sessions/20261127T042014-77ffbe/security.json. It is used as drafted because --accept-authored was passed; nobody reviewed it. To stand behind it, read it and pass it with --security-check.",
+    "Security: the binding, sha256 db728927be9662b481f8a5740faf40aa8207d6bc8e3e55c334e7b6f3569d167b, was tried at the base with real requests before the first edit (security-ownership-1: each named user is signed in, and a request without credentials is not: pass; another user is refused: fail; an unauthenticated request is refused: pass; the owner is served: pass).",
+    "final verification did not run: the run was cancelled"
+  ],
+  "review": null,
+  "resources": {
+    "steps": 0,
+    "author": {
+      "turns": 1,
+      "inputTokens": 2362,
+      "outputTokens": 652
+    },
+    "inputTokens": 2362,
+    "outputTokens": 652,
+    "estimatedTurns": 0,
+    "inferenceMs": 0,
+    "inferenceTurns": 0,
+    "prefillMs": null,
+    "generationMs": null,
+    "wallMs": 1493666,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 0,
+    "harnessChecks": 0,
+    "suiteRuns": 0,
+    "modelTestCommands": 0,
+    "turnsByRequirement": {},
+    "cost": "none (local runtime)",
+    "turns": []
+  }
+}

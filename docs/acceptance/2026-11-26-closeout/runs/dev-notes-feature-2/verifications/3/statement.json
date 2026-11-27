@@ -1,0 +1,453 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "tree",
+      "digest": {
+        "sha256": "7178e07dfab8016109d71d2b761d2491438aeec714976e061f39bdc57344a2d5"
+      }
+    },
+    {
+      "name": "change.patch",
+      "digest": {
+        "sha256": "b221c12a9881db0c3728974225b20429b277fccd053df0d096d9a17cf28c1af3"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/moonrunnerkc/swarm-verify/result/v1",
+  "predicate": {
+    "state": "incomplete",
+    "scope": "requirements",
+    "reasons": [],
+    "base": {
+      "commit": "e9d9f5cf8b31d717899a74132e9bce03bb25d2f5"
+    },
+    "change": {
+      "source": "patch",
+      "applied": true,
+      "files": [
+        {
+          "path": "service/http.ts",
+          "status": "modified"
+        },
+        {
+          "path": "spec/notes.test.ts",
+          "status": "modified"
+        }
+      ]
+    },
+    "requirements": [
+      {
+        "id": "R1",
+        "text": "Add DELETE /notes/:slug: the account that owns the note deletes it and gets 204; any other account gets 404.",
+        "source": "user",
+        "kind": "feature",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [
+            {
+              "name": "an account deletes its own note"
+            }
+          ],
+          "checks": [],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "testsAsked": false,
+        "behaviorAsked": false,
+        "status": "satisfied",
+        "witness": "independent",
+        "evidence": [
+          {
+            "kind": "test",
+            "ref": "spec/notes.test.ts::an account deletes its own note",
+            "authority": "implementation-authored",
+            "outcome": "witness",
+            "detail": "fails against the base's source"
+          },
+          {
+            "kind": "test",
+            "ref": "spec/notes.swarm-r1.test.ts::any other account gets 404 when deleting a note they do not own",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "spec/notes.swarm-r1.test.ts::control: an account can list its own notes",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "spec/notes.swarm-r1.test.ts::the account that owns the note deletes it and gets 204",
+            "authority": "independently-generated",
+            "outcome": "fixed"
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      },
+      {
+        "id": "R2",
+        "text": "The files the change adds or edits follow the approved coding conventions: exports named, function-names camelCase, variable-names camelCase, type-names PascalCase, file-names kebab-case, explicit-any forbidden, exported-return-types explicit, exported-docs documented",
+        "source": "profile",
+        "kind": "other",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [],
+          "structure": [],
+          "packages": [],
+          "conventions": {
+            "exports": "named",
+            "function-names": "camelCase",
+            "variable-names": "camelCase",
+            "type-names": "PascalCase",
+            "file-names": "kebab-case",
+            "explicit-any": "forbidden",
+            "exported-return-types": "explicit",
+            "exported-docs": "documented"
+          }
+        },
+        "versions": [],
+        "testsAsked": false,
+        "behaviorAsked": false,
+        "status": "satisfied",
+        "witness": "independent",
+        "evidence": [
+          {
+            "kind": "convention",
+            "ref": "exports: named",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "function-names: camelCase",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "variable-names: camelCase",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "type-names: PascalCase",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "file-names: kebab-case",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "explicit-any: forbidden",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "exported-return-types: explicit",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          },
+          {
+            "kind": "convention",
+            "ref": "exported-docs: documented",
+            "authority": "user-acceptance",
+            "outcome": "observed",
+            "detail": "no new violation in 2 changed file(s)"
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      },
+      {
+        "id": "R3",
+        "text": "Only its owner can reach the resource the task serves: another user, another role and an unauthenticated request are refused by the server, and the owner is still served",
+        "source": "security",
+        "kind": "other",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "testsAsked": false,
+        "behaviorAsked": false,
+        "status": "unverified",
+        "witness": "none",
+        "evidence": [],
+        "limitation": "no executed evidence is mapped to this requirement",
+        "nextAction": "map the tests that exercise it; these fail before the change and pass after it: an account deletes its own note"
+      }
+    ],
+    "regression": {
+      "status": "none",
+      "newFailures": [],
+      "inherited": [],
+      "removed": [],
+      "unresolved": [],
+      "flaky": []
+    },
+    "checks": [
+      {
+        "name": "test",
+        "command": "node --test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 1,
+        "exitCode": 0,
+        "durationMs": 1780,
+        "outputSha256": "901315648d6f1f332f4f692c595810207ca3954bf8ba40d81af400d7001d9c13",
+        "tests": {
+          "runner": "node",
+          "collected": {
+            "base": 1,
+            "candidate": 4
+          },
+          "counts": {
+            "preserved": 1,
+            "renamed": 0,
+            "fixed": 0,
+            "newFailures": 0,
+            "inherited": 0,
+            "removed": 0,
+            "superseded": 0,
+            "expectationChanges": 0,
+            "added": 3,
+            "addedFailing": 0,
+            "witnesses": 1,
+            "skipped": 0,
+            "flaky": 0
+          },
+          "fixed": [],
+          "newFailures": [],
+          "inherited": [],
+          "removed": [],
+          "renamed": [],
+          "superseded": [],
+          "expectationChanges": [],
+          "added": [
+            "spec/notes.test.ts::an account cannot delete another account's note",
+            "spec/notes.test.ts::an account deletes its own note",
+            "spec/notes.test.ts::an unauthenticated request cannot delete a note"
+          ],
+          "addedFailing": [],
+          "witnesses": [
+            "spec/notes.test.ts::an account deletes its own note"
+          ],
+          "flaky": [],
+          "reruns": [
+            {
+              "id": "spec/notes.test.ts::an account deletes its own note",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "behavior": [],
+    "baseline": {
+      "status": "measured",
+      "cached": true,
+      "environmentSha256": "d46420abb3550ad37a1d9b912b35874d597463ac9ebfcf01b5197bdad5e6462c",
+      "checks": [
+        {
+          "name": "test",
+          "command": "node --test",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": 1,
+          "exitCode": 0,
+          "durationMs": 1783,
+          "outputSha256": "490803b20309fb44deab4a43bcb8351bbfe036b15aeb1d2a55d5b70cccaf6e98"
+        }
+      ],
+      "heldOut": [
+        {
+          "name": "authored-R1",
+          "command": "node --test spec/notes.swarm-r1.test.ts",
+          "kind": "test",
+          "authority": "independently-generated",
+          "result": "fail",
+          "collected": 3,
+          "exitCode": 1,
+          "durationMs": 1777,
+          "outputSha256": "e5592fc02e676b233ae2995d1a798f72d4b41a637fadda955340a35d2a2108ca"
+        }
+      ]
+    },
+    "heldOut": {
+      "status": "measured",
+      "checks": [
+        {
+          "name": "authored-R1",
+          "command": "node --test spec/notes.swarm-r1.test.ts",
+          "kind": "test",
+          "authority": "independently-generated",
+          "result": "pass",
+          "collected": 3,
+          "exitCode": 0,
+          "durationMs": 1770,
+          "outputSha256": "f9fb856290e8aa3abda6b26bdd5a15e1f399a80dcf717acd386af0b8ace98f76"
+        }
+      ],
+      "visiblePassRate": 1,
+      "heldOutPassRate": 1,
+      "gap": 0,
+      "judge": {
+        "processes": 2,
+        "assertionCalls": 5
+      }
+    },
+    "artifacts": [
+      {
+        "path": "service/http.ts",
+        "category": "source"
+      },
+      {
+        "path": "spec/notes.test.ts",
+        "category": "tests"
+      }
+    ],
+    "testFiles": {
+      "added": [],
+      "modified": [
+        "spec/notes.test.ts"
+      ],
+      "deleted": [],
+      "moved": [],
+      "movedAndEdited": [],
+      "relocated": []
+    },
+    "coverage": {
+      "status": "unmeasured",
+      "reason": "the V8 offsets for service/http.ts run past the file, so a transform ran first"
+    },
+    "mutation": {
+      "status": "killed",
+      "path": "service/http.ts",
+      "line": 18,
+      "operator": "+ to -",
+      "syntax": "valid",
+      "rejected": 0
+    },
+    "producer": {
+      "name": "swarm-orchestrator",
+      "version": "17.1.0-rc.16",
+      "model": "gemma4:31b",
+      "promptSha256": "19fdf3c32dc173345585b608933bfb0d515d09ea7a4bc45c1730cef37d0660fe",
+      "ledgerSha256": "c4052ba1e20d4d92228f2a7bac5330f75d21ae4a963f4d1b6a897e9b37a3121b",
+      "ledgerRecords": 48,
+      "reportSha256": "18b64fd782e24f6fd954d848aecd16fe1e792ca903a0b533927e3a84065d1d2a",
+      "profile": {
+        "version": "swarm.conventions/v1",
+        "sha256": "3e7b0ed67bc370f0317c7975f132c9a46adee4613f2b0fec8804247e1eea1fa9"
+      },
+      "instructions": []
+    },
+    "environment": {
+      "sha256": "d46420abb3550ad37a1d9b912b35874d597463ac9ebfcf01b5197bdad5e6462c",
+      "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+      "platform": "linux-arm64",
+      "git": "2.54.0 (Apple Git-157)",
+      "dependencies": "none",
+      "dependencyTreeSha256": null,
+      "reproducible": true
+    },
+    "execution": {
+      "mode": "isolated",
+      "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container",
+      "network": "closed",
+      "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+      "dependencies": {
+        "mode": "none",
+        "reproducible": false,
+        "lockfiles": {},
+        "treeSha256": null,
+        "note": "no dependencies were prepared"
+      },
+      "policyMet": true,
+      "problems": [],
+      "resources": {
+        "requested": {
+          "memoryMiB": 4096,
+          "cpus": 2
+        },
+        "effective": {
+          "memoryBytes": 4294967296,
+          "swapBytes": 0,
+          "cpus": 2,
+          "cgroup": "v2"
+        },
+        "scope": "per-container"
+      }
+    },
+    "policy": {
+      "behaviorChange": "none",
+      "reruns": 3,
+      "acceptance": "swarm-verify.acceptance/v1",
+      "redaction": {
+        "policy": "swarm-verify.redaction/v1",
+        "markers": {}
+      }
+    },
+    "unmeasured": [
+      "coverage: the V8 offsets for service/http.ts run past the file, so a transform ran first"
+    ],
+    "logs": [
+      {
+        "name": "observations.json",
+        "sha256": "6adf9d4d22c7c69478ae5515adbb1648a79c85933d144439e956668e34ef3679"
+      },
+      {
+        "name": "logs/test.txt",
+        "sha256": "378817f4e86aa251f6fdd1a32cd9316f4c7a619b5806895c66a204ab100fedd0"
+      },
+      {
+        "name": "logs/test.base-tests.txt",
+        "sha256": "901315648d6f1f332f4f692c595810207ca3954bf8ba40d81af400d7001d9c13"
+      },
+      {
+        "name": "sealed/sealed.json",
+        "sha256": "dc690ff9b7f36153c56d3d275cf31ec08d6f7ff4e057ca75adb865d42478c7cf"
+      },
+      {
+        "name": "sealed/files/spec/notes.swarm-r1.test.ts",
+        "sha256": "35ce7f8d90232204aa8b382d35c3a469e4638321e50f8083195427552844dd87"
+      }
+    ],
+    "verifier": {
+      "name": "swarm-verify",
+      "version": "3.2.0-rc.9"
+    }
+  }
+}

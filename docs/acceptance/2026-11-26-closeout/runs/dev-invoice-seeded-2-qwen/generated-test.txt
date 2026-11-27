@@ -1,0 +1,98 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createServer } from "node:http";
+import { handle } from "../src/app.ts";
+
+// Behaviors stated by the task:
+// 1. GET /invoices/:id/download returns a JSON response to the invoice's owner.
+// 2. The JSON response contains a currency field with the value "USD".
+
+test("GET /invoices/inv-1/download returns currency USD for the owner", async () => {
+  const server = createServer(handle);
+  
+  // Bind to port 0 to let the OS pick a free port, then get the actual port.
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object" && "port" in address);
+  const port = (address as { port: number }).port;
+
+  try {
+    // Fetch the invoice download endpoint for inv-1 (owned by Ada)
+    const response = await fetch(`http://localhost:${port}/invoices/inv-1/download`, {
+      headers: {
+        Authorization: "Bearer token-ada",
+      },
+    });
+
+    assert.equal(response.status, 200, "Expected 200 OK for valid invoice download");
+
+    const body = await response.json();
+
+    // Check that the currency field exists and has the value "USD"
+    assert.ok("currency" in body, "Response JSON must contain a 'currency' field");
+    assert.equal(body.currency, "USD", "Currency field must have the value 'USD'");
+  } finally {
+    // Close the server
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("GET /invoices/inv-2/download returns currency USD for the owner", async () => {
+  const server = createServer(handle);
+  
+  // Bind to port 0 to let the OS pick a free port, then get the actual port.
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object" && "port" in address);
+  const port = (address as { port: number }).port;
+
+  try {
+    // Fetch the invoice download endpoint for inv-2 (owned by Grace)
+    const response = await fetch(`http://localhost:${port}/invoices/inv-2/download`, {
+      headers: {
+        Authorization: "Bearer token-grace",
+      },
+    });
+
+    assert.equal(response.status, 200, "Expected 200 OK for valid invoice download");
+
+    const body = await response.json();
+
+    // Check that the currency field exists and has the value "USD"
+    assert.ok("currency" in body, "Response JSON must contain a 'currency' field");
+    assert.equal(body.currency, "USD", "Currency field must have the value 'USD'");
+  } finally {
+    // Close the server
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("control: GET /invoices/inv-1/download without currency field fails assertion if not implemented", async () => {
+  const server = createServer(handle);
+  
+  // Bind to port 0 to let the OS pick a free port, then get the actual port.
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object" && "port" in address);
+  const port = (address as { port: number }).port;
+
+  try {
+    // Fetch the invoice download endpoint for inv-1 (owned by Ada)
+    const response = await fetch(`http://localhost:${port}/invoices/inv-1/download`, {
+      headers: {
+        Authorization: "Bearer token-ada",
+      },
+    });
+
+    assert.equal(response.status, 200, "Expected 200 OK for valid invoice download");
+
+    const body = await response.json();
+
+    // This control test verifies the current state (before fix) does NOT have the currency field.
+    // If it does, the task is already done. If not, this test passes, confirming the need for the feature.
+    assert.ok(!("currency" in body), "Control: Currency field should not exist yet");
+  } finally {
+    // Close the server
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

@@ -1,0 +1,61 @@
+/**
+ * - GET /invoices/:id/download
+ * - returns the invoice as JSON (its number, totalCents and lines)
+ * - to the authenticated user who owns it
+ */
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createServer } from "node:http";
+import { handle } from "../src/app.ts";
+import { users, invoices } from "../src/data.ts";
+
+async function request(token: string, path: string) {
+  const server = createServer(handle);
+  await new Promise((resolve) => server.listen(0, resolve));
+  const { port } = server.address();
+  const url = `http://localhost:${port}${path}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await response.json();
+    return { status: response.status, body };
+  } finally {
+    server.close();
+  }
+}
+
+test("control: GET /invoices returns the list of invoices for an authenticated user", async () => {
+  const [ada] = users;
+  const { status, body } = await request(ada.token, "/invoices");
+  assert.strictEqual(status, 200);
+  assert.ok(Array.isArray(body.invoices));
+  assert.strictEqual(body.invoices[0].number, "INV-2026-0001");
+});
+
+test("GET /invoices/:id/download returns the invoice JSON for the owner", async () => {
+  const [ada] = users;
+  const [invoice] = invoices; // Ada owns inv-1
+  const { status, body } = await request(ada.token, `/invoices/${invoice.id}/download`);
+
+  assert.strictEqual(status, 200);
+  assert.strictEqual(body.number, invoice.number);
+  assert.strictEqual(body.totalCents, invoice.totalCents);
+  assert.deepEqual(body.lines, invoice.lines);
+});
+
+test("GET /invoices/:id/download returns 404 or 403 when the authenticated user does not own the invoice", async () => {
+  const [, grace] = users;
+  const [invoice] = invoices; // Ada owns inv-1, not Grace
+  const { status } = await request(grace.token, `/invoices/${invoice.id}/download`);
+
+  // The task says "to the authenticated user who owns it", implying others should not get it.
+  // Usually this is 403 or 404.
+  assert.ok(status === 403 || status === 404, `Expected 403 or 404, got ${status}`);
+});
+
+test("GET /invoices/:id/download returns 401 for unauthenticated users", async () => {
+  const { status } = await request("invalid-token", "/invoices/inv-1/download");
+  assert.strictEqual(status, 401);
+});

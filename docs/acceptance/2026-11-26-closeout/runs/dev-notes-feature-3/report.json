@@ -1,0 +1,320 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Add DELETE /notes/:slug: the account that owns the note deletes it and gets 204; any other account gets 404.",
+  "model": {
+    "name": "gemma4:31b",
+    "reason": "named by --model"
+  },
+  "stop": "complete",
+  "reason": null,
+  "state": "complete",
+  "snapshot": {
+    "base": "14921bb56abefd449a9bf4af2e4777814da695f0",
+    "patchSha256": "49417c83f08216c708a82012361ab4660613c50df11a5cbbaf6046cf7ca72502",
+    "patch": "/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/final/delivered.patch",
+    "treeSha256": "1ee60a5b9cb67f07a4812e1c72015130b046a7b1c5ff4211b1e44460922ceb21"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "service/http.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Add DELETE /notes/:slug: the account that owns the note deletes it and gets 204; any other account gets 404.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [
+          {
+            "name": "spec/notes.test.ts"
+          }
+        ],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "satisfied",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "spec/notes.test.ts::an account lists its own notes",
+          "authority": "pre-existing",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "spec/notes.swarm-r1.test.ts::any other account gets 404 when deleting a note they do not own",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "spec/notes.swarm-r1.test.ts::control: an account can list its own notes",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "spec/notes.swarm-r1.test.ts::the account that owns the note deletes it and gets 204",
+          "authority": "independently-generated",
+          "outcome": "fixed"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R2",
+      "text": "The files the change adds or edits follow the approved coding conventions: exports named, function-names camelCase, variable-names camelCase, type-names PascalCase, file-names kebab-case, explicit-any forbidden, exported-return-types explicit, exported-docs documented",
+      "source": "profile",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": [],
+        "conventions": {
+          "exports": "named",
+          "function-names": "camelCase",
+          "variable-names": "camelCase",
+          "type-names": "PascalCase",
+          "file-names": "kebab-case",
+          "explicit-any": "forbidden",
+          "exported-return-types": "explicit",
+          "exported-docs": "documented"
+        }
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "satisfied",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "convention",
+          "ref": "exports: named",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "function-names: camelCase",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "variable-names: camelCase",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "type-names: PascalCase",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "file-names: kebab-case",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "explicit-any: forbidden",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "exported-return-types: explicit",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        },
+        {
+          "kind": "convention",
+          "ref": "exported-docs: documented",
+          "authority": "user-acceptance",
+          "outcome": "observed",
+          "detail": "no new violation in 1 changed file(s)"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R3",
+      "text": "Only its owner can reach the resource the task serves: another user, another role and an unauthenticated request are refused by the server, and the owner is still served (its check sends DELETE /notes/n-1 and requests like it straight to the server)",
+      "source": "security",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "satisfied",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::each named user is signed in, and a request without credentials is not",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::another user is refused",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::an unauthenticated request is refused",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-ownership-1::the owner is served",
+          "authority": "independently-generated",
+          "outcome": "fixed"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "authoring": [
+    {
+      "requirement": "R1",
+      "kind": "feature",
+      "test": "spec/notes.swarm-r1.test.ts",
+      "claims": 0,
+      "failure": null,
+      "attempts": 1
+    }
+  ],
+  "accepted": [],
+  "regression": "none",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container",
+  "commands": "isolated: each command in a container of node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed, only the workspace writable",
+  "attestation": "/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/verifications/1/attestation.sigstore.json",
+  "attestationKey": "/Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/verifications/1/attestation.pub.pem",
+  "evidenceDelivery": "signed",
+  "startingState": {
+    "head": "14921bb56abefd449a9bf4af2e4777814da695f0",
+    "base": "14921bb56abefd449a9bf4af2e4777814da695f0",
+    "edits": [],
+    "python": null
+  },
+  "delivery": {
+    "applied": false,
+    "reason": "kept as a patch, as asked"
+  },
+  "instructions": [],
+  "notes": [
+    "Conventions: the approved profile swarm.conventions/v1, sha256 3e7b0ed67bc370f0317c7975f132c9a46adee4613f2b0fec8804247e1eea1fa9, as it stood when the run started.",
+    "Security: ownership applies: the task names a resource that belongs to one user (\"owns\"), and the repository holds an HTTP API (routes in service/http.ts).",
+    "Security: single-use-token does not apply: the task does not name a token, link or code that is redeemed.",
+    "Security: duplicate-operation does not apply: the task does not name an operation that must not be applied twice.",
+    "Security: the security checks' binding was drafted by a model call that read the base and never the change: /Users/brad/projects/recovery-2026-10-31/run-closeout/runs/dev-notes-feature-3/home/sessions/20261127T051141-e24ec9/security.json. It is used as drafted because --accept-authored was passed; nobody reviewed it. To stand behind it, read it and pass it with --security-check.",
+    "Security: the binding, sha256 8e1868e8a9507bea7d3ed0f70e8465204170ee65fb2fdd0020779d54413c14c2, was tried at the base with real requests before the first edit (security-ownership-1: each named user is signed in, and a request without credentials is not: pass; another user is refused: pass; an unauthenticated request is refused: pass; the owner is served: fail)."
+  ],
+  "review": null,
+  "resources": {
+    "steps": 5,
+    "author": {
+      "turns": 1,
+      "inputTokens": 2372,
+      "outputTokens": 652
+    },
+    "inputTokens": 16185,
+    "outputTokens": 1217,
+    "estimatedTurns": 0,
+    "inferenceMs": 36846,
+    "inferenceTurns": 5,
+    "prefillMs": 12322,
+    "generationMs": 23226,
+    "wallMs": 106961,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 1,
+    "harnessChecks": 3,
+    "suiteRuns": 2,
+    "modelTestCommands": 0,
+    "turnsByRequirement": {
+      "R1": 5
+    },
+    "cost": "none (local runtime)",
+    "turns": [
+      {
+        "inputTokens": 2140,
+        "outputTokens": 9,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 4236,
+        "generationMs": 318
+      },
+      {
+        "inputTokens": 2207,
+        "outputTokens": 22,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1115,
+        "generationMs": 835
+      },
+      {
+        "inputTokens": 2891,
+        "outputTokens": 238,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 2449,
+        "generationMs": 9723
+      },
+      {
+        "inputTokens": 3184,
+        "outputTokens": 14,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3085,
+        "generationMs": 527
+      },
+      {
+        "inputTokens": 3391,
+        "outputTokens": 282,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1437,
+        "generationMs": 11823
+      }
+    ]
+  }
+}

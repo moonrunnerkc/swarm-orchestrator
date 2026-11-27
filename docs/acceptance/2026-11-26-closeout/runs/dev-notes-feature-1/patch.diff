@@ -1,0 +1,54 @@
+diff --git a/service/http.ts b/service/http.ts
+index e4e47fb..01cd3cd 100644
+--- a/service/http.ts
++++ b/service/http.ts
+@@ -13,6 +13,19 @@ const routes: readonly Route[] = [
+     pattern: /^\/notes$/,
+     run: (handle) => ({ status: 200, body: notes.filter((note) => note.authorId === handle) }),
+   },
++  {
++    method: "DELETE",
++    pattern: /^\/notes\/([^/]+)$/,
++    run: (handle, match) => {
++      const slug = match[1];
++      const index = notes.findIndex((note) => note.slug === slug && note.authorId === handle);
++      if (index === -1) {
++        return { status: 404, body: { error: "not found" } };
++      }
++      notes.splice(index, 1);
++      return { status: 204, body: undefined };
++    },
++  },
+ ];
+ 
+ /** Starts the notes service on a port; 0 takes any free one. */
+diff --git a/spec/security.test.ts b/spec/security.test.ts
+new file mode 100644
+index 0000000..a183c7e
+--- /dev/null
++++ b/spec/security.test.ts
+@@ -0,0 +1,24 @@
++import assert from "node:assert/strict";
++import { test } from "node:test";
++import { startService } from "../service/http.ts";
++
++test("only owner can delete note", async () => {
++  const service = startService(0);
++  const { port } = service.address() as { port: number };
++
++  // Lin owns n-1. Omar should not be able to delete it.
++  const res1 = await fetch(`http://127.0.0.1:${port}/notes/n-1`, {
++    method: "DELETE",
++    headers: { "x-api-key": "key-omar" },
++  });
++  assert.strictEqual(res1.status, 404);
++
++  // Lin should be able to delete it.
++  const res2 = await fetch(`http://127.0.0.1:${port}/notes/n-1`, {
++    method: "DELETE",
++    headers: { "x-api-key": "key-lin" },
++  });
++  assert.strictEqual(res2.status, 204);
++
++  service.close();
++});

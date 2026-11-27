@@ -1,0 +1,64 @@
+diff --git a/service/http.ts b/service/http.ts
+index e4e47fb..01cd3cd 100644
+--- a/service/http.ts
++++ b/service/http.ts
+@@ -13,6 +13,19 @@ const routes: readonly Route[] = [
+     pattern: /^\/notes$/,
+     run: (handle) => ({ status: 200, body: notes.filter((note) => note.authorId === handle) }),
+   },
++  {
++    method: "DELETE",
++    pattern: /^\/notes\/([^/]+)$/,
++    run: (handle, match) => {
++      const slug = match[1];
++      const index = notes.findIndex((note) => note.slug === slug && note.authorId === handle);
++      if (index === -1) {
++        return { status: 404, body: { error: "not found" } };
++      }
++      notes.splice(index, 1);
++      return { status: 204, body: undefined };
++    },
++  },
+ ];
+ 
+ /** Starts the notes service on a port; 0 takes any free one. */
+diff --git a/spec/notes.test.ts b/spec/notes.test.ts
+index 12c7599..cc5f89e 100644
+--- a/spec/notes.test.ts
++++ b/spec/notes.test.ts
+@@ -15,3 +15,35 @@ test("an account lists its own notes", async () => {
+     ["n-1"],
+   );
+ });
++
++test("an account deletes its own note", async () => {
++  const service = startService(0);
++  const { port } = service.address() as { port: number };
++  const response = await fetch(`http://127.0.0.1:${port}/notes/n-1`, {
++    method: "DELETE",
++    headers: { "x-api-key": "key-lin" },
++  });
++  service.close();
++  assert.strictEqual(response.status, 204);
++});
++
++test("an account cannot delete another account's note", async () => {
++  const service = startService(0);
++  const { port } = service.address() as { port: number };
++  const response = await fetch(`http://127.0.0.1:${port}/notes/n-1`, {
++    method: "DELETE",
++    headers: { "x-api-key": "key-omar" },
++  });
++  service.close();
++  assert.strictEqual(response.status, 404);
++});
++
++test("an unauthenticated request cannot delete a note", async () => {
++  const service = startService(0);
++  const { port } = service.address() as { port: number };
++  const response = await fetch(`http://127.0.0.1:${port}/notes/n-1`, {
++    method: "DELETE",
++  });
++  service.close();
++  assert.strictEqual(response.status, 401);
++});

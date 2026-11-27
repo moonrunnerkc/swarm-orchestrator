@@ -1,0 +1,55 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { startService } from "../service/http.ts";
+import { notes } from "../service/store.ts";
+
+// DELETE /notes/:slug: the account that owns the note deletes it and gets 204
+// DELETE /notes/:slug: any other account gets 404
+
+test("the account that owns the note deletes it and gets 204", async () => {
+  const service = startService(0);
+  const { port } = service.address() as { port: number };
+  
+  // Note n-1 is owned by lin (key-lin)
+  const response = await fetch(`http://127.0.0.1:${port}/notes/n-1`, {
+    method: "DELETE",
+    headers: { "x-api-key": "key-lin" },
+  });
+  
+  service.close();
+  assert.strictEqual(response.status, 204);
+  
+  // Verify it is actually gone from the store
+  const noteExists = notes.some(n => n.slug === "n-1");
+  assert.strictEqual(noteExists, false);
+});
+
+test("any other account gets 404 when deleting a note they do not own", async () => {
+  const service = startService(0);
+  const { port } = service.address() as { port: number };
+  
+  // Note n-2 is owned by omar, so lin (key-lin) should get 404
+  const response = await fetch(`http://127.0.0.1:${port}/notes/n-2`, {
+    method: "DELETE",
+    headers: { "x-api-key": "key-lin" },
+  });
+  
+  service.close();
+  assert.strictEqual(response.status, 404);
+  
+  // Verify it was NOT deleted
+  const noteExists = notes.some(n => n.slug === "n-2");
+  assert.strictEqual(noteExists, true);
+});
+
+test("control: an account can still list its notes", async () => {
+  const service = startService(0);
+  const { port } = service.address() as { port: number };
+  const response = await fetch(`http://127.0.0.1:${port}/notes`, {
+    headers: { "x-api-key": "key-omar" },
+  });
+  service.close();
+  assert.strictEqual(response.status, 200);
+  const listed = await response.json();
+  assert.ok(Array.isArray(listed));
+});

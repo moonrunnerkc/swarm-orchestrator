@@ -1,0 +1,73 @@
+/**
+ * - GET /invoices/:id/download
+ * - returns the invoice as JSON (its number, totalCents and lines)
+ * - to the authenticated user who owns it
+ */
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createServer } from "node:http";
+import { handle } from "../src/app.ts";
+import { users, invoices } from "../src/data.ts";
+
+async function request(token: string, path: string) {
+  const server = createServer(handle);
+  const port = 0;
+  const listener = new Promise<number>((resolve) => {
+    server.listen(port, () => {
+      const addr = server.address();
+      if (typeof addr === "string") resolve(0); // Should not happen with port 0
+      resolve((addr as any).port);
+    });
+  });
+  const p = await listener;
+  
+  try {
+    const response = await fetch(`http://localhost:${p}/${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response;
+  } finally {
+    server.close();
+  }
+}
+
+test("GET /invoices/:id/download returns invoice details to the owner", async () => {
+  const [ada] = users;
+  const [invoice] = invoices;
+  
+  const response = await request(ada.token, `invoices/${invoice.id}/download`);
+  
+  assert.strictEqual(response.status, 200);
+  const body = await response.json();
+  assert.strictEqual(body.number, invoice.number);
+  assert.strictEqual(body.totalCents, invoice.totalCents);
+  assert.deepEqual(body.lines, invoice.lines);
+});
+
+test("GET /invoices/:id/download returns 403 or 404 when user does not own the invoice", async () => {
+  const [, grace] = users;
+  const [invoice] = invoices; // Ada's invoice
+  
+  const response = await request(grace.token, `invoices/${invoice.id}/download`);
+  
+  // The task says "to the authenticated user who owns it", 
+  // implying others should not get it.
+  assert.ok(
+    response.status === 403 || response.status === 404,
+    `Expected 403 or 404 for non-owner, got ${response.status}`
+  );
+});
+
+test("GET /invoices/:id/download returns 401 for unauthenticated users", async () => {
+  const [invoice] = invoices;
+  const response = await request("invalid-token", `invoices/${invoice.id}/download`);
+  assert.strictEqual(response.status, 401);
+});
+
+test("control: GET /invoices returns the list of invoices for authenticated user", async () => {
+  const [ada] = users;
+  const response = await request(ada.token, "invoices");
+  assert.strictEqual(response.status, 200);
+  const body = await response.json();
+  assert.ok(Array.isArray(body.invoices));
+});

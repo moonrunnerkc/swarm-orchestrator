@@ -1,0 +1,22 @@
+diff --git a/service/http.ts b/service/http.ts
+index e4e47fb..6425165 100644
+--- a/service/http.ts
++++ b/service/http.ts
+@@ -13,6 +13,17 @@ const routes: readonly Route[] = [
+     pattern: /^\/notes$/,
+     run: (handle) => ({ status: 200, body: notes.filter((note) => note.authorId === handle) }),
+   },
++  {
++    method: "DELETE",
++    pattern: /^\/notes\/([^/]+)$/,
++    run: (handle, match) => {
++      const slug = match[1];
++      const index = notes.findIndex((note) => note.slug === slug && note.authorId === handle);
++      if (index === -1) return { status: 404, body: { error: "not found" } };
++      notes.splice(index, 1);
++      return { status: 204, body: undefined };
++    },
++  },
+ ];
+ 
+ /** Starts the notes service on a port; 0 takes any free one. */

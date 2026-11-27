@@ -1,0 +1,104 @@
+{
+  "example": "notes",
+  "variant": "feature",
+  "base": "14921bb56abefd449a9bf4af2e4777814da695f0",
+  "patchSha256": "49417c83f08216c708a82012361ab4660613c50df11a5cbbaf6046cf7ca72502",
+  "delivered": {
+    "state": "complete",
+    "ownership": "satisfied",
+    "conventions": "satisfied",
+    "cases": [
+      "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+      "another user is refused: base pass, candidate pass",
+      "an unauthenticated request is refused: base pass, candidate pass",
+      "the owner is served: base fail, candidate pass"
+    ],
+    "conventionFailures": [],
+    "regression": "none"
+  },
+  "independentTest": {
+    "pass": true,
+    "tail": "ℹ tests 1 | ℹ pass 1 | ℹ fail 0"
+  },
+  "generatedTest": {
+    "path": "spec/notes.swarm-r1.test.ts",
+    "sha256": "35ce7f8d90232204aa8b382d35c3a469e4638321e50f8083195427552844dd87",
+    "atBase": {
+      "pass": false,
+      "tail": "✖ the account that owns the note deletes it and gets 204 (8.690803ms) | ℹ tests 3 | ℹ pass 2 | ℹ fail 1 | ✖ failing tests: | ✖ the account that owns the note deletes it and gets 204 (8.690803ms)"
+    },
+    "onCorrectReference": {
+      "pass": true,
+      "tail": "ℹ tests 3 | ℹ pass 3 | ℹ fail 0"
+    },
+    "onFaultyReference": {
+      "pass": false,
+      "tail": "✖ any other account gets 404 when deleting a note they do not own (3.998812ms) | ✖ control: an account can list its own notes (5.415715ms) | ℹ tests 3 | ℹ pass 1 | ℹ fail 2 | ✖ failing tests: | ✖ any other account gets 404 when deleting a note they do not own (3.998812ms) | ✖ control: an account can list its own notes (5.415715ms)"
+    }
+  },
+  "draftedBinding": {
+    "sha256": "8e1868e8a9507bea7d3ed0f70e8465204170ee65fb2fdd0020779d54413c14c2",
+    "binding": {
+      "target": {
+        "start": "node service/main.ts",
+        "port": 8080,
+        "env": {},
+        "ready": {
+          "path": "/",
+          "timeoutMs": 30000
+        }
+      },
+      "checks": [
+        {
+          "class": "ownership",
+          "resource": {
+            "method": "DELETE",
+            "path": "/notes/n-1",
+            "headers": {}
+          },
+          "owner": {
+            "x-api-key": "key-lin"
+          },
+          "other": {
+            "x-api-key": "key-omar"
+          },
+          "signedIn": {
+            "method": "GET",
+            "path": "/notes",
+            "headers": {}
+          },
+          "success": [
+            204
+          ],
+          "ownerSees": []
+        }
+      ]
+    },
+    "onCorrectReference": {
+      "state": "complete",
+      "ownership": "satisfied",
+      "conventions": "satisfied",
+      "cases": [
+        "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+        "another user is refused: base pass, candidate pass",
+        "an unauthenticated request is refused: base pass, candidate pass",
+        "the owner is served: base fail, candidate pass"
+      ],
+      "conventionFailures": [],
+      "regression": "none"
+    },
+    "onFaultyReference": {
+      "state": "incomplete",
+      "ownership": "failed",
+      "conventions": "satisfied",
+      "cases": [
+        "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+        "another user is refused: base pass, candidate fail (step 1 (DELETE /notes/n-1): expected status 403 or 404, got 204 ())",
+        "an unauthenticated request is refused: base pass, candidate pass",
+        "the owner is served: base fail, candidate fail (step 1 (DELETE /notes/n-1): expected status 204, got 404 ({\"error\":\"no such note\"}))"
+      ],
+      "conventionFailures": [],
+      "regression": "none"
+    }
+  }
+}

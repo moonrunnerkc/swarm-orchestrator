@@ -1,0 +1,100 @@
+{
+  "example": "invoice",
+  "variant": "repair",
+  "base": "acdb71c4bbdbfe0bcbcb13a8dd76c655f5554ed9",
+  "patchSha256": "86aede540afcdab83b632fb9ebf0e06b9fa9bb0433b3839193912628ddd5f5b2",
+  "delivered": {
+    "state": "complete",
+    "ownership": "satisfied",
+    "conventions": "satisfied",
+    "cases": [
+      "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+      "another user is refused: base fail, candidate pass",
+      "an unauthenticated request is refused: base pass, candidate pass",
+      "a user of another role is refused: base fail, candidate pass",
+      "the owner is served: base pass, candidate pass"
+    ],
+    "conventionFailures": [],
+    "regression": "none"
+  },
+  "independentTest": {
+    "pass": true,
+    "tail": "ℹ tests 2 | ℹ pass 2 | ℹ fail 0"
+  },
+  "generatedTest": {
+    "path": "test/invoices.swarm-r1.test.ts",
+    "sha256": "9830231172892bac5d4d04465adad2124e6eb21a8a7f3006ae09ead092d22803",
+    "atBase": {
+      "pass": false,
+      "tail": "✖ GET /invoices/:id/download returns 404 to any other user (3.00218ms) | ℹ tests 3 | ℹ pass 2 | ℹ fail 1 | ✖ failing tests: | ✖ GET /invoices/:id/download returns 404 to any other user (3.00218ms)"
+    },
+    "onCorrectReference": {
+      "pass": true,
+      "tail": "ℹ tests 3 | ℹ pass 3 | ℹ fail 0"
+    },
+    "onFaultyReference": {
+      "pass": false,
+      "tail": "✖ GET /invoices/:id/download returns 404 to any other user (3.21946ms) | ℹ tests 3 | ℹ pass 2 | ℹ fail 1 | ✖ failing tests: | ✖ GET /invoices/:id/download returns 404 to any other user (3.21946ms)"
+    }
+  },
+  "draftedBinding": {
+    "sha256": "a214783c90b8050bfe273614287e17301a3340609eca7ac579800e46bf0960dc",
+    "binding": {
+      "target": {
+        "start": "node src/server.ts",
+        "port": 3000,
+        "env": {},
+        "ready": {
+          "path": "/",
+          "timeoutMs": 30000
+        }
+      },
+      "checks": [
+        {
+          "class": "ownership",
+          "resource": {
+            "method": "GET",
+            "path": "/invoices/inv-1/download",
+            "headers": {}
+          },
+          "owner": {
+            "Authorization": "Bearer token-ada"
+          },
+          "other": {
+            "Authorization": "Bearer token-grace"
+          },
+          "otherRole": {
+            "Authorization": "Bearer token-sam"
+          },
+          "signedIn": {
+            "method": "GET",
+            "path": "/invoices",
+            "headers": {}
+          },
+          "success": [
+            200,
+            404
+          ],
+          "ownerSees": [
+            "INV-2026-0001"
+          ]
+        }
+      ]
+    },
+    "onCorrectReference": {
+      "state": "complete",
+      "ownership": "satisfied",
+      "conventions": "satisfied",
+      "cases": [
+        "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+        "another user is refused: base fail, candidate pass",
+        "an unauthenticated request is refused: base pass, candidate pass",
+        "a user of another role is refused: base fail, candidate pass",
+        "the owner is served: base pass, candidate pass"
+      ],
+      "conventionFailures": [],
+      "regression": "none"
+    },
+    "onFaultyReference": "the base is the faulty reference; see the base column above"
+  }
+}

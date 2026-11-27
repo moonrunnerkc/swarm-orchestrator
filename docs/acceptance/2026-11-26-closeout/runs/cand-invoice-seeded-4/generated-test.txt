@@ -1,0 +1,49 @@
+/**
+ * - GET /invoices/:id/download returns a JSON containing a currency field with the value "USD" to the invoice's owner.
+ */
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createServer } from "node:http";
+import { handle } from "../src/app.ts";
+import { users, invoices } from "../src/data.ts";
+
+async function request(token: string, path: string) {
+  const server = createServer(handle);
+  const { port } = await new Promise<{ port: number }>((resolve) => {
+    server.listen(0, () => {
+      const p = (server.address() as any).port;
+      resolve({ port: p });
+    });
+  });
+
+  const response = await fetch(`http://localhost:${port}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  
+  server.close();
+  return response;
+}
+
+test("GET /invoices/:id/download returns currency USD to the owner", async () => {
+  const [ada] = users;
+  const [invoice] = invoices;
+  // Ada owns inv-1
+  assert.strictEqual(invoice.ownerId, ada.id);
+
+  const res = await request(ada.token, `/invoices/${invoice.id}/download`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json() as any;
+  assert.strictEqual(body.currency, "USD");
+});
+
+test("control: GET /invoices/:id/download returns existing fields to the owner", async () => {
+  const [ada] = users;
+  const [invoice] = invoices;
+  
+  const res = await request(ada.token, `/invoices/${invoice.id}/download`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json() as any;
+  assert.strictEqual(body.number, invoice.number);
+  assert.strictEqual(body.totalCents, invoice.totalCents);
+  assert.deepEqual(body.lines, invoice.lines);
+});

@@ -1,0 +1,18 @@
+diff --git a/src/app.ts b/src/app.ts
+index 526d36b..0fca581 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -25,11 +25,12 @@ export function handle(request: IncomingMessage, response: ServerResponse): void
+     return;
+   }
+   const match = /^\/invoices\/([\w-]+)\/download$/.exec(path);
+-  const invoice = invoices.find((one) => one.id === match?.[1]);
++  const invoice = invoices.find((one) => one.id === match?.[1] && one.ownerId === user.id);
+   if (request.method === "GET" && invoice !== undefined) {
+     send(response, 200, {
+       number: invoice.number,
+       totalCents: invoice.totalCents,
++      currency: "USD",
+       lines: invoice.lines,
+     });
+     return;

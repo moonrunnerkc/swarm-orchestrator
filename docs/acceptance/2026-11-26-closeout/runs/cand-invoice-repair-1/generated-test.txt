@@ -1,0 +1,53 @@
+/**
+ * - GET /invoices/:id/download returns the invoice only to the authenticated user who owns it
+ * - GET /invoices/:id/download returns 404 to any other user
+ */
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createServer } from "node:http";
+import { handle } from "../src/app.ts";
+import { users, invoices } from "../src/data.ts";
+
+async function request(token: string, path: string) {
+  const server = createServer(handle);
+  const { port } = await new Promise<{ port: number }>((resolve) => {
+    server.listen(0, () => {
+      const p = (server.address() as any).port;
+      resolve({ port: p });
+    });
+  });
+
+  const response = await fetch(`http://localhost:${port}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  server.close();
+  return response;
+}
+
+test("GET /invoices/:id/download returns the invoice to the authenticated user who owns it", async () => {
+  const [ada] = users;
+  const [invoice] = invoices;
+  // Ada owns inv-1
+  const res = await request(ada.token, `/invoices/${invoice.id}/download`);
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.number, invoice.number);
+  assert.strictEqual(body.totalCents, invoice.totalCents);
+  assert.deepEqual(body.lines, invoice.lines);
+});
+
+test("GET /invoices/:id/download returns 404 to any other user", async () => {
+  const [ada, grace] = users;
+  const [invoice] = invoices;
+  // Grace does not own inv-1
+  const res = await request(grace.token, `/invoices/${invoice.id}/download`);
+  assert.strictEqual(res.status, 404);
+});
+
+test("control: GET /invoices/:id/download is reachable and returns 200 for owners", async () => {
+  const [ada] = users;
+  const [invoice] = invoices;
+  const res = await request(ada.token, `/invoices/${invoice.id}/download`);
+  assert.strictEqual(res.status, 200);
+});
