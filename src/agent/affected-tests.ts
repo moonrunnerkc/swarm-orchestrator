@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import type { TestReport } from "swarm-verify";
-import { gitText } from "./git.ts";
-import type { TestConventions } from "./test-conventions.ts";
+import { gitText } from "swarm-verify/execution";
+import { plainOutput } from "./authored-cases.ts";
+import { nodeTest, pythonTest, type TestConventions } from "./test-conventions.ts";
 
 const scriptFile = /\.(?:[cm]?[jt]sx?)$/;
 const pythonFile = /\.py$/;
@@ -146,26 +147,15 @@ export function affectedTests(
   return [...reached].filter((path) => graph.has(path) && isTest(path)).sort();
 }
 
-const nodeTestFile = /\.(test|spec)\.[cm]?[jt]sx?$/;
-const pythonTestFile = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/;
 export const testPattern = (conventions: TestConventions) =>
-  conventions.runner === "pytest" ? pythonTestFile : nodeTestFile;
+  conventions.runner === "pytest" ? pythonTest : nodeTest;
 
 /** A report's file as a path to run: pytest's dotted module, turned to slashes, gets its suffix. */
 export const testPathOf = (file: string) => (/\.[\w]+$/.test(file) ? file : `${file}.py`);
 
-/** Whether a test reported with `file` lives in `path`, as the verifier reads it. */
-export function livesIn(file: string | null, path: string): boolean {
-  if (file === null) return false;
-  const stem = path.replace(/\.[^./]+$/, "");
-  return file === path || file === stem || file.startsWith(`${stem}/`);
-}
-
 export const shellWord = (path: string) =>
   /^[\w./@+-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
 
-// Runners colour their output; the escape is built, since a literal one in a pattern hides.
-const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 /** A runner's own lines naming what failed: pytest's and vitest's summaries, an assertion. */
 const summaryLine = /^(?:FAILED|ERROR) |^\s*FAIL |^E\s+\S|AssertionError|^\s*[×✗] /;
 
@@ -190,7 +180,7 @@ function collectionErrors(lines: readonly string[]): Set<string> {
  * (t6, 2026-11-07).
  */
 export const excerpt = (text: string, bytes = 1800) => {
-  const plain = text.replace(ansi, "");
+  const plain = plainOutput(text);
   if (plain.length <= bytes) return plain;
   const tail = plain.slice(-bytes);
   const all = plain.split("\n");

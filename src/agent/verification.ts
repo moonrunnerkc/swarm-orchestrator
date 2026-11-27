@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type BehaviorCheckInput,
@@ -13,26 +12,14 @@ import {
   verifierVersion,
   verify,
 } from "swarm-verify";
+import { lockfileInstall } from "swarm-verify/execution";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { feedbackOf } from "./feedback.ts";
 import type { HeldResult, Snapshot } from "./finalize.ts";
 import type { Verification } from "./loop.ts";
 import { type RequirementRecord, recordSha256 } from "./requirement-record.ts";
 
-/** Where sessions, baselines and sealed checks live: SWARM_HOME, or ~/.swarm. */
-export function swarmHome(env: Readonly<Record<string, string | undefined>> = process.env): string {
-  return env.SWARM_HOME ?? join(homedir(), ".swarm");
-}
-
-const installable = [
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb",
-  "uv.lock",
-];
+export { swarmHome } from "swarm-verify/execution";
 
 /**
  * Dependencies are installed fresh from the lockfile where the repository has one the verifier
@@ -40,17 +27,8 @@ const installable = [
  * Without one, the workspace's installed tree is linked, which the result reports as not
  * reproducible.
  */
-export async function dependencyPolicy(workspace: string): Promise<"prepare" | "linked"> {
-  const found = await Promise.all(
-    installable.map((name) =>
-      access(join(workspace, name)).then(
-        () => true,
-        () => false,
-      ),
-    ),
-  );
-  return found.some(Boolean) ? "prepare" : "linked";
-}
+export const dependencyPolicy = async (workspace: string): Promise<"prepare" | "linked"> =>
+  (await lockfileInstall(workspace)) === null ? "linked" : "prepare";
 
 /** The ledger as written so far: its digest and how many records it holds, for the signature. */
 async function ledgerPrefix(

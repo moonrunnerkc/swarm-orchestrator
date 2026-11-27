@@ -2,12 +2,12 @@ import { spawn } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { describeRunningVersion } from "swarm-verify/cli";
 import { swarmHome } from "./agent/verification.ts";
-import { describeRunningVersion } from "./build-version.ts";
 import { UsageError } from "./cli-command-definitions.ts";
 import { recordFor } from "./cli-record.ts";
 import { diagnose, remediesFor } from "./install/health.ts";
-import { inspectInstall } from "./install/inspect.ts";
+import { inspectInstall, versionAt } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
 import { surveyModels } from "./runtime/survey.ts";
 
@@ -73,12 +73,8 @@ export async function doctor(options: DoctorCommand): Promise<number> {
 
 export async function runningVersion(packageRoot: string): Promise<string> {
   try {
-    const manifest: unknown = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
-    const version =
-      manifest !== null && typeof manifest === "object"
-        ? (manifest as { readonly version?: unknown }).version
-        : undefined;
-    if (typeof version !== "string") return "unknown";
+    const version = await versionAt(packageRoot);
+    if (version === null) return "unknown";
     let describe: string | null = null;
     try {
       const source: unknown = JSON.parse(

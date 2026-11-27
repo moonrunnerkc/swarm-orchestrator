@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type Requirement, requirementSchema } from "swarm-verify";
-import { gitText } from "./git.ts";
+import { gitText } from "swarm-verify/execution";
 
 type Claim = Requirement["evidence"]["structure"][number];
 

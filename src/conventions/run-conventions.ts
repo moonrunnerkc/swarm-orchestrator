@@ -6,7 +6,7 @@ import {
   type Requirement,
   requirementSchema,
 } from "swarm-verify";
-import { gitText } from "../agent/git.ts";
+import { gitText } from "swarm-verify/execution";
 import { conventionLines } from "./learn.ts";
 import { effectiveConventions } from "./profile.ts";
 

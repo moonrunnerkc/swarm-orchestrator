@@ -1,8 +1,8 @@
-import { access } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { type Requirement, structureEvidence } from "swarm-verify";
+import { gitText } from "swarm-verify/execution";
 import { z } from "zod";
-import { gitText } from "./git.ts";
+import { exists as existsAt } from "./test-conventions.ts";
 
 type StructureClaim = Requirement["evidence"]["structure"][number];
 
@@ -60,11 +60,7 @@ export async function claimsAtBase(
   return { kept, reasons: kept.length === 0 ? reasons : [] };
 }
 
-const exists = (workspace: string, rel: string) =>
-  access(join(workspace, rel)).then(
-    () => true,
-    () => false,
-  );
+const exists = (workspace: string, rel: string) => existsAt(join(workspace, rel));
 
 /**
  * Why a claim's path cannot be where a correct change puts the file. It is under a top-level

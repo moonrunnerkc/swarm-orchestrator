@@ -1,15 +1,7 @@
-import { lockfileInstall } from "swarm-verify/execution";
+import { installScripts, lockfileInstall } from "swarm-verify/execution";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 
 const tail = (text: string) => text.trim().slice(-600);
-
-/** The step that runs install scripts once the packages are in place, by package manager. */
-const rebuild = (install: string): string | null =>
-  install.startsWith("npm ")
-    ? "npm rebuild --foreground-scripts"
-    : install.includes("pnpm ")
-      ? "corepack pnpm rebuild"
-      : null;
 
 /**
  * The base's dependencies, installed in the container the model's commands run in. Fetching is
@@ -33,7 +25,7 @@ export async function prepareContained(
       blocked: `the base's dependencies did not install in the container (\`${install}\`): ${tail(fetched.output)}. Fix the dependency it names, or pass --host to work with this machine's installed dependencies, reported as host, not isolated`,
       notes: [],
     };
-  const scripts = rebuild(install);
+  const scripts = installScripts(install);
   if (scripts === null) return { blocked: null, notes: [] };
   const built = await chokepoint.check(
     scripts,

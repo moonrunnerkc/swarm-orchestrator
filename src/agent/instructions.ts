@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { join, posix } from "node:path";
-import { gitText } from "./git.ts";
+import { gitText } from "swarm-verify/execution";
 
 /** The most instruction text a run carries; files past it are named, not loaded. */
 export const instructionBudgetBytes = 24_000;

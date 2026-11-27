@@ -1,10 +1,9 @@
-import { commandDefinitions as verifierDefinitions } from "swarm-verify/cli";
-
-interface CommandDefinition {
-  readonly name: string;
-  readonly syntax: string;
-  readonly description: string;
-}
+import {
+  type CommandDefinition,
+  UsageError,
+  usageFor as usageOf,
+  commandDefinitions as verifierDefinitions,
+} from "swarm-verify/cli";
 
 /**
  * The subcommands, in the order help lists them. Help reads this, and so does the caps check
@@ -39,23 +38,7 @@ export const commandDefinitions: readonly CommandDefinition[] = [
   },
 ];
 
-/** A command line this program cannot read: exit code 2, with the usage. */
-export class UsageError extends Error {
-  constructor(problem: string) {
-    super(problem);
-    this.name = "UsageError";
-  }
-}
+// One class for both programs: the shared dispatcher reads a usage error by it.
+export { UsageError };
 
-export function usageFor(program: string): string {
-  return [
-    `${program} <command> [options]`,
-    "",
-    ...commandDefinitions.flatMap((command) => [
-      `  ${program} ${command.syntax}`,
-      `      ${command.description}`,
-    ]),
-    "",
-    "Every command takes --workspace <dir> where it reads a repository; the default is here.",
-  ].join("\n");
-}
+export const usageFor = (program: string) => usageOf(program, commandDefinitions);

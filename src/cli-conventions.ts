@@ -2,10 +2,10 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { conventionSetSchema, conventionSources, type SourceText } from "swarm-verify";
-import { gitText } from "./agent/git.ts";
+import type { Handler } from "swarm-verify/cli";
+import { gitText } from "swarm-verify/execution";
 import { swarmHome } from "./agent/verification.ts";
 import { UsageError } from "./cli-command-definitions.ts";
-import type { Handler } from "./cli-main.ts";
 import { conventionLines, proposalProfile, proposeConventions } from "./conventions/learn.ts";
 import {
   type ConventionProfile,

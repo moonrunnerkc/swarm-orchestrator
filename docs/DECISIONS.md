@@ -31,7 +31,7 @@ One line per open choice made during the verifier-first rebuild (ADR 0014), with
 - A surviving mutant and uncovered changed lines are reported, not verdict-failing: they measure the tests' strength, not the change's correctness.
 - The container isolation backend was deleted with the old gates: checks run on the host in a clean temporary checkout under the built child environment, which needs no Docker daemon and removed the only skipped tests.
 - The packed-CLI smoke script was deleted: it drove per-command smoke contracts that no longer exist, and ci.yml runs the gates directly.
-- Both binaries share one dispatcher (src/cli-main.ts) and one command list, so `swarm` and `swarm-verify` parse, print help and exit identically; `swarm` adds doctor and run.
+- Both binaries share one dispatcher (swarm-verify's, imported as `swarm-verify/cli`) and one command list, so `swarm` and `swarm-verify` parse, print help and exit identically; `swarm` adds doctor and run.
 - The mutation witness tries comparison, logical, boolean, arithmetic, min/max and numeric-literal operators, then drops a returned value as a last resort, so a changed return of a call is still mutated.
 - A sealed set lives under SWARM_HOME (default ~/.swarm)/sealed/<hash of the workspace path>, owner-only, outside every workspace the agent sees.
 - Each turn carries at most 10,000 bytes of command output (or verifier failure), keeping the start and the end, which is where errors and summaries are.

@@ -32,7 +32,7 @@ commits, pushed code, passing CI and published packages are separate facts.
 ## Layout
 
 - `src/cli.ts`: the `swarm` entry and its subcommands (`run`, `verify`, `init`, `ci`, `doctor`),
-  one small module each, dispatched by `src/cli-main.ts`.
+  one small module each, dispatched by the dispatcher the verifier shares (`swarm-verify/cli`).
   `verify`, `init` and `ci` are the installed verifier's own commands (`swarm-verify/cli`).
 - `src/agent`: the `run` loop. One bash command or one file edit block per turn, a probed
   platform block at the head of the prompt, the verifier as the judge.

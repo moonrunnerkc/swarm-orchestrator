@@ -62,7 +62,7 @@ async function readGlobalEntry(globalRoot: string): Promise<GlobalEntry | null> 
   return { path, isLink, target, version: await versionAt(target ?? path) };
 }
 
-async function versionAt(directory: string): Promise<string | null> {
+export async function versionAt(directory: string): Promise<string | null> {
   try {
     const manifest: unknown = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
     const version =
