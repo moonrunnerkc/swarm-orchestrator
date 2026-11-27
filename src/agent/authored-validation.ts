@@ -5,7 +5,7 @@ import { controlsRefused, passingAlone } from "./authored-alone.ts";
 import { failingCases, layFile, plainOutput, refusedName, removeLaid } from "./authored-cases.ts";
 import type { AuthoredTest } from "./check-author.ts";
 
-export { plainOutput, removeLaid } from "./authored-cases.ts";
+export { plainOutput } from "./authored-cases.ts";
 
 const excerpt = (text: string) => text.slice(-1500);
 
@@ -194,8 +194,7 @@ export async function runAtBase(
   if (refused !== null) return { reasons: [refused], output };
   // An upgrade's behavior check is judged as a feature's: what the new versions make the code do.
   const own = kind === "feature" || kind === "other" || kind === "upgrade";
-  // A case that fails on every tree is never left out to make the rest usable: it is sent back
-  // with what it did, and the check is taken whole or not at all.
+  // A case that fails on every tree is sent back, never left out: a check is taken whole.
   const cases = own ? failingCases(plain) : [];
   const broken = cases.filter(
     (one) => foreignError(one.error, task) !== null || refusedName(one.error, task) !== null,

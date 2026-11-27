@@ -73,6 +73,30 @@ describe("a drafted security binding", () => {
     expect(drafted.attempts).toHaveLength(1);
   });
 
+  // The same live draft answered the owner 200 with the note's text, for a delete the task says
+  // is answered 204: no correct change could have passed it. Every such fault is named at once.
+  it("is sent back with every fault that needs no request, in one reply", async () => {
+    const wrong = {
+      ...good,
+      checks: [
+        {
+          ...check,
+          resource: { method: "GET", path: "/notes" },
+          success: [200],
+          ownerSees: ["first"],
+        },
+      ],
+    };
+    const { told } = await drafting([fenced(wrong), fenced(good)], () => null);
+    expect(told[1]).toMatch(/sends GET \/notes, which is not a request the task names/);
+    expect(told[1]).toMatch(/"success" is 200 where the task says the request is answered 204/);
+    expect(told[1]).toMatch(/signedIn is the resource itself/);
+    const bodied = { ...good, checks: [{ ...check, ownerSees: ["first"] }] };
+    expect((await drafting([fenced(bodied), fenced(good)], () => null)).told[1]).toMatch(
+      /"ownerSees" names text in a 204 response/,
+    );
+  });
+
   it("is sent back without a signed-in request, with a credential it was not shown, and with what the base showed", async () => {
     const unsigned = { ...good, checks: [{ ...check, signedIn: undefined }] };
     const invented = { ...good, checks: [{ ...check, other: { "x-api-key": "key-eve" } }] };

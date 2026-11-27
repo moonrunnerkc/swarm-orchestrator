@@ -26,16 +26,6 @@ export interface AuthoredTest {
 }
 
 /** What the check-authoring stage produced for one requirement, and why where it produced nothing. */
-export {
-  foreignError,
-  misusedMatcher,
-  ownUndefinedName,
-  plainOutput,
-  raisedNotAsserted,
-  removeLaid,
-  unrelatedImport,
-} from "./authored-validation.ts";
-
 export interface Authored {
   readonly requirement: string;
   readonly kind: AuthorKind | null;
@@ -177,20 +167,14 @@ export async function authorChecks(input: {
 }
 
 /** What the rejected draft's run printed, and the files it imports that its author had not seen. */
-async function observation(
-  conventions: TestConventions | null,
-  output: string,
-  draft: string,
-): Promise<string> {
-  const unseen = (await conventions?.unseen(draft)) ?? [];
-  return [
-    "",
-    ...(output.trim().length === 0
-      ? []
-      : ["What its run at the base printed (the end):", "```", output.trim(), "```"]),
-    ...shownFiles(unseen),
+const observation = async (conventions: TestConventions | null, output: string, draft: string) =>
+  [
+    "\nWhat its run at the base printed (the end):",
+    "```",
+    output.trim(),
+    "```",
+    ...shownFiles((await conventions?.unseen(draft)) ?? []),
   ].join("\n");
-}
 
 async function recordAuthored(evidence: EvidenceRecorder, authored: Authored): Promise<void> {
   await evidence.record({

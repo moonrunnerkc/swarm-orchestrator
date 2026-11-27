@@ -19,13 +19,15 @@ export const securityPrompt = [
   'The port is also given to the server as PORT. "env" holds only variables the server needs to start.',
   "",
   "The object for each class:",
-  '- ownership: {"class": "ownership", "resource": {"method": "GET", "path": "<the path the task\'s',
-  '  feature serves ONE existing record at>"}, "owner": {<request headers that authenticate the user',
-  '  who owns that record>}, "other": {<headers that authenticate a different existing user>},',
-  '  "otherRole": {<headers of a user of another role, such as support staff, where there is one>},',
-  '  "signedIn": {"method": "GET", "path": "<a request the API ALREADY answers for any signed-in',
-  '  user and refuses without credentials>"},',
-  '  "ownerSees": ["<a value from that record the response must hold>"]}',
+  '- ownership: {"class": "ownership", "resource": {"method": "<the method of the request the task',
+  '  adds or changes>", "path": "<that request\'s path, for ONE existing record>"}, "owner":',
+  '  {<request headers that authenticate the user who owns that record>}, "other": {<headers that',
+  '  authenticate a different existing user>}, "otherRole": {<headers of a user of another role,',
+  '  such as support staff, where there is one>}, "signedIn": {"method": "GET", "path": "<a',
+  "  DIFFERENT request, one the API ALREADY answers for any signed-in user and refuses without",
+  '  credentials; never a health or readiness route>"}, "success": [<the status the task says the',
+  '  owner gets; 200 where it says none>], "ownerSees": [<a value of that record the owner\'s',
+  "  response body holds; empty where the response has no body, as with 204>]}",
   '- single-use-token: {"class": "single-use-token", "issue": {"method": "POST", "path": "...",',
   '  "headers": {...}, "body": {...}}, "tokenAt": "<where the token is in the JSON response, such as',
   '  token>", "redeem": {"method": "POST", "path": "<with {{token}} where the token goes>"},',
@@ -43,30 +45,37 @@ export const securityPrompt = [
 ].join("\n");
 
 /**
- * Why a draft's main request is not one the task asks for, where the task names its requests.
- * A draft for a task adding `DELETE /notes/:slug` bound ownership to the list every account can
- * already read, which no change could satisfy (notes example, 2026-11-26).
+ * Where a draft binds a check to something other than what the task asks for: its request,
+ * where the task names requests, and the status the legitimate use gets, where it names one. A
+ * draft for `DELETE /notes/:slug` bound ownership to the list every account can already read,
+ * which no change could satisfy (notes example, 2026-11-26).
  */
-function strayRequest(file: SecurityFile, task: string): string | null {
+function misbound(file: SecurityFile, task: string): string[] {
   const named = [...task.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[\w\-./:{}]*)/g)];
-  if (named.length === 0) return null;
+  const answers = (task.match(/\b2\d\d\b/g) ?? []).map(Number);
+  const problems: string[] = [];
   for (const check of file.checks) {
     const main =
-      check.class === "ownership"
-        ? check.resource
-        : check.class === "single-use-token"
-          ? check.redeem
-          : check.operation;
+      "resource" in check ? check.resource : "redeem" in check ? check.redeem : check.operation;
     const path = main.path.split("?")[0] ?? "";
     const asked = named.some(([, method, route = ""]) => {
       const trimmed = route.replace(/[.:,;]+$/, "");
       const pattern = trimmed.replace(/[.]/g, "\\.").replace(/:\w+|\{\w+\}/g, "[^/]+");
       return method === main.method && new RegExp(`^${pattern}/?$`).test(path);
     });
-    if (!asked)
-      return `the ${check.class} check sends ${main.method} ${main.path}, which is not a request the task names (${named.map((one) => one[0]).join(", ")}); bind it to the request the task adds or changes, for one existing record`;
+    if (named.length > 0 && !asked)
+      problems.push(
+        `the ${check.class} check sends ${main.method} ${main.path}, which is not a request the task names (${named.map((one) => one[0]).join(", ")}); bind it to the request the task adds or changes, for one existing record`,
+      );
+    const success = check.success ?? [200];
+    if (answers.length > 0 && !success.some((status) => answers.includes(status)))
+      problems.push(
+        `"success" is ${success.join(", ")} where the task says the request is answered ${answers.join(" or ")}`,
+      );
+    if (check.class === "ownership" && (check.ownerSees ?? []).length > 0 && success.includes(204))
+      problems.push('"ownerSees" names text in a 204 response, which has no body; leave it empty');
   }
-  return null;
+  return problems;
 }
 
 /** The binding a reply holds, or what is wrong with it for the classes asked for. */
@@ -82,21 +91,34 @@ function read(
       ? `${missing}${reply.replace(/\s+/g, " ").trim().slice(0, 300)}`
       : "the reply holds no fenced json block";
   let file: SecurityFile;
+  let raw: unknown;
   try {
-    file = bindingOf(JSON.parse(block), "the json block");
+    raw = JSON.parse(block);
+    file = bindingOf(raw, "the json block");
   } catch (error) {
-    return (error as Error).message;
+    // What else is wrong with it, where its shape allows reading that much.
+    let also: string[] = [];
+    try {
+      also = misbound(raw as SecurityFile, task);
+    } catch {
+      // Not shaped enough to say more than the schema did.
+    }
+    return [(error as Error).message, ...also].join("; ");
   }
+  // Every fault that needs no request, at once: mended one at a time, they spent every attempt.
   const absent = classes.filter((name) => !file.checks.some((one) => one.class === name));
-  if (absent.length > 0) return `the block has no check of class ${absent.join(", ")}`;
-  if (file.checks.some((one) => one.class === "ownership" && one.signedIn === undefined))
-    return 'the ownership check has no "signedIn" request, so nothing shows the users it names are ones the server knows; name a request the API already answers for any signed-in user';
-  const stray = strayRequest(file, task);
-  if (stray !== null) return stray;
   const made = unreadValue(file, shown);
-  return made === null
-    ? file
-    : `${JSON.stringify(made)} is not in the repository files you were shown; use only credentials and values that are there`;
+  const problems = [
+    absent.length > 0 ? `the block has no check of class ${absent.join(", ")}` : null,
+    file.checks.some((one) => one.class === "ownership" && one.signedIn === undefined)
+      ? 'the ownership check has no "signedIn" request, so nothing shows the users it names are ones the server knows; name a request the API already answers for any signed-in user'
+      : null,
+    ...misbound(file, task),
+    made === null
+      ? null
+      : `${JSON.stringify(made)} is not in the repository files you were shown; use only credentials and values that are there`,
+  ].filter((one) => one !== null);
+  return problems.length === 0 ? file : problems.join("; ");
 }
 
 const missing = "the repository does not show what the checks need: ";

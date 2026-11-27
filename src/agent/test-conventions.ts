@@ -1,5 +1,6 @@
 import { lstat, readFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
+import { declaredChecks } from "swarm-verify";
 import { gitText } from "swarm-verify/execution";
 import { baseFacts, importsOf, namedPaths, runtimeFacts, type ShownFile } from "./base-facts.ts";
 
@@ -49,15 +50,10 @@ export function runnerOf(command: string): Runner | null {
 }
 
 /** The runner the base's swarm.toml declares its test check with, where it declares one. */
-async function declaredRunner(workspace: string): Promise<Runner | null> {
-  const text = await readFile(join(workspace, "swarm.toml"), "utf8").catch(() => "");
-  const checks = text.split(/^\[/m).find((section) => section.startsWith("checks]")) ?? "";
-  for (const line of checks.split("\n")) {
-    const runner = runnerOf(line);
-    if (runner !== null) return runner;
-  }
-  return null;
-}
+const declaredRunner = async (workspace: string): Promise<Runner | null> =>
+  (await declaredChecks(workspace).catch(() => []))
+    .map((check) => runnerOf(check.command))
+    .find((runner) => runner !== null) ?? null;
 
 async function nodeRunner(workspace: string): Promise<Runner | null> {
   const text = await readFile(join(workspace, "package.json"), "utf8").catch(() => null);

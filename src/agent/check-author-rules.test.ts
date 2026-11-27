@@ -5,7 +5,7 @@ import {
   misusedMatcher,
   raisedNotAsserted,
   unrelatedImport,
-} from "./check-author.ts";
+} from "./authored-validation.ts";
 
 describe("an authored check failing at the base for a reason no change removes", () => {
   it("names an import of a module the base lacks and the task never asks for", () => {

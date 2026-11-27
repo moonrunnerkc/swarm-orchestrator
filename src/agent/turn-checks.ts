@@ -22,8 +22,8 @@ import {
   testPathOf,
   testPattern,
 } from "./affected-tests.ts";
-import { layFile } from "./authored-cases.ts";
-import { type AuthoredTest, removeLaid } from "./check-author.ts";
+import { layFile, removeLaid } from "./authored-cases.ts";
+import type { AuthoredTest } from "./check-author.ts";
 import { evidenceRef } from "./exchange.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 import type { TestConventions } from "./test-conventions.ts";

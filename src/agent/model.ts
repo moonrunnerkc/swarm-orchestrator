@@ -226,11 +226,7 @@ export async function drafted(
   model: ModelClient,
   messages: readonly Message[],
   options: { readonly signal?: AbortSignal | undefined; readonly maxTokens: number },
-): Promise<{
-  readonly content: string;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-}> {
+): Promise<{ readonly content: string } & Record<"inputTokens" | "outputTokens", number>> {
   const reply = await model.complete(messages, options);
   const content = reply.content.trim().length > 0 ? reply.content : (reply.reasoning ?? "");
   const estimate = (text: string) => Math.ceil(text.length / 4);
