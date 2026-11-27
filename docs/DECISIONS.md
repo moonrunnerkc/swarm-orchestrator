@@ -568,3 +568,12 @@ Checked against the session ledgers of the November 4 runs (`~/.swarm/sessions/<
 - A cancelled run exits 3, the dispatcher's code for it in both programs.
 - Not done: forcing node's test runner to exit when its tests finish. A test that leaves a server listening keeps the runner alive until the check's time runs out (seen live on the notes example), and `--test-force-exit` ends that, but it also ended the reporter early: a suite of 150 tests wrote 141 to its report. The model is told what a timed-out check usually means instead.
 - 17.1.0, not 17.0.0 or 18.0.0: see the changelog. The lockfile names the registry's tarball of swarm-verify 3.2.0 with the registry's integrity; `scripts/adopt-verifier.mjs` remains for developing against a local pack and is not part of a release.
+
+## 2026-11-27: token expiry that was never exercised
+
+- The fault was in swarm-verify's case builder (3.2.0): a token binding with no `expiresAfterMs` made no expiry case while the requirement named expiry. It is fixed there (3.3.0), where the case is kept and recorded as not exercised; nothing in this package decides whether a security requirement holds, so nothing here was changed to decide it.
+- Here the binding author's instructions change: set the lifetime variable the server reads, or leave `expiresAfterMs` out. Leaving it out is allowed on purpose. The run then ends incomplete with the token requirement unverified and the reason, which is the truthful result for an application with no lifetime setting; refusing such a draft would push the author to invent a variable.
+- A draft's `target.env` names are held to the repository text its author was shown, by the verifier's `unreadValue`, like its credentials.
+- In a run, the drafted acceptance test is a second gate for a task that names expiry (`src/agent/token-expiry.integration.test.ts`). The requirement is fixed anyway: a task can involve a token without spelling out expiry, and a binding passed with `--security-check` gets no drafted test of expiry at all.
+- A check author is shown a file of up to 6,000 characters whole (it was 3,000), and an outline where the whole file no longer fits the budget. The first live run of the invites task drafted a binding for `POST /invites`, a route that does not exist: the 3.2 KB handler had been outlined, and an outline drops the bodies its routes are in. The 16,000 character budget is unchanged.
+- 17.1.1: a fix, with nothing a user passes or reads changed.

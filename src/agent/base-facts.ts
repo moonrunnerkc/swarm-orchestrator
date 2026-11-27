@@ -9,7 +9,7 @@ export interface ShownFile {
 }
 
 const pathWord = /[\w@][\w@./-]*\.(?:[cm]?[jt]sx?|py)\b/g;
-const wholeBytes = 3000;
+const wholeBytes = 6000;
 const budgetBytes = 16_000;
 const maxFiles = 10;
 const maxDepth = 3;
@@ -96,8 +96,8 @@ export function outlineOf(text: string): string[] {
 /**
  * The base's source a check written apart from the change needs, within a budget: the seed files,
  * then what they import, three steps out; a small file whole, a larger one outlined. An author
- * shown only a test wrote `userId` where the data has `ownerId`, and tested a function it
- * defined itself where the real entry was one import away (invoice example, 2026-11-26).
+ * shown only a test wrote `userId` where the data has `ownerId` (invoice example, 2026-11-26);
+ * one shown a 3 KB handler as an outline invented its routes (invites example, 2026-11-27).
  */
 export async function baseFacts(
   workspace: string,
@@ -116,7 +116,7 @@ export async function baseFacts(
       const text = await readFile(join(workspace, path), "utf8").catch(() => "");
       if (text.length === 0 || text.length > 400_000) continue;
       next.push(...importsOf(path, text, tracked));
-      const whole = text.length <= wholeBytes;
+      const whole = text.length <= Math.min(wholeBytes, budgetBytes - used);
       const lines = whole ? text.trimEnd().split("\n") : outlineOf(text);
       const size = lines.join("\n").length;
       if (lines.length === 0 || used + size > budgetBytes) continue;

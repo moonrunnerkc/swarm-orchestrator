@@ -46,6 +46,12 @@ At tag `archive/acceptance-2026-11-27-packed-17.1.0`, read the same way:
 | --- | --- | --- | --- |
 | `docs/acceptance/2026-11-27-packed-17.1.0` | 84 | `655cd1f2e407300a216431532c25347bb7155f70` | The packed 17.1.0 installed with swarm-verify 3.2.0 from the registry, before the merge: one live run of each task on the automatic path, with signed verifications, replays, independent judgments, the gates and the release smoke. |
 
+At tag `archive/acceptance-2026-11-27-token-expiry`, read the same way:
+
+| Path at the tag | Files | Tree or blob id | What it is |
+| --- | --- | --- | --- |
+| `docs/acceptance/2026-11-27-token-expiry` | 70 | `052dd6471750e792e880f9d0ac49baa15c45e4be` | A token check that never exercised expiry: the false verdict reproduced on swarm-verify 3.2.0, the controls of the fix, and three live runs of the invites task on the automatic path (one drafting failure kept, two completions) with signed verifications, replays, the drafted bindings and an independent judgment of each. |
+
 ## Still in the active tree
 
 - [DECISIONS.md](DECISIONS.md): dated decisions, append-only. Older entries name archived paths.

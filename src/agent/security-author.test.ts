@@ -112,6 +112,13 @@ describe("a drafted security binding", () => {
     expect(drafted.attempts).toHaveLength(3);
   });
 
+  it("is sent back where it starts the server with a variable the repository never reads", async () => {
+    const invented = { ...good, target: { ...good.target, env: { NOTE_TTL_MS: "1000" } } };
+    const { drafted, told } = await drafting([fenced(invented), fenced(good)], () => null);
+    expect(told[1]).toMatch(/"NOTE_TTL_MS" is not in the repository files you were shown/);
+    expect(drafted.file?.target.env).toEqual({});
+  });
+
   it("stops at once where the repository does not show what the checks need, and says what", async () => {
     const { drafted, told } = await drafting(["UNKNOWN\nNo seed account is shown."], () => null);
     expect(told).toHaveLength(1);

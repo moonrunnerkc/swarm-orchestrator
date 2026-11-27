@@ -13,7 +13,7 @@ async function repository(files: Readonly<Record<string, string>>): Promise<stri
   return repo;
 }
 
-const filler = Array.from({ length: 200 }, (_, at) => `  const line${at} = ${at};`).join("\n");
+const filler = Array.from({ length: 320 }, (_, at) => `  const line${at} = ${at};`).join("\n");
 
 describe("the files a task names by path", () => {
   it("are matched by their tail, and left out where the tail names two files", () => {
@@ -128,6 +128,27 @@ describe("the base's source an author is shown", () => {
       "export function handle(): void {",
     ]);
     expect(shown[1]?.lines.join("\n")).toContain("readonly ownerId: string;");
+  });
+
+  // The invites example (2026-11-27): its 3.2 KB handler was outlined, the routes with it.
+  it("shows a handler of a few thousand characters whole, and outlines it once the budget is short", async () => {
+    const routes = Array.from({ length: 90 }, (_, at) => `  if (path === "/r${at}") return ${at};`);
+    const handler = `export function handle(path: string): number {\n${routes.join("\n")}\n  return 0;\n}\n`;
+    expect(handler.length).toBeGreaterThan(3000);
+    const files = {
+      "src/a.ts": handler,
+      "src/b.ts": handler,
+      "src/c.ts": handler,
+      "src/d.ts": handler,
+    };
+    const shown = await baseFacts(await repository(files), Object.keys(files), Object.keys(files));
+    expect(shown[0]?.lines.join("\n")).toContain('path === "/r42"');
+    expect(shown.map((one) => one.whole)).toEqual([true, true, true, true]);
+    const wide = Object.fromEntries(
+      Array.from({ length: 6 }, (_, at) => [`src/w${at}.ts`, handler]),
+    );
+    const tight = await baseFacts(await repository(wide), Object.keys(wide), Object.keys(wide));
+    expect(tight.map((one) => one.whole)).toEqual([true, true, true, true, true, false]);
   });
 
   it("stops at its budget, and never reads a file twice", async () => {
