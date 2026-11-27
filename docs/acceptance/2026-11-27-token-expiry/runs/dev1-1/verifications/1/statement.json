@@ -1,0 +1,757 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "tree",
+      "digest": {
+        "sha256": "1f8f255b032a4b50ef49775c910d910fc61f5fcf9a8c32d946882fa6536deef4"
+      }
+    },
+    {
+      "name": "change.patch",
+      "digest": {
+        "sha256": "e7ec450229f9070101e3e113c16d99629eca3ceb5dac4a7b5a16df8864d99980"
+      }
+    }
+  ],
+  "predicateType": "https://github.com/moonrunnerkc/swarm-verify/result/v1",
+  "predicate": {
+    "state": "incomplete",
+    "scope": "requirements",
+    "reasons": [
+      "behavior check security-single-use-token-1 failed"
+    ],
+    "base": {
+      "commit": "c13a49ef91a24bd8f6d59c79578211ce25c32abc"
+    },
+    "change": {
+      "source": "patch",
+      "applied": true,
+      "files": [
+        {
+          "path": "src/app.ts",
+          "status": "modified"
+        },
+        {
+          "path": "test/invites.test.ts",
+          "status": "modified"
+        }
+      ]
+    },
+    "requirements": [
+      {
+        "id": "R1",
+        "text": "Accepting an invite must stop working once it has expired. POST /invites/:token/accept answers 410 and adds nobody to the team when more than settings.inviteTtlMs milliseconds have passed since the invite was issued. A valid invite is still accepted with 200, a used one is refused with 409 and an unknown one with 404. Add tests.",
+        "source": "user",
+        "kind": "fix",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "testsAsked": true,
+        "behaviorAsked": false,
+        "status": "satisfied",
+        "witness": "independent",
+        "evidence": [
+          {
+            "kind": "test",
+            "ref": "test/invites.swarm-r1.test.ts::POST /invites/:token/accept answers 410 and adds nobody to the team when expired",
+            "authority": "independently-generated",
+            "outcome": "fixed"
+          },
+          {
+            "kind": "test",
+            "ref": "test/invites.swarm-r1.test.ts::a used invite is refused with 409",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/invites.swarm-r1.test.ts::a valid invite is still accepted with 200",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/invites.swarm-r1.test.ts::an unknown invite is refused with 404",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/invites.swarm-r1.test.ts::control: a standard invite flow works without expiration",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "test/invites.test.ts::an invite expires after settings.inviteTtlMs",
+            "authority": "implementation-authored",
+            "outcome": "witness",
+            "detail": "fails against the base's source"
+          }
+        ],
+        "limitation": null,
+        "nextAction": null
+      },
+      {
+        "id": "R2",
+        "text": "A token the task issues is honored once and only while it is valid: an expired, unknown or already used one is refused, and of several redemptions at once exactly one succeeds (its check sends POST /invites/{{token}}/accept and requests like it straight to the server)",
+        "source": "security",
+        "kind": "other",
+        "required": true,
+        "assumptions": [],
+        "expected": {
+          "tests": [],
+          "checks": [],
+          "structure": [],
+          "packages": []
+        },
+        "versions": [],
+        "testsAsked": false,
+        "behaviorAsked": false,
+        "status": "failed",
+        "witness": "independent",
+        "evidence": [
+          {
+            "kind": "test",
+            "ref": "behavior security-single-use-token-1::a valid token is redeemed",
+            "authority": "independently-generated",
+            "outcome": "failing",
+            "detail": "new-failure"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-single-use-token-1::a redeemed token is refused",
+            "authority": "independently-generated",
+            "outcome": "failing",
+            "detail": "new-failure"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-single-use-token-1::a token that was never issued is refused",
+            "authority": "independently-generated",
+            "outcome": "preserved"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-single-use-token-1::an expired token is refused",
+            "authority": "independently-generated",
+            "outcome": "failing",
+            "detail": "new-failure"
+          },
+          {
+            "kind": "test",
+            "ref": "behavior security-single-use-token-1::a token redeemed several times at once is honored once",
+            "authority": "independently-generated",
+            "outcome": "failing",
+            "detail": "new-failure"
+          }
+        ],
+        "limitation": "failing: behavior security-single-use-token-1::a valid token is redeemed, behavior security-single-use-token-1::a redeemed token is refused, behavior security-single-use-token-1::an expired token is refused, behavior security-single-use-token-1::a token redeemed several times at once is honored once",
+        "nextAction": "repair the failing evidence"
+      }
+    ],
+    "regression": {
+      "status": "none",
+      "newFailures": [],
+      "inherited": [],
+      "removed": [],
+      "unresolved": [],
+      "flaky": []
+    },
+    "checks": [
+      {
+        "name": "test",
+        "command": "node --test",
+        "kind": "test",
+        "authority": "pre-existing",
+        "result": "pass",
+        "collected": 3,
+        "exitCode": 0,
+        "durationMs": 1663,
+        "outputSha256": "91e0964cf582ab2ce410e15b9ef613d0c56b5a0274459644be3a9ff3e9905241",
+        "tests": {
+          "runner": "node",
+          "collected": {
+            "base": 3,
+            "candidate": 4
+          },
+          "counts": {
+            "preserved": 3,
+            "renamed": 0,
+            "fixed": 0,
+            "newFailures": 0,
+            "inherited": 0,
+            "removed": 0,
+            "superseded": 0,
+            "expectationChanges": 0,
+            "added": 1,
+            "addedFailing": 0,
+            "witnesses": 1,
+            "skipped": 0,
+            "flaky": 0
+          },
+          "fixed": [],
+          "newFailures": [],
+          "inherited": [],
+          "removed": [],
+          "renamed": [],
+          "superseded": [],
+          "expectationChanges": [],
+          "added": [
+            "test/invites.test.ts::an invite expires after settings.inviteTtlMs"
+          ],
+          "addedFailing": [],
+          "witnesses": [
+            "test/invites.test.ts::an invite expires after settings.inviteTtlMs"
+          ],
+          "flaky": [],
+          "reruns": [
+            {
+              "id": "test/invites.test.ts::an invite expires after settings.inviteTtlMs",
+              "snapshot": "witness",
+              "results": [
+                "fail",
+                "fail",
+                "fail",
+                "fail"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "behavior": [
+      {
+        "check": {
+          "name": "security-single-use-token-1",
+          "class": "single-use-token",
+          "authority": "independently-generated",
+          "requirements": [
+            "R2"
+          ],
+          "target": {
+            "start": "node src/server.ts",
+            "port": 3000,
+            "env": {
+              "INVITE_TTL_MS": "1000"
+            },
+            "ready": {
+              "path": "/",
+              "timeoutMs": 30000
+            }
+          },
+          "cases": [
+            {
+              "name": "a valid token is redeemed",
+              "role": "allowed",
+              "steps": [
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites",
+                    "headers": {
+                      "Authorization": "Bearer token-ada"
+                    },
+                    "body": {
+                      "teamId": "team-1"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200,
+                      201
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {
+                    "token": "token"
+                  }
+                },
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites/{{token}}/accept",
+                    "headers": {}
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "a redeemed token is refused",
+              "role": "refused",
+              "steps": [
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites",
+                    "headers": {
+                      "Authorization": "Bearer token-ada"
+                    },
+                    "body": {
+                      "teamId": "team-1"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200,
+                      201
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {
+                    "token": "token"
+                  }
+                },
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites/{{token}}/accept",
+                    "headers": {}
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                },
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites/{{token}}/accept",
+                    "headers": {}
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      400,
+                      401,
+                      403,
+                      404,
+                      409,
+                      410,
+                      422
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "a token that was never issued is refused",
+              "role": "refused",
+              "steps": [
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites/never-issued-0000/accept",
+                    "headers": {}
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      400,
+                      401,
+                      403,
+                      404,
+                      409,
+                      410,
+                      422
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "an expired token is refused",
+              "role": "refused",
+              "steps": [
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites",
+                    "headers": {
+                      "Authorization": "Bearer token-ada"
+                    },
+                    "body": {
+                      "teamId": "team-1"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200,
+                      201
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {
+                    "token": "token"
+                  }
+                },
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites/{{token}}/accept",
+                    "headers": {}
+                  },
+                  "times": 1,
+                  "waitMs": 1500,
+                  "expect": {
+                    "status": [
+                      400,
+                      401,
+                      403,
+                      404,
+                      409,
+                      410,
+                      422
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                }
+              ]
+            },
+            {
+              "name": "a token redeemed several times at once is honored once",
+              "role": "effect",
+              "steps": [
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites",
+                    "headers": {
+                      "Authorization": "Bearer token-ada"
+                    },
+                    "body": {
+                      "teamId": "team-1"
+                    }
+                  },
+                  "times": 1,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200,
+                      201
+                    ],
+                    "otherwise": [],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {
+                    "token": "token"
+                  }
+                },
+                {
+                  "request": {
+                    "method": "POST",
+                    "path": "/invites/{{token}}/accept",
+                    "headers": {}
+                  },
+                  "times": 5,
+                  "waitMs": 0,
+                  "expect": {
+                    "status": [
+                      200
+                    ],
+                    "count": {
+                      "min": 1,
+                      "max": 1
+                    },
+                    "otherwise": [
+                      400,
+                      401,
+                      403,
+                      404,
+                      409,
+                      410,
+                      422
+                    ],
+                    "json": [],
+                    "bodyIncludes": [],
+                    "bodyExcludes": []
+                  },
+                  "capture": {}
+                }
+              ]
+            }
+          ]
+        },
+        "sha256": "7e2139126c92f07d42d6ed4a492844e0993503f888ebc55b4c9f75fe51c47849",
+        "assurance": "external driver, isolated target",
+        "notRun": null,
+        "cases": [
+          {
+            "name": "a valid token is redeemed",
+            "role": "allowed",
+            "base": "fail",
+            "candidate": "fail",
+            "detail": "step 1 (POST /invites): expected status 200 or 201, got 404 ({\"error\":\"not found\"})"
+          },
+          {
+            "name": "a redeemed token is refused",
+            "role": "refused",
+            "base": "fail",
+            "candidate": "fail",
+            "detail": "step 1 (POST /invites): expected status 200 or 201, got 404 ({\"error\":\"not found\"})"
+          },
+          {
+            "name": "a token that was never issued is refused",
+            "role": "refused",
+            "base": "pass",
+            "candidate": "pass",
+            "detail": ""
+          },
+          {
+            "name": "an expired token is refused",
+            "role": "refused",
+            "base": "fail",
+            "candidate": "fail",
+            "detail": "step 1 (POST /invites): expected status 200 or 201, got 404 ({\"error\":\"not found\"})"
+          },
+          {
+            "name": "a token redeemed several times at once is honored once",
+            "role": "effect",
+            "base": "fail",
+            "candidate": "fail",
+            "detail": "step 1 (POST /invites): expected status 200 or 201, got 404 ({\"error\":\"not found\"})"
+          }
+        ]
+      }
+    ],
+    "baseline": {
+      "status": "measured",
+      "cached": false,
+      "environmentSha256": "d46420abb3550ad37a1d9b912b35874d597463ac9ebfcf01b5197bdad5e6462c",
+      "checks": [
+        {
+          "name": "test",
+          "command": "node --test",
+          "kind": "test",
+          "authority": "pre-existing",
+          "result": "pass",
+          "collected": 3,
+          "exitCode": 0,
+          "durationMs": 1798,
+          "outputSha256": "1ab4f2c699fc8af0cf0ccd5ea631c9a15e42a0aaf634b4bd455972870a893309"
+        }
+      ],
+      "heldOut": [
+        {
+          "name": "authored-R1",
+          "command": "node --test test/invites.swarm-r1.test.ts",
+          "kind": "test",
+          "authority": "independently-generated",
+          "result": "fail",
+          "collected": 5,
+          "exitCode": 1,
+          "durationMs": 1771,
+          "outputSha256": "fadb926d80b3d34dda0b5729211a661bc2f182651aed63a9c026dda02182d39a"
+        }
+      ]
+    },
+    "heldOut": {
+      "status": "measured",
+      "checks": [
+        {
+          "name": "authored-R1",
+          "command": "node --test test/invites.swarm-r1.test.ts",
+          "kind": "test",
+          "authority": "independently-generated",
+          "result": "pass",
+          "collected": 5,
+          "exitCode": 0,
+          "durationMs": 1762,
+          "outputSha256": "0a15ed31ba9afcb8db70e90cd3f20f36334e81b50d32672a5608f29bd490400e"
+        }
+      ],
+      "visiblePassRate": 1,
+      "heldOutPassRate": 1,
+      "gap": 0,
+      "judge": {
+        "processes": 2,
+        "assertionCalls": 6
+      }
+    },
+    "artifacts": [
+      {
+        "path": "src/app.ts",
+        "category": "source"
+      },
+      {
+        "path": "test/invites.test.ts",
+        "category": "tests"
+      }
+    ],
+    "testFiles": {
+      "added": [],
+      "modified": [
+        "test/invites.test.ts"
+      ],
+      "deleted": [],
+      "moved": [],
+      "movedAndEdited": [],
+      "relocated": []
+    },
+    "coverage": {
+      "status": "unmeasured",
+      "reason": "the V8 offsets for src/app.ts run past the file, so a transform ran first"
+    },
+    "mutation": {
+      "status": "killed",
+      "path": "src/app.ts",
+      "line": 42,
+      "operator": "> to <=",
+      "syntax": "valid",
+      "rejected": 0
+    },
+    "producer": {
+      "name": "swarm-orchestrator",
+      "version": "17.1.1",
+      "model": "gemma4:31b",
+      "promptSha256": "a1c0743272509f156bd0638b8e78b4c0446c06e194a2cff1f252c230740bdaa6",
+      "ledgerSha256": "6198e1889df6d20bc7518ed82d0752efc9c854148774d2b1f6a0e84dd158b4fe",
+      "ledgerRecords": 45,
+      "reportSha256": "5fb9be7138f61a5161b30ed180d036e71acf6e526a7b4a7a8d0a8b7e93cc5301",
+      "instructions": []
+    },
+    "environment": {
+      "sha256": "d46420abb3550ad37a1d9b912b35874d597463ac9ebfcf01b5197bdad5e6462c",
+      "node": "in node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413)",
+      "platform": "linux-arm64",
+      "git": "2.54.0 (Apple Git-157)",
+      "dependencies": "none",
+      "dependencyTreeSha256": null,
+      "reproducible": true
+    },
+    "execution": {
+      "mode": "isolated",
+      "statement": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container",
+      "network": "closed",
+      "image": "node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 (sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 arm64)",
+      "dependencies": {
+        "mode": "none",
+        "reproducible": false,
+        "lockfiles": {},
+        "treeSha256": null,
+        "note": "no dependencies were prepared"
+      },
+      "policyMet": true,
+      "problems": [],
+      "resources": {
+        "requested": {
+          "memoryMiB": 4096,
+          "cpus": 2
+        },
+        "effective": {
+          "memoryBytes": 4294967296,
+          "swapBytes": 0,
+          "cpus": 2,
+          "cgroup": "v2"
+        },
+        "scope": "per-container"
+      }
+    },
+    "policy": {
+      "behaviorChange": "none",
+      "reruns": 3,
+      "acceptance": "swarm-verify.acceptance/v1",
+      "redaction": {
+        "policy": "swarm-verify.redaction/v1",
+        "markers": {}
+      }
+    },
+    "unmeasured": [
+      "coverage: the V8 offsets for src/app.ts run past the file, so a transform ran first"
+    ],
+    "logs": [
+      {
+        "name": "observations.json",
+        "sha256": "84c7823101146f97f49b0ad41931fe06969a0b74dfce11af531ad4fb3aeffdb4"
+      },
+      {
+        "name": "logs/test.txt",
+        "sha256": "fcefaf7da1f48923df16f1353b6564354b7acfe733885b8a72c5197f1b4f10d9"
+      },
+      {
+        "name": "logs/test.base-tests.txt",
+        "sha256": "91e0964cf582ab2ce410e15b9ef613d0c56b5a0274459644be3a9ff3e9905241"
+      },
+      {
+        "name": "behavior/security-single-use-token-1.base.txt",
+        "sha256": "f490d0ff77c6b8c8f0f278c9c1ea6d36939943bf72aec66abd36d66bf77febb6"
+      },
+      {
+        "name": "behavior/security-single-use-token-1.candidate.txt",
+        "sha256": "f490d0ff77c6b8c8f0f278c9c1ea6d36939943bf72aec66abd36d66bf77febb6"
+      },
+      {
+        "name": "sealed/sealed.json",
+        "sha256": "0a6161b83e395e45ba21c07cc1677c7abb67a3e0c01ffc2ac19aec26156c8c5e"
+      },
+      {
+        "name": "sealed/files/test/invites.swarm-r1.test.ts",
+        "sha256": "318e7adceec48012ec0cce52edd858df0fdc10095e7ee17918a025ea551d63ef"
+      }
+    ],
+    "verifier": {
+      "name": "swarm-verify",
+      "version": "3.3.0"
+    }
+  }
+}

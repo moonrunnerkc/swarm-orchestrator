@@ -1,0 +1,42 @@
+diff --git a/src/app.ts b/src/app.ts
+index a010e78..ace6ea9 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -39,6 +39,10 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
+       send(response, 404, { error: "unknown invite" });
+       return;
+     }
++    if (Date.now() - invite.issuedAt > settings.inviteTtlMs) {
++      send(response, 410, { error: "invite expired" });
++      return;
++    }
+     if (invite.acceptedBy !== null) {
+       send(response, 409, { error: "invite already used" });
+       return;
+diff --git a/test/invites.test.ts b/test/invites.test.ts
+index a0dc649..a3b4e67 100644
+--- a/test/invites.test.ts
++++ b/test/invites.test.ts
+@@ -38,6 +38,22 @@ test("an invite is accepted once, and an unknown one never", async () => {
+   assert.equal((await post("/invites/never-issued/accept", {}, { name: "Omar" })).status, 404);
+ });
+ 
++test("an invite expires after settings.inviteTtlMs", async () => {
++  const { settings } = await import("../src/config.ts");
++  const originalTtl = settings.inviteTtlMs;
++  settings.inviteTtlMs = 10;
++
++  const issued = await post("/teams/team-1/invites", ada);
++  const { token } = (await issued.json()) as { token: string };
++
++  await new Promise((resolve) => setTimeout(resolve, 20));
++
++  const accepted = await post(`/invites/${token}/accept`, {}, { name: "Expired" });
++  assert.equal(accepted.status, 410);
++
++  settings.inviteTtlMs = originalTtl;
++});
++
+ test("only the team's owner issues an invite", async () => {
+   const issued = await post("/teams/team-1/invites", { authorization: "Bearer token-grace" });
+   assert.equal(issued.status, 403);

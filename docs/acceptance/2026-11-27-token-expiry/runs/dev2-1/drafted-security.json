@@ -1,0 +1,40 @@
+{
+  "target": {
+    "start": "node src/server.ts",
+    "port": 3000,
+    "env": {
+      "INVITE_TTL_MS": "1000"
+    },
+    "ready": {
+      "path": "/",
+      "timeoutMs": 30000
+    }
+  },
+  "checks": [
+    {
+      "class": "single-use-token",
+      "issue": {
+        "method": "POST",
+        "path": "/teams/team-1/invites",
+        "headers": {
+          "Authorization": "Bearer token-ada"
+        },
+        "body": {}
+      },
+      "tokenAt": "token",
+      "redeem": {
+        "method": "POST",
+        "path": "/invites/{{token}}/accept",
+        "headers": {},
+        "body": {
+          "name": "New Member"
+        }
+      },
+      "success": [
+        200
+      ],
+      "expiresAfterMs": 1500,
+      "concurrent": 5
+    }
+  ]
+}

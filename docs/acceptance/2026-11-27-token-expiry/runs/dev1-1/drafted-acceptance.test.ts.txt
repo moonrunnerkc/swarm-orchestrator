@@ -1,0 +1,99 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { after, before, test } from "node:test";
+import { handle } from "../src/app.ts";
+import { invites, teams } from "../src/data.ts";
+import { settings } from "../src/config.ts";
+
+// Behaviors to check:
+// 1. POST /invites/:token/accept answers 410 when more than settings.inviteTtlMs milliseconds have passed since the invite was issued.
+// 2. POST /invites/:token/accept adds nobody to the team when it has expired (410).
+// 3. A valid invite is still accepted with 200.
+// 4. A used invite is refused with 409.
+// 5. An unknown invite is refused with 404.
+
+const server = createServer(handle);
+let base = "";
+before(async () => {
+  await new Promise<void>((settle) => server.listen(0, settle));
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+after(() => server.close());
+
+const post = (path: string, headers: Record<string, string> = {}, body: unknown = {}) =>
+  fetch(base + path, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+
+test("POST /invites/:token/accept answers 410 and adds nobody to the team when expired", async () => {
+  const token = "expired-token";
+  const teamId = "team-1";
+  
+  // Manually insert an expired invite into the data store
+  invites.set(token, {
+    teamId,
+    issuedAt: Date.now() - settings.inviteTtlMs - 1000,
+    acceptedBy: null,
+  });
+
+  const teamBefore = teams.find(t => t.id === teamId);
+  const memberCountBefore = teamBefore?.members.length ?? 0;
+
+  const response = await post(`/invites/${token}/accept`, {}, { name: "ExpiredUser" });
+  assert.equal(response.status, 410);
+
+  const teamAfter = teams.find(t => t.id === teamId);
+  const memberCountAfter = teamAfter?.members.length ?? 0;
+  assert.equal(memberCountBefore, memberCountAfter, "Nobody should be added to the team");
+});
+
+test("a valid invite is still accepted with 200", async () => {
+  const token = "valid-token";
+  const teamId = "team-1";
+  
+  invites.set(token, {
+    teamId,
+    issuedAt: Date.now(),
+    acceptedBy: null,
+  });
+
+  const response = await post(`/invites/${token}/accept`, {}, { name: "ValidUser" });
+  assert.equal(response.status, 200);
+});
+
+test("a used invite is refused with 409", async () => {
+  const token = "used-token";
+  const teamId = "team-1";
+  
+  invites.set(token, {
+    teamId,
+    issuedAt: Date.now(),
+    acceptedBy: "some-user-id",
+  });
+
+  const response = await post(`/invites/${token}/accept`, {}, { name: "LateUser" });
+  assert.equal(response.status, 409);
+});
+
+test("an unknown invite is refused with 404", async () => {
+  const response = await post("/invites/unknown-token/accept", {}, { name: "Stranger" });
+  assert.equal(response.status, 404);
+});
+
+test("control: a standard invite flow works without expiration", async () => {
+  // This ensures the setup and existing logic for accepting invites is reachable
+  const token = "control-token";
+  const teamId = "team-1";
+  
+  invites.set(token, {
+    teamId,
+    issuedAt: Date.now(),
+    acceptedBy: null,
+  });
+
+  const response = await post(`/invites/${token}/accept`, {}, { name: "ControlUser" });
+  assert.equal(response.status, 200);
+});

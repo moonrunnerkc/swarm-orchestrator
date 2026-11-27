@@ -1,0 +1,23 @@
+task         Accepting an invite must stop working once it has expired. POST /invites/:token/accept answers 410 and adds nobody to the team when more than settings.inviteTtlMs milliseconds have passed since the invite was issued. A valid invite is still accepted with 200, a used one is refused with 409 and an unknown one with 404. Add tests.
+record       default
+model        gemma4:31b (named by --model)
+state        complete
+stop         complete
+R1           asked    Accepting an invite must stop working once it has expired. POST /invites/:token/accept answers 410 and adds nobody to the team when more than settings.inviteTtlMs milliseconds have passed since the invite was issued. A valid invite is still accepted with 200, a used one is refused with 409 and an unknown one with 404. Add tests.
+             read as  feature, with no evidence named
+             status   satisfied, witness independent
+R2           asked    A token the task issues is honored once and only while it is valid: an expired, unknown or already used one is refused, and of several redemptions at once exactly one succeeds (its check sends POST /invites/{{token}}/accept and requests like it straight to the server)
+             read as  other, with no evidence named
+             status   satisfied, witness independent
+checks       R1: a test, run from test/invites.swarm-r1.test.ts (read as feature), failing at the base, written without seeing the change
+changed      4 file(s)
+regression   none
+commands     isolated: each command in a container of node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed, only the workspace writable
+execution    isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container
+patch        /Users/brad/projects/recovery-2026-10-31/run-expiry/runs/final-1/home/sessions/20261127T160624-1e140d/final/delivered.patch (sha256 aaf9c0836c6556ce92936744c29999d683b8a79c425e31c2953286b88cf84bdd)
+applied      no: kept as a patch, as asked
+report       /Users/brad/projects/recovery-2026-10-31/run-expiry/runs/final-1/home/sessions/20261127T160624-1e140d/final/report.md
+evidence     /Users/brad/projects/recovery-2026-10-31/run-expiry/runs/final-1/home/sessions/20261127T160624-1e140d
+attestation  /Users/brad/projects/recovery-2026-10-31/run-expiry/runs/final-1/home/sessions/20261127T160624-1e140d/verifications/3/attestation.sigstore.json
+key          /Users/brad/projects/recovery-2026-10-31/run-expiry/runs/final-1/home/sessions/20261127T160624-1e140d/verifications/3/attestation.pub.pem
+exit 0

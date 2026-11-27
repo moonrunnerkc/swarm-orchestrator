@@ -1,0 +1,31 @@
+
+ RUN  v4.1.12 /Users/brad/projects/recovery-2026-10-31/wt/sv-320
+
+ ❯ src/behavior/token-expiry.integration.test.ts (3 tests | 1 failed) 4440ms
+     × is not satisfied by a binding that gives no expiry to wait for 1230ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/behavior/token-expiry.integration.test.ts > the expiry obligation of a single-use token check > is not satisfied by a binding that gives no expiry to wait for
+AssertionError: expected 'satisfied' to be 'unverified' // Object.is equality
+
+Expected: "unverified"
+Received: "satisfied"
+
+ ❯ src/behavior/token-expiry.integration.test.ts:88:35
+     86|       const result = await verified(expiry, check(binding));
+     87|       const [requirement] = result.requirements;
+     88|       expect(requirement?.status).toBe("unverified");
+       |                                   ^
+     89|       expect(requirement?.limitation).toBe(
+     90|         "not observed: behavior token::an expired token is refused",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  06:41:02
+   Duration  4.79s (transform 155ms, setup 0ms, import 301ms, tests 4.44s, environment 0ms)
+
+exit 1

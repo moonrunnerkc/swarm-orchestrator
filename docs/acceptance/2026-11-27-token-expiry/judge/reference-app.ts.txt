@@ -1,0 +1,90 @@
+import { randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { settings } from "./config.ts";
+import { invites, teams, users } from "./data.ts";
+
+function send(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(body));
+}
+
+/** A request's JSON body as an object; empty where there is none or it does not parse. */
+async function bodyOf(request: IncomingMessage): Promise<Record<string, unknown>> {
+  let text = "";
+  for await (const chunk of request) text += chunk;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Every request the API answers: its health, a team's members, issuing an invite to a team and
+ * accepting one. Accepting needs no sign-in: the invite's token is what admits its holder.
+ */
+export async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const path = new URL(request.url ?? "/", "http://localhost").pathname;
+  if (request.method === "GET" && path === "/health") {
+    send(response, 200, { ok: true });
+    return;
+  }
+  const accepted = /^\/invites\/([\w-]+)\/accept$/.exec(path);
+  if (request.method === "POST" && accepted !== null) {
+    const body = await bodyOf(request);
+    const invite = invites.get(accepted[1] ?? "");
+    const team = teams.find((one) => one.id === invite?.teamId);
+    if (invite === undefined || team === undefined) {
+      send(response, 404, { error: "unknown invite" });
+      return;
+    }
+    if (Date.now() - invite.issuedAt > settings.inviteTtlMs) {
+      send(response, 410, { error: "invite expired" });
+      return;
+    }
+    if (invite.acceptedBy !== null) {
+      send(response, 409, { error: "invite already used" });
+      return;
+    }
+    if (typeof body.name !== "string" || body.name === "") {
+      send(response, 400, { error: "send the name to add, as JSON: {\"name\": \"...\"}" });
+      return;
+    }
+    invite.acceptedBy = body.name;
+    team.members.push(body.name);
+    send(response, 200, { teamId: team.id, members: team.members });
+    return;
+  }
+  const header = request.headers.authorization ?? "";
+  const user = users.find((one) => header === `Bearer ${one.token}`);
+  if (user === undefined) {
+    send(response, 401, { error: "sign in with a bearer token" });
+    return;
+  }
+  const route = /^\/teams\/([\w-]+)\/(members|invites)$/.exec(path);
+  const team = teams.find((one) => one.id === route?.[1]);
+  if (team === undefined) {
+    send(response, 404, { error: "not found" });
+    return;
+  }
+  if (request.method === "GET" && route?.[2] === "members") {
+    send(response, 200, { members: team.members });
+    return;
+  }
+  if (request.method === "POST" && route?.[2] === "invites") {
+    if (team.ownerId !== user.id) {
+      send(response, 403, { error: "only the team's owner invites" });
+      return;
+    }
+    const token = randomUUID();
+    const issuedAt = Date.now();
+    invites.set(token, { teamId: team.id, issuedAt, acceptedBy: null });
+    send(response, 201, {
+      token,
+      expiresAt: new Date(issuedAt + settings.inviteTtlMs).toISOString(),
+    });
+    return;
+  }
+  send(response, 404, { error: "not found" });
+}

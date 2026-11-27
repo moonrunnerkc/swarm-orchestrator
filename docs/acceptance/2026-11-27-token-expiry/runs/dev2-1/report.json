@@ -1,0 +1,331 @@
+{
+  "version": "swarm-orchestrator.report/v1",
+  "task": "Accepting an invite must stop working once it has expired. POST /invites/:token/accept answers 410 and adds nobody to the team when more than settings.inviteTtlMs milliseconds have passed since the invite was issued. A valid invite is still accepted with 200, a used one is refused with 409 and an unknown one with 404. Add tests.",
+  "model": {
+    "name": "gemma4:31b",
+    "reason": "named by --model"
+  },
+  "stop": "complete",
+  "reason": null,
+  "state": "complete",
+  "snapshot": {
+    "base": "4338985584e1cfa6a38d11528d05060affbbca99",
+    "patchSha256": "955dbeae8b07325ccd5a7d42af6ffadf4d53a84c10c4fc0268b89645073069db",
+    "patch": "/Users/brad/projects/recovery-2026-10-31/run-expiry/runs/dev2-1/home/sessions/20261127T135719-87d88d/final/delivered.patch",
+    "treeSha256": "b210cafac26c1d5c5da6d9b2089af710bda79df602d4312f2a442dc5123a0235"
+  },
+  "verification": "reused",
+  "blocked": null,
+  "unchecked": null,
+  "changed": [
+    {
+      "path": "src/app.ts",
+      "status": "modified"
+    },
+    {
+      "path": "test/invites.test.ts",
+      "status": "modified"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "Accepting an invite must stop working once it has expired. POST /invites/:token/accept answers 410 and adds nobody to the team when more than settings.inviteTtlMs milliseconds have passed since the invite was issued. A valid invite is still accepted with 200, a used one is refused with 409 and an unknown one with 404. Add tests.",
+      "source": "user",
+      "kind": "feature",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": true,
+      "behaviorAsked": false,
+      "status": "satisfied",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "test/invites.swarm-r1.test.ts::a used invite is refused with 409",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/invites.swarm-r1.test.ts::an expired invite answers 410 and adds nobody to the team",
+          "authority": "independently-generated",
+          "outcome": "fixed"
+        },
+        {
+          "kind": "test",
+          "ref": "test/invites.swarm-r1.test.ts::an unknown invite is refused with 404",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/invites.swarm-r1.test.ts::control: a valid invite is still accepted with 200",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "test/invites.test.ts::an invite expires after settings.inviteTtlMs",
+          "authority": "implementation-authored",
+          "outcome": "witness",
+          "detail": "fails against the base's source"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    },
+    {
+      "id": "R2",
+      "text": "A token the task issues is honored once and only while it is valid: an expired, unknown or already used one is refused, and of several redemptions at once exactly one succeeds (its check sends POST /invites/{{token}}/accept and requests like it straight to the server)",
+      "source": "security",
+      "kind": "other",
+      "required": true,
+      "assumptions": [],
+      "expected": {
+        "tests": [],
+        "checks": [],
+        "structure": [],
+        "packages": []
+      },
+      "versions": [],
+      "testsAsked": false,
+      "behaviorAsked": false,
+      "status": "satisfied",
+      "witness": "independent",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "behavior security-single-use-token-1::a valid token is redeemed",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-single-use-token-1::a redeemed token is refused",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-single-use-token-1::a token that was never issued is refused",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-single-use-token-1::an expired token is refused",
+          "authority": "independently-generated",
+          "outcome": "fixed"
+        },
+        {
+          "kind": "test",
+          "ref": "behavior security-single-use-token-1::a token redeemed several times at once is honored once",
+          "authority": "independently-generated",
+          "outcome": "preserved"
+        }
+      ],
+      "limitation": null,
+      "nextAction": null
+    }
+  ],
+  "authoring": [
+    {
+      "requirement": "R1",
+      "kind": "feature",
+      "test": "test/invites.swarm-r1.test.ts",
+      "claims": 0,
+      "failure": null,
+      "attempts": 1
+    }
+  ],
+  "accepted": [],
+  "regression": "none",
+  "execution": "isolated: docker node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed for checks and open only while dependencies were prepared; memory 4096 MiB with no swap and 2 CPUs, per container",
+  "commands": "isolated: each command in a container of node:24@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413, network closed, only the workspace writable",
+  "attestation": "/Users/brad/projects/recovery-2026-10-31/run-expiry/runs/dev2-1/home/sessions/20261127T135719-87d88d/verifications/1/attestation.sigstore.json",
+  "attestationKey": "/Users/brad/projects/recovery-2026-10-31/run-expiry/runs/dev2-1/home/sessions/20261127T135719-87d88d/verifications/1/attestation.pub.pem",
+  "evidenceDelivery": "signed",
+  "startingState": {
+    "head": "4338985584e1cfa6a38d11528d05060affbbca99",
+    "base": "4338985584e1cfa6a38d11528d05060affbbca99",
+    "edits": [],
+    "python": null
+  },
+  "delivery": {
+    "applied": false,
+    "reason": "kept as a patch, as asked"
+  },
+  "instructions": [],
+  "notes": [
+    "Security: ownership does not apply: excluded by the user (--no-security).",
+    "Security: single-use-token applies: the task names a token, link or code that is redeemed (\"invite\"), and the repository holds an HTTP API (routes in src/server.ts).",
+    "Security: duplicate-operation does not apply: the task does not name an operation that must not be applied twice.",
+    "Security: the security checks' binding was drafted by a model call that read the base and never the change: /Users/brad/projects/recovery-2026-10-31/run-expiry/runs/dev2-1/home/sessions/20261127T135719-87d88d/security.json. It is used as drafted because --accept-authored was passed; nobody reviewed it. To stand behind it, read it and pass it with --security-check.",
+    "Security: the binding, sha256 8cc043e2843dfc35e04c954da838093cfaca91acb7cd9071d88540ab7e40a2b5, was tried at the base with real requests before the first edit (security-single-use-token-1: a valid token is redeemed: pass; a redeemed token is refused: pass; a token that was never issued is refused: pass; an expired token is refused: fail; a token redeemed several times at once is honored once: pass)."
+  ],
+  "review": null,
+  "resources": {
+    "steps": 16,
+    "author": {
+      "turns": 1,
+      "inputTokens": 3689,
+      "outputTokens": 829
+    },
+    "inputTokens": 74807,
+    "outputTokens": 3992,
+    "estimatedTurns": 0,
+    "inferenceMs": 201397,
+    "inferenceTurns": 16,
+    "prefillMs": 51685,
+    "generationMs": 145739,
+    "wallMs": 317468,
+    "retries": 0,
+    "escalations": 0,
+    "verifications": 1,
+    "harnessChecks": 4,
+    "suiteRuns": 2,
+    "modelTestCommands": 1,
+    "turnsByRequirement": {
+      "R1": 16
+    },
+    "cost": "none (local runtime)",
+    "turns": [
+      {
+        "inputTokens": 1812,
+        "outputTokens": 11,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3377,
+        "generationMs": 402
+      },
+      {
+        "inputTokens": 1852,
+        "outputTokens": 27,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 735,
+        "generationMs": 1037
+      },
+      {
+        "inputTokens": 3332,
+        "outputTokens": 215,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3484,
+        "generationMs": 8705
+      },
+      {
+        "inputTokens": 3603,
+        "outputTokens": 9,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1130,
+        "generationMs": 321
+      },
+      {
+        "inputTokens": 3633,
+        "outputTokens": 15,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 779,
+        "generationMs": 562
+      },
+      {
+        "inputTokens": 4257,
+        "outputTokens": 8,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1880,
+        "generationMs": 284
+      },
+      {
+        "inputTokens": 4455,
+        "outputTokens": 146,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1092,
+        "generationMs": 5969
+      },
+      {
+        "inputTokens": 4966,
+        "outputTokens": 516,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1579,
+        "generationMs": 23728
+      },
+      {
+        "inputTokens": 4444,
+        "outputTokens": 206,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 8248,
+        "generationMs": 9472
+      },
+      {
+        "inputTokens": 4692,
+        "outputTokens": 443,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 2241,
+        "generationMs": 20775
+      },
+      {
+        "inputTokens": 5191,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 3542,
+        "generationMs": 495
+      },
+      {
+        "inputTokens": 5303,
+        "outputTokens": 535,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 1827,
+        "generationMs": 25334
+      },
+      {
+        "inputTokens": 4602,
+        "outputTokens": 12,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 8848,
+        "generationMs": 474
+      },
+      {
+        "inputTokens": 5741,
+        "outputTokens": 533,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 4368,
+        "generationMs": 25412
+      },
+      {
+        "inputTokens": 6330,
+        "outputTokens": 15,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 4332,
+        "generationMs": 638
+      },
+      {
+        "inputTokens": 6905,
+        "outputTokens": 460,
+        "inputCount": "reported",
+        "outputCount": "reported",
+        "prefillMs": 4223,
+        "generationMs": 22131
+      }
+    ]
+  }
+}

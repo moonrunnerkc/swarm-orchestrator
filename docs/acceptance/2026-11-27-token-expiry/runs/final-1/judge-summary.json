@@ -1,0 +1,21 @@
+{
+ "base": "827cc762a8da388ebaad65e53ba417f6359d2a7c",
+ "judgeOnBase": [
+  "an expired invite is refused with 410 and adds nobody",
+  "an expired invite stays refused"
+ ],
+ "judgeOnReference": [],
+ "delivered": [],
+ "binding": {
+  "env": {
+   "INVITE_TTL_MS": "1000"
+  },
+  "expiresAfterMs": 1500,
+  "issue": "POST /teams/team-1/invites",
+  "redeem": "POST /invites/{{token}}/accept"
+ },
+ "bindingOnBase": "security-single-use-token-1: a valid token is redeemed: pass; a redeemed token is refused: pass; a token that was never issued is refused: pass; an expired token is refused: fail; a token redeemed several times at once is honored once: pass",
+ "bindingOnReference": "security-single-use-token-1: a valid token is redeemed: pass; a redeemed token is refused: pass; a token that was never issued is refused: pass; an expired token is refused: pass; a token redeemed several times at once is honored once: pass",
+ "bindingSound": true,
+ "judgeHolds": true
+}

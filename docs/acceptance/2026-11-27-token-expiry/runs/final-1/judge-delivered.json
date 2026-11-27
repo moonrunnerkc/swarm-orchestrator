@@ -1,0 +1,58 @@
+{
+ "observed": {
+  "short": {
+   "valid": {
+    "status": 200,
+    "joined": 1
+   },
+   "reused": {
+    "status": 409,
+    "joined": 0,
+    "first": 1
+   },
+   "unknown": {
+    "status": 404,
+    "joined": 0
+   },
+   "expired": {
+    "status": 410,
+    "joined": 0
+   },
+   "expiredAgain": {
+    "status": 410,
+    "joined": 0
+   },
+   "withinLife": {
+    "status": 200,
+    "joined": 1
+   },
+   "concurrent": {
+    "statuses": [
+     200,
+     409,
+     409,
+     409,
+     409,
+     409,
+     409,
+     409
+    ],
+    "joined": 1
+   }
+  },
+  "byDefault": {
+   "status": 200,
+   "joined": 1
+  }
+ },
+ "checks": {
+  "a valid invite is accepted with 200 and its holder joins": true,
+  "a used invite is refused with 409 and adds nobody": true,
+  "an unknown invite is refused with 404 and adds nobody": true,
+  "an expired invite is refused with 410 and adds nobody": true,
+  "an expired invite stays refused": true,
+  "an invite within its life is accepted": true,
+  "of eight acceptances at once one succeeds and one member is added": true,
+  "the default lifetime still admits a second-old invite": true
+ }
+}
