@@ -55,7 +55,7 @@ describe("session 20261102T210229-519ea0: one passing vitest file, run 36 times"
     expect(new Set(runs.map((run) => run.output)).size).toBe(36);
   });
 
-  it("stops as no progress at the second result identical to the first", async () => {
+  it("stops as no progress at the third result identical to the first", async () => {
     let at = 0;
     const replay: Chokepoint = {
       ...noEdits,
@@ -70,8 +70,8 @@ describe("session 20261102T210229-519ea0: one passing vitest file, run 36 times"
     const ran = await runLoop(await replayOptions(model, replay, "Rerun the walker's tests."));
     expect(ran).toMatchObject({
       stop: "no-progress",
-      reason: "the same command printed the same result 3 turns running",
-      steps: 3,
+      reason: "the same command printed the same result 4 turns running",
+      steps: 4,
     });
     expect(model.seen[2]?.at(-1)?.content).toContain("This is the command you ran last turn");
   });

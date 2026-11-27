@@ -23,14 +23,28 @@ Reruns for 16.0.2. Reproduce: `acceptance/closing/run-task.sh t6-tracemantle --m
 work root, or judge any agent's patch with the command in
 docs/acceptance/2026-10-31/t6-comparison/README.md.
 
-## A local model's drafted check for a TypeScript `node:test` project is often unusable
+## Drafted checks and bindings depend on the drafting model
 
-On the invoice example (`examples/invoice-api`), gemma4:31b drafting the check for "Add GET
-/invoices/:id/download ..." wrote, three attempts running, a test that reads a field the data does
-not have (`userId` for `ownerId`) and calls a placeholder it defines itself; for the repair task
-it wrote CommonJS `require` in an ES module. 17.1.0-rc.15 refuses each draft at the base and
-blocks before the first edit; before the `node:test` reader fix (rc.14 and the starting version)
-the draft was sealed and a correct change ended incomplete. Reproduce: copy the example into a
-new repository and run `swarm run "$(cat task.txt)" --accept-authored --model gemma4:31b`.
-Supplying the check with `--accept` completes the same task. The author is shown how the
-repository writes tests, not the shapes of the data its tests would need.
+The check for a task and the binding for a security obligation are drafted by the model the run
+uses. On the invoice example's seeded-fault task (`examples/invoice-api-checks/seeded`),
+gemma4:31b drafted a sound test and binding; qwen3.6:35b-a3b drafted a control that asserts the
+new field is absent, which passes at the base and fails every correct change, so its run ended
+incomplete on a correct first edit; mistral-small3.2:24b did not open its reply with the `kind:`
+line and its run was blocked before editing. A draft that is wrong in a way the base cannot show
+(a control like that one, a wrong record, a wrong value the owner should see) refuses a correct
+change; it does not pass a wrong one. Read the drafts (`--write-checks`, or approve them at a
+terminal) where the model is not one whose drafts you have seen. Evidence:
+docs/acceptance/2026-11-26-closeout/README.md, runs `dev-invoice-seeded-2-qwen` and
+`dev-invoice-seeded-3-mistral`.
+
+## A test that leaves a server listening holds its check until the timeout
+
+`node --test` does not exit while a test's server, timer or connection is open. A test that
+asserts before it closes its server leaves it listening when the assertion fails, and the check
+then waits out its time limit: twenty minutes in the verifier, ten in the harness's own run
+between turns. On the notes example a model added such a test and one run spent its budget
+there (docs/acceptance/2026-11-26-closeout/README.md, run `dev-notes-feature-1`). The model is
+now told what a timed-out check usually means. Forcing the runner to exit was tried and not
+kept: it cut the runner's report short. Reproduce: add a `node:test` file that calls
+`server.listen(0)`, fails an assertion and only then calls `server.close()`, and run
+`node --test`.
