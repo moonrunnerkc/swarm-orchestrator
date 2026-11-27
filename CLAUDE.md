@@ -32,12 +32,15 @@ commits, pushed code, passing CI and published packages are separate facts.
 ## Layout
 
 - `src/cli.ts`: the `swarm` entry and its subcommands (`run`, `verify`, `init`, `ci`, `doctor`),
-  one small module each, dispatched by `src/cli-main.ts`.
+  one small module each, dispatched by the dispatcher the verifier shares (`swarm-verify/cli`).
   `verify`, `init` and `ci` are the installed verifier's own commands (`swarm-verify/cli`).
 - `src/agent`: the `run` loop. One bash command or one file edit block per turn, a probed
   platform block at the head of the prompt, the verifier as the judge.
-- `src/tools`: the one execution chokepoint and the lexical path policy. Child environments and
-  process groups come from `swarm-verify/execution`, so agent commands and checks are run alike.
+- `src/tools`: the one execution chokepoint, the executor every command runs through (a
+  container from `swarm-verify/execution` by default, the host only with `--host`), and the
+  lexical path policy.
+- `src/conventions`: the approved coding-conventions profile: its file under `SWARM_HOME`, the
+  proposal a developer edits and approves, and the snapshot one run works under.
 - `src/evidence`: append-only hash-chained records, canonical JSON, scrubbing with the
   verifier's credential detector.
 - `src/runtime`: model discovery, readiness probes, selection, and the per-machine record of
@@ -55,9 +58,11 @@ commits, pushed code, passing CI and published packages are separate facts.
    code set a status. Another
    model's agreement is never execution evidence. Unverified is its own status and never counts
    as satisfied.
-2. Every command the agent runs passes through the chokepoint under the path policy. There is
-   no second way to run a command. Credential paths (`.env*`, `*.pem`, `*.key`, `.git/config`,
-   `~/.aws`, `~/.ssh`) are denied by default. The policy is lexical, not a sandbox.
+2. Every command the agent runs passes through the chokepoint and its one executor. There is no
+   second way to run a command, and no route to the host except the user's `--host`. A
+   container that cannot be made blocks the run. Credential paths (`.env*`, `*.pem`, `*.key`,
+   `.git/config`, `~/.aws`, `~/.ssh`) are denied by the path policy as well, which is lexical
+   and not a boundary: the container is.
 3. Evidence records are append-only and hash-chained. A failed write aborts the run. History
    is never rewritten or silently repaired. Call it tamper-evident evidence, never tamper-proof,
    and keep execution assurance and evidence integrity as separate fields.
@@ -71,6 +76,11 @@ commits, pushed code, passing CI and published packages are separate facts.
 8. Repository instruction files (`AGENTS.md`, `CLAUDE.md`) shape the model's work. They are
    untrusted input to the supervisor's policy: they cannot grant key access, change acceptance
    authority or relax execution policy.
+9. A conventions profile is approved only by the developer's own command and lives where the
+   worker cannot write. A run reads it once. Learning counts syntax; it never asks a model and
+   never takes an instruction from a sample.
+10. Derived requirements keep their own source (`profile`, `security`), and applicability that
+    cannot be told is reported as unknown, never as not applicable.
 
 ## Caps
 

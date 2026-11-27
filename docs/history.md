@@ -28,6 +28,24 @@ it, and a tree that differs in any byte has a different id.
 | `docs/plans` | 8 | `8fbdec0a4dde25fd6f40a6e4478e6ff3ecad24ee` | The product-recovery specification and the release reports from 16.0.2 to 17.0.0. |
 | `docs/rebuild-tasks.md` | 1 | `21bf0fd0b9c7b272ae524642b15129f743203784` | The task list of the verifier-first rebuild (15.0.0). |
 
+At tag `archive/acceptance-2026-11-26`, read the same way:
+
+| Path at the tag | Files | Tree or blob id | What it is |
+| --- | --- | --- | --- |
+| `docs/acceptance/2026-11-26` | 110 | `18c821d5138d75e9b113682251cf8eae361b4e18` | The invoice example with a local model on 17.1.0-rc.15 and on the starting version: reports, patches, replays and an independent evaluation of each patch, with the controls and the seeded fault. |
+
+At tag `archive/acceptance-2026-11-26-closeout`, read the same way:
+
+| Path at the tag | Files | Tree or blob id | What it is |
+| --- | --- | --- | --- |
+| `docs/acceptance/2026-11-26-closeout` | 560 | `4bf02d27d4bffbae12e44f35faf05fb25bcc6d00` | The closeout of 17.1.0: 22 live runs on the automatic path (drafted acceptance tests and drafted security bindings) on the invoice and notes examples and the seeded-fault task, every attempt kept, each with its signed verifications, replay and an independent judgment; the failures found, their causes and the runs after each fix. |
+
+At tag `archive/acceptance-2026-11-27-packed-17.1.0`, read the same way:
+
+| Path at the tag | Files | Tree or blob id | What it is |
+| --- | --- | --- | --- |
+| `docs/acceptance/2026-11-27-packed-17.1.0` | 84 | `655cd1f2e407300a216431532c25347bb7155f70` | The packed 17.1.0 installed with swarm-verify 3.2.0 from the registry, before the merge: one live run of each task on the automatic path, with signed verifications, replays, independent judgments, the gates and the release smoke. |
+
 ## Still in the active tree
 
 - [DECISIONS.md](DECISIONS.md): dated decisions, append-only. Older entries name archived paths.

@@ -182,13 +182,13 @@ describe("the prompt over a long run", () => {
 });
 
 describe("an unchanged command and output", () => {
-  it("stops the cycle as no progress on its third turn running, after saying so on the second", async () => {
+  it("stops the cycle as no progress on its fourth turn running, after saying so on the second", async () => {
     const model = scripted([bash("git status")], { counts: "unreported" });
     const ran = await runLoop({ ...(await loopOptions(model, 65_536)), maxSteps: 10 });
     expect(ran).toMatchObject({
       stop: "no-progress",
-      reason: "the same command printed the same result 3 turns running",
-      steps: 3,
+      reason: "the same command printed the same result 4 turns running",
+      steps: 4,
     });
     expect(model.seen[1]?.at(-1)?.content).not.toContain("command you ran last turn");
     expect(model.seen[2]?.at(-1)?.content).toContain("This is the command you ran last turn");

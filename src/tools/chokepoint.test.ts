@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import { type ConfirmationPrompt, createChokepoint } from "./chokepoint.ts";
+import { hostExecutor } from "./executor.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "./policy-guard.ts";
 
 let root = "";
@@ -29,7 +30,14 @@ function chokepoint(approval: "ask" | "auto", confirm: ConfirmationPrompt = null
     deniedRoots: [join(root, "sessions")],
     childHomeDir: join(root, "child-home"),
   });
-  return createChokepoint({ guard, evidence, approval, confirm, timeoutMs: 30_000 });
+  return createChokepoint({
+    guard,
+    executor: hostExecutor(guard.workspaceRoot, guard.childEnvironment.variables),
+    evidence,
+    approval,
+    confirm,
+    timeoutMs: 30_000,
+  });
 }
 
 describe("the chokepoint", () => {

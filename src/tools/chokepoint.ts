@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { runProcessGroup } from "swarm-verify/execution";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { type Executor, isDependencyInstall } from "./executor.ts";
 import { applyFileEdit, editText, type FileEdit } from "./file-edit.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { refusedAction } from "./refused-actions.ts";
@@ -41,13 +41,15 @@ export interface Chokepoint {
    * ledger, environment and process groups as the model's, recorded as the harness's. The model
    * never writes it, so neither the allowlist nor an approval applies.
    */
-  check(command: string, purpose: string): Promise<ShellOutcome>;
+  check(command: string, purpose: string, network?: "dependencies"): Promise<ShellOutcome>;
   /** One file edit block, under the same path policy and on the same ledger as a command. */
   edit(edit: FileEdit): Promise<ShellOutcome>;
 }
 
 export interface ChokepointOptions {
   readonly guard: PolicyGuard;
+  /** Where every command runs. */
+  readonly executor: Executor;
   readonly evidence: EvidenceRecorder;
   readonly approval: ApprovalMode;
   readonly confirm: ConfirmationPrompt;
@@ -59,6 +61,9 @@ const maxOutputBytes = 4 * 1024 * 1024;
 
 const onlyComments = (command: string) =>
   command.split("\n").every((line) => line.trim() === "" || line.trim().startsWith("#"));
+
+const fetchedNote =
+  "the network was open for this install only, and install scripts did not run; run them with the network closed where a package needs them (npm rebuild)";
 
 const nothingToRun =
   "the command holds only comments, so there is nothing to run. Reply with a command that acts.";
@@ -125,10 +130,11 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
       });
     },
 
-    async check(command: string, purpose: string): Promise<ShellOutcome> {
+    // With `network`, the harness is fetching dependencies: the network open, install scripts off.
+    async check(command, purpose, network): Promise<ShellOutcome> {
       const { settle } = await open("harness-check", { command, purpose }, "harness");
       if (options.signal?.aborted) return settle("failed", "cancelled before execution", null);
-      return execute(command, settle);
+      return execute(command, settle, network);
     },
 
     async run(command: string): Promise<ShellOutcome> {
@@ -170,23 +176,35 @@ export function createChokepoint(options: ChokepointOptions): Chokepoint {
           );
         }
       }
-      return execute(command, settle);
+      // In a container the network opens for one package manager's install and nothing else.
+      const fetching = options.executor.mode === "isolated" && isDependencyInstall(command);
+      return execute(command, settle, fetching ? "dependencies" : undefined);
     },
   };
 
-  async function execute(command: string, settle: Settle): Promise<ShellOutcome> {
-    const ran = await runProcessGroup("/bin/sh", ["-c", command], {
-      cwd: options.guard.workspaceRoot,
-      env: options.guard.childEnvironment.variables,
+  async function execute(
+    command: string,
+    settle: Settle,
+    network?: "dependencies",
+  ): Promise<ShellOutcome> {
+    const ran = await options.executor.run(command, {
       timeoutMs: options.timeoutMs,
       maxOutputBytes,
       signal: options.signal,
+      ...(network === undefined ? {} : { network }),
     });
-    const output = `${ran.stdout}${ran.stderr}${ran.timedOut ? "\n[timed out]" : ""}`;
+    const notes = [
+      ...(ran.timedOut ? ["timed out"] : []),
+      ...(ran.exhausted ? [ran.exhausted] : []),
+      ...(network === undefined ? [] : [fetchedNote]),
+    ];
+    const output = `${ran.stdout}${ran.stderr}${notes.map((note) => `\n[${note}]`).join("")}`;
     if (ran.startFailure !== null) return settle("failed", ran.startFailure, null);
     return settle("allowed", output, ran.exitCode, {
       timedOut: ran.timedOut,
       truncated: ran.truncated,
+      network: network === undefined ? "closed" : "open for dependencies",
+      execution: options.executor.mode,
     });
   }
 }

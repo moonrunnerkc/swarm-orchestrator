@@ -21,8 +21,10 @@ swarm run "<task>" --model gemma4:31b
 swarm run "<task>" --endpoint http://127.0.0.1:8000/v1 --model <name the server serves>
 ```
 
-Isolated verification needs a docker daemon. If you have none, add `--host`: checks then run on
-your machine and the report says `host, not isolated`.
+The model's commands and the checks run in containers, so a run needs a docker daemon. If you
+have none the run stops before it executes anything. `--host` runs both on your machine, where
+only a filter on command text stands between the model and your files, and the report says
+`host, not isolated`.
 
 ## 2. Decide what "done" means
 
@@ -34,9 +36,17 @@ write. You choose where that check comes from:
 | A test that fails today | `--accept <file or directory>` | It runs before any edit and must fail there. The model sees its output, never its source. |
 | A command that fails today | `--accept-cmd "<command>"` | Same, for a command. |
 | A test that must keep passing | `--accept keep=<file>` | It must pass before and after. |
-| Nothing yet | `--write-checks <dir outside the repo>` | A separate model call drafts a check from the task's wording. The run stops so you can read and edit it, then pass it with `--accept <dir>`. |
+| Nothing yet | `--write-checks <dir outside the repo>` | A separate model call drafts a check from the task's wording and the repository as it is. The run stops so you can read and edit it, then pass it with `--accept <dir>`. |
 | Nothing, at a terminal | (no flag) | The drafted check is shown for you to approve, edit or reject. |
 | Nothing, and no wish to read it | `--accept-authored` | The drafted check is used as written. The report labels it `independently-generated`, not yours. |
+
+The drafting call never sees a change. It is shown the task, one of your tests, the source files
+that test imports and the application's entry with what they import (small files whole, larger
+ones as declarations), the module system and the start command. Its draft is run at the base
+and must fail there for want of the behavior the task asks for: a draft that does not parse,
+imports what does not exist, tests a function it defines itself, or whose control case fails,
+is sent back with what its run printed, up to three times. A draft is taken whole or not at
+all; no failing case is left out to make the rest usable.
 
 ## 3. Run it
 
@@ -70,6 +80,50 @@ To have the verifier rerun the final verification from the record and compare:
 npm install -g swarm-verify
 swarm-verify replay <directory holding the printed attestation> --key <the printed key> --workspace .
 ```
+
+## Teach it your conventions
+
+```sh
+swarm init --learn src lib/util.ts   # files or directories; none means the repository's sources
+swarm init --approve <proposal>      # add --global for a default across repositories
+swarm init --set exports=named       # correct one rule; --forget exports removes it
+swarm doctor --conventions           # the global profile, this project's, and what applies
+```
+
+`--learn` counts what the samples do (exports, naming, typing, error handling, documentation of
+exports, where tests live) and writes a proposal under `~/.swarm/conventions/proposals`. Nothing
+is in effect until you approve it, and only you can: the model's commands cannot reach that
+directory. One sample makes a tentative proposal; mixed samples make none. A rule your lint
+configuration already decides is left to it, and formatting is left to your formatter. A sample
+that logs a credential or swallows an error is reported with its safe form and never learned.
+
+An approved rule becomes a requirement of every run in that repository, checked on the files the
+run adds or changes, so code that was already there is not held against it. A project's profile
+overrides the global one rule by rule, and the report says where they disagree. Where the task
+itself asks for something else ("with a default export"), the task decides for that run and the
+report says the rule was not checked. Guidance you add with `--set guidance="..."` is shown to
+the model and never checked.
+
+## Security obligations
+
+For a JavaScript or TypeScript project with an HTTP API, Swarm reads the task for three things:
+a resource that belongs to one user, a token that is redeemed once, and an operation that must
+not be applied twice. Each one the task touches becomes a required requirement with source
+`security`; the report lists all three with whether each applied and why. Where a task changes a
+request handler and its wording does not say whose data it serves, the run stops and asks you to
+pass `--security ownership` or `--no-security ownership`.
+
+The check for a security requirement is made of real requests. The verifier starts your server
+in a container with no network and sends the requests from a second container, at the base and
+on the change. It needs a binding: how the server starts, and which request as which user. Write
+one and pass `--security-check <file>` ([format](reference.md#security-binding)), or let a
+separate model call draft it from the repository. A draft is held to credentials the repository
+itself holds and is tried at the base with real requests before anything is built; what those
+show is wrong with it is sent back to be mended. That is validation, not review: at a terminal
+you approve, edit or reject the draft, `--write-checks` writes it out and stops, and only
+`--accept-authored` uses it unread, which the report says. The three checks are what this
+version makes for these three obligations; they are not a security review of the change. [examples/invoice-api](../examples/invoice-api/README.md) is a
+complete example.
 
 ## Tasks with several parts
 

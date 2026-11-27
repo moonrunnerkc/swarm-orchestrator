@@ -78,7 +78,7 @@ describe("the harness runs the checks, not the model", () => {
       "```edit half.mjs\n<<<<<<< SEARCH\nnot in the file\n=======\nx\n>>>>>>> REPLACE\n```";
     const ran = await (await fixture()).run(scripted([wrong, missed]), { maxSteps: 20 });
     expect(ran.stop).toBe("no-progress");
-    expect(ran.report.reason).toContain("the same command printed the same result 3 turns running");
+    expect(ran.report.reason).toContain("the same command printed the same result 4 turns running");
   });
 
   it("names a failing line, not a passing case whose title carries the words", () => {

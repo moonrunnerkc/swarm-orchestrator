@@ -1,21 +1,24 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { snapshotWorkingTree } from "swarm-verify";
+import { gitText } from "swarm-verify/execution";
+import { LedgerWriteFailedError } from "../evidence/ledger.ts";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import { createChokepoint } from "../tools/chokepoint.ts";
 import { type Progress, runAttempts } from "./attempts.ts";
 import { type CheckGate, checkGate } from "./check-gate.ts";
+import { prepareContained } from "./dependencies.ts";
 import { finalize } from "./finalize.ts";
-import { gitText } from "./git.ts";
 import { assembleReport, recordStopped, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
+import { deriveForRun } from "./run-derived.ts";
 import { runEnvironment } from "./run-environment.ts";
 import type { RunOptions, RunReport } from "./run-options.ts";
 import { stablePrefix } from "./stable-prefix.ts";
 import { suppliedPaths } from "./supplied.ts";
 import { behaviorChangeNote, createVerifier, swarmHome } from "./verification.ts";
 import { versionConstraintsOf, workspaceDependencies } from "./version-constraints.ts";
-import { deliver, openWorkspace } from "./workspace.ts";
+import { deliver, emptySha256, openWorkspace } from "./workspace.ts";
 
 export type { RunOptions, RunReport } from "./run-options.ts";
 
@@ -42,11 +45,12 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     join(dirname(repository), `.${basename(repository)}.swarm-${evidence.sessionId}`),
     final,
     suppliedPaths(options.supplied ?? []),
+    options.isolation === "host",
   );
   try {
     const workspace = managed.directory;
     const base = managed.start.base;
-    const { guard, deadline, python, execution } = await runEnvironment({
+    const { guard, deadline, python, execution, executor, unavailable } = await runEnvironment({
       options,
       workspace,
       repository,
@@ -54,12 +58,13 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       childHome: join(evidence.directory, "home"),
       started,
     });
+    const derived = await deriveForRun({ home, repository, workspace, options, evidence });
     // After the Python environment, so the probe and the layout see the .venv the model will.
     const prefix = await stablePrefix({
       workspace,
-      env: guard.childEnvironment.variables,
+      executor,
       task: options.task,
-      checks: options.isolation,
+      conventions: derived.block,
       signal: options.signal,
     });
     const { instructions, rendered, digests, promptSha256 } = prefix;
@@ -79,6 +84,8 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         instructions: digests,
         instructionNotes: instructions.notes,
         behaviorChange: options.behaviorChange ?? "none",
+        conventions: derived.profile ?? null,
+        security: derived.applicability.map((one) => ({ ...one })),
       },
     });
 
@@ -107,13 +114,16 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
         version: options.version,
         promptSha256,
         instructions: digests,
+        ...(derived.profile === undefined ? {} : { profile: derived.profile }),
       },
       model: () => progress.model.model,
       trusted: () => gate?.trusted ?? [],
+      behavior: derived.behavior,
       signal: options.signal,
     });
     const chokepoint = createChokepoint({
       guard,
+      executor,
       evidence,
       approval: options.approval,
       confirm: options.confirm,
@@ -124,69 +134,94 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     let stop: RunReport["stop"] = "interrupted";
     let reason: string | null = null;
     let gate: CheckGate | null = null;
+    // Why nothing may run: no container could be made, or the base's dependencies did not install.
+    let early = unavailable ?? derived.blocked;
+    const setupNotes: string[] = [];
     try {
-      // The user's checks, or the author's for R1 written apart from the change, before any edit.
-      gate = await checkGate({
-        model: options.model,
-        chokepoint,
-        evidence,
-        workspace,
-        task: options.task,
-        record: progress.record,
-        home,
-        turnTokens: options.turnTokens,
-        scratch: join(evidence.directory, "checks"),
-        supplied: options.supplied ?? [],
-        mode: options.checksMode ?? { kind: "accept-authored" },
-        behaviorChangeAuthorized: options.behaviorChange === "authorized",
-        signal: options.signal,
-      });
-      progress.record = gate.record;
-      if (gate.blocked !== null) [stop, reason] = ["blocked", gate.blocked];
-      else
-        ({ stop, reason } = await runAttempts({
-          shared: {
-            task: options.task,
-            chokepoint,
-            evidence,
-            environment: prefix.environment.block,
-            instructions: rendered,
-            status: () => gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
-            // The patch the verifier would judge, new files included, kept in the session.
-            diff: async () =>
-              readFile(
-                (await snapshotWorkingTree(workspace, base, join(evidence.directory, "turn.patch")))
-                  .path,
-                "utf8",
-              ),
-            verify: verifier.tree,
-            checks: gate.checks,
-            turnTokens: options.turnTokens,
-            turnTime: () => ({
-              leftMs: deadline - Date.now() - verifier.reserveMs(),
-              wallMs: options.maxWallMs ?? Number.POSITIVE_INFINITY,
-            }),
-            contextTokens: options.contextTokens,
-            outputs: { directory: join(workspace, ".swarm", "outputs"), root: workspace },
-            signal: options.signal,
-            log: options.log,
-          },
-          escalation: options.escalation ?? null,
-          review: options.review === true,
-          maxSteps: options.maxSteps,
-          // One allowance for the run: the check author's calls came out of it first.
-          maxTokens:
-            options.maxTokens -
-            gate.authored.reduce((sum, one) => sum + one.inputTokens + one.outputTokens, 0),
-          verifier,
+      // In a container the base's dependencies are installed there, before anything else runs.
+      const prepared =
+        early === null && executor.mode === "isolated"
+          ? await prepareContained(chokepoint, workspace)
+          : null;
+      early ??= prepared?.blocked ?? null;
+      setupNotes.push(...(prepared?.notes ?? []));
+      if (early !== null) [stop, reason] = ["blocked", early];
+      else {
+        // The user's checks, or the author's for R1 written apart from the change, before any edit.
+        gate = await checkGate({
+          model: options.model,
+          chokepoint,
           evidence,
-          base,
-          reviewDirectory: join(evidence.directory, "review"),
-          progress,
-        }));
+          workspace,
+          task: options.task,
+          record: progress.record,
+          home,
+          turnTokens: options.turnTokens,
+          // Inside the commands' HOME: a test runner writes its report there from the container too.
+          scratch: join(evidence.directory, "home", "checks"),
+          supplied: options.supplied ?? [],
+          mode: options.checksMode ?? { kind: "accept-authored" },
+          behaviorChangeAuthorized: options.behaviorChange === "authorized",
+          derived: derived.turnChecks(base),
+          signal: options.signal,
+        });
+        // Derived requirements join the user's here, once, and are fixed with them.
+        progress.record = await derived.fix(gate.record, { base, execution });
+        const blocks = [gate.blocked, derived.held()].filter((one) => one !== null);
+        if (blocks.length > 0) [stop, reason] = ["blocked", blocks.join("; also, ")];
+        else
+          ({ stop, reason } = await runAttempts({
+            shared: {
+              task: options.task,
+              chokepoint,
+              evidence,
+              environment: prefix.environment.block,
+              instructions: rendered,
+              status: () =>
+                gitText(workspace, ["status", "--short", "--", ".", ":(exclude).swarm"]),
+              // The patch the verifier would judge, new files included, kept in the session.
+              diff: async () =>
+                readFile(
+                  (
+                    await snapshotWorkingTree(
+                      workspace,
+                      base,
+                      join(evidence.directory, "turn.patch"),
+                    )
+                  ).path,
+                  "utf8",
+                ),
+              verify: verifier.tree,
+              checks: gate.checks,
+              turnTokens: options.turnTokens,
+              turnTime: () => ({
+                leftMs: deadline - Date.now() - verifier.reserveMs(),
+                wallMs: options.maxWallMs ?? Number.POSITIVE_INFINITY,
+              }),
+              contextTokens: options.contextTokens,
+              outputs: { directory: join(workspace, ".swarm", "outputs"), root: workspace },
+              signal: options.signal,
+              log: options.log,
+            },
+            escalation: options.escalation ?? null,
+            review: options.review === true,
+            maxSteps: options.maxSteps,
+            // One allowance for the run: the check author's calls came out of it first.
+            maxTokens:
+              options.maxTokens -
+              derived.tokens() -
+              gate.authored.reduce((sum, one) => sum + one.inputTokens + one.outputTokens, 0),
+            verifier,
+            evidence,
+            base,
+            reviewDirectory: join(evidence.directory, "review"),
+            progress,
+          }));
+      }
     } catch (error) {
+      // A run whose record could not be written has no evidence to finish on: it ends here.
+      if (error instanceof LedgerWriteFailedError) throw error;
       stop = options.signal?.aborted ? "cancelled" : "interrupted";
-      // A cancelled run says why it was cancelled, not which operation the abort interrupted.
       const cause = options.signal?.aborted ? options.signal.reason : error;
       reason = cause instanceof Error ? cause.message : String(cause);
     }
@@ -198,7 +233,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       directory: final,
       record: progress.record,
       held: verifier.held(),
-      blocked: gate?.blocked ?? null,
+      blocked: gate?.blocked ?? derived.held() ?? early,
       cannotVerify:
         stop === "cancelled"
           ? "the run was cancelled"
@@ -226,6 +261,8 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       digests,
       notes: [
         ...instructions.notes,
+        ...setupNotes,
+        ...derived.notes(),
         ...(gate?.notes ?? []),
         ...(progress.escalationNote === undefined
           ? []
@@ -234,11 +271,12 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       ],
       start: managed.start,
       python,
+      commands: executor.statement,
       delivery,
       startedAt: started,
       authored: gate?.authored ?? [],
       user: gate?.user ?? [],
-      blocked: gate?.blocked ?? null,
+      blocked: gate?.blocked ?? derived.held() ?? early,
     });
     const paths = await writeReport(final, report);
     await recordStopped(evidence, {
@@ -259,6 +297,3 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
     await managed.remove();
   }
 }
-
-/** sha256 of no bytes: a patch that changes nothing. */
-const emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";

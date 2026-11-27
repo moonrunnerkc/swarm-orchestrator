@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { runProcessGroup } from "swarm-verify/execution";
+import type { Executor } from "../tools/executor.ts";
 
 /**
  * What the probe asks the machine, as `key=value` lines. It runs the way the model's commands
@@ -62,16 +62,14 @@ export function parseProbe(output: string): Record<string, string> {
   return facts;
 }
 
-/** The probe, run once at session start in the workspace, with the model's environment. */
+/** The probe, run once at session start where the model's commands run, as they run. */
 export async function probePlatform(input: {
   readonly workspace: string;
-  readonly env: Record<string, string>;
+  readonly executor: Executor;
   readonly signal?: AbortSignal | undefined;
 }): Promise<PlatformProbe & { readonly output: string }> {
-  const ran = await runProcessGroup("/bin/sh", ["-c", probeScript], {
-    cwd: input.workspace,
-    env: input.env,
-    timeoutMs: 30_000,
+  const ran = await input.executor.run(probeScript, {
+    timeoutMs: 60_000,
     maxOutputBytes: 64 * 1024,
     signal: input.signal,
   });

@@ -4,33 +4,32 @@ import { parse as parseToml, TomlError } from "smol-toml";
 import { z } from "zod";
 
 /** swarm.toml is shared with the verifier; this reads only the agent's [agent] table. */
-export const swarmTomlFileName = "swarm.toml";
+const swarmTomlFileName = "swarm.toml";
 
 const positive = z.number().int().positive();
 
 const agentSchema = z.strictObject({
-  endpoint: z.url({ protocol: /^https?$/ }).optional(),
   model: z.string().min(1).optional(),
-  // The name of the variable holding the key, never the key: this file is committed.
-  api_key_env: z
-    .string()
-    .regex(/^[A-Z_][A-Z0-9_]*$/)
-    .optional(),
   max_steps: positive.optional(),
   max_tokens: positive.optional(),
   turn_tokens: positive.optional(),
-  approval: z.enum(["ask", "auto"]).optional(),
 });
 
+/**
+ * Settings this file once held and no longer may. It is committed with the repository, so a
+ * cloned project could approve its own commands, or name the server the user's key is sent to.
+ */
+const userOnly: Readonly<Record<string, string>> = {
+  approval: "pass --approve auto on the command line",
+  endpoint: "pass --endpoint <url> or set SWARM_ENDPOINT",
+  api_key_env: "set the key as SWARM_API_KEY",
+};
+
 export interface AgentConfig {
-  readonly endpoint: string | null;
   readonly model: string | null;
-  readonly apiKeyEnv: string | null;
   readonly maxSteps: number | null;
   readonly maxTokens: number | null;
   readonly turnTokens: number | null;
-  /** Whether off-allowlist commands are approved by the run (auto) or by a person (ask). */
-  readonly approval: "ask" | "auto" | null;
 }
 
 export class MalformedAgentConfigError extends Error {
@@ -50,6 +49,12 @@ export function parseAgentConfig(text: string, source: string): AgentConfig {
     throw new MalformedAgentConfigError(source, `its TOML syntax is broken${where}: ${message}`);
   }
   const table = (value as { agent?: unknown }).agent ?? {};
+  const moved = Object.keys(userOnly).find((key) => key in (table as object));
+  if (moved !== undefined)
+    throw new MalformedAgentConfigError(
+      source,
+      `agent.${moved} is no longer read from this file, which the repository controls; remove it and ${userOnly[moved]}`,
+    );
   const parsed = agentSchema.safeParse(table);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -58,13 +63,10 @@ export function parseAgentConfig(text: string, source: string): AgentConfig {
   }
   const raw = parsed.data;
   return {
-    endpoint: raw.endpoint ?? null,
     model: raw.model ?? null,
-    apiKeyEnv: raw.api_key_env ?? null,
     maxSteps: raw.max_steps ?? null,
     maxTokens: raw.max_tokens ?? null,
     turnTokens: raw.turn_tokens ?? null,
-    approval: raw.approval ?? null,
   };
 }
 

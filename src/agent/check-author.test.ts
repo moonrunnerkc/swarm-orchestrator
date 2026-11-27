@@ -6,8 +6,10 @@ import { requirementSchema } from "swarm-verify";
 import { describe, expect, it } from "vitest";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import { createChokepoint } from "../tools/chokepoint.ts";
+import { hostExecutor } from "../tools/executor.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
-import { authorChecks, ownUndefinedName, plainOutput } from "./check-author.ts";
+import { ownUndefinedName, plainOutput } from "./authored-validation.ts";
+import { authorChecks } from "./check-author.ts";
 import { testConventions } from "./test-conventions.ts";
 import { authorTest, halfTest, scripted } from "./test-doubles.ts";
 
@@ -39,6 +41,7 @@ async function base() {
   });
   const chokepoint = createChokepoint({
     guard,
+    executor: hostExecutor(guard.workspaceRoot, guard.childEnvironment.variables),
     evidence,
     approval: "auto",
     confirm: null,

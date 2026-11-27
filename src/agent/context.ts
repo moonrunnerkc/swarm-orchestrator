@@ -1,4 +1,4 @@
-import { type Exchange, succeeded } from "./exchange.ts";
+import { type Exchange, firstLine, succeeded } from "./exchange.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
 
 /** The share of the context window a prompt may fill before old turns are compacted. */
@@ -29,7 +29,6 @@ export function unresolvedOf(record: RequirementRecord, findings: string | null)
     .filter((line) => /^R\d+ /.test(line) && !/^R\d+ satisfied\b/.test(line));
 }
 
-const firstLine = (text: string) => text.split("\n")[0] ?? "";
 const clip = (text: string, bytes: number) =>
   Buffer.byteLength(text) <= bytes ? text : `${Buffer.from(text).subarray(0, bytes).toString()}...`;
 

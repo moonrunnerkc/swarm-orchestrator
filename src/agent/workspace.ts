@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
-import { access, appendFile, rm } from "node:fs/promises";
+import { appendFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { snapshotWorkingTree } from "swarm-verify";
-import { gitText } from "./git.ts";
+import { gitText } from "swarm-verify/execution";
+import { exists } from "./test-conventions.ts";
 
 /** The user's tree as the run found it: HEAD plus every edit, staged, unstaged or untracked. */
 export interface StartingState {
@@ -53,6 +54,8 @@ export async function openWorkspace(
   directory: string,
   scratch: string,
   withheld: readonly string[] = [],
+  // A container installs its own: the host's tree is built for the host.
+  copyInstalled = true,
 ): Promise<ManagedWorkspace> {
   const head = await gitText(repository, ["rev-parse", "--verify", "HEAD^{commit}"]);
   const edits = await snapshotWorkingTree(repository, head, join(scratch, "starting-state.patch"));
@@ -111,14 +114,9 @@ export async function openWorkspace(
       base = await gitText(directory, ["rev-parse", "HEAD"]);
     }
   }
-  for (const name of installed) {
+  for (const name of copyInstalled ? installed : []) {
     const source = join(repository, name);
-    if (
-      await access(source).then(
-        () => true,
-        () => false,
-      )
-    ) {
+    if (await exists(source)) {
       await run(
         "cp",
         process.platform === "darwin"
@@ -136,7 +134,7 @@ export async function openWorkspace(
 }
 
 /** sha256 of no bytes: the patch of a working tree with no edits. */
-const emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+export const emptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 export type Delivery =
   | { readonly applied: true }

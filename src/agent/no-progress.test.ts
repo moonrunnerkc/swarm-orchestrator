@@ -55,7 +55,7 @@ describe("session 20261102T210229-519ea0: one passing vitest file, run 36 times"
     expect(new Set(runs.map((run) => run.output)).size).toBe(36);
   });
 
-  it("stops as no progress at the second result identical to the first", async () => {
+  it("stops as no progress at the third result identical to the first", async () => {
     let at = 0;
     const replay: Chokepoint = {
       ...noEdits,
@@ -70,8 +70,8 @@ describe("session 20261102T210229-519ea0: one passing vitest file, run 36 times"
     const ran = await runLoop(await replayOptions(model, replay, "Rerun the walker's tests."));
     expect(ran).toMatchObject({
       stop: "no-progress",
-      reason: "the same command printed the same result 3 turns running",
-      steps: 3,
+      reason: "the same command printed the same result 4 turns running",
+      steps: 4,
     });
     expect(model.seen[2]?.at(-1)?.content).toContain("This is the command you ran last turn");
   });
@@ -129,5 +129,34 @@ describe("session 20261102T211404-06df43: one requirements block, resent without
       maxSteps: 4,
     });
     expect(ran).toMatchObject({ stop: "step-budget", steps: 4 });
+  });
+});
+
+// The seeded-fault run of 2026-11-26 (session 20261127T050442-af793c): told that another user was
+// served the invoice, gemma4:31b sent `cat src/app.ts` three turns running, each the reply the
+// one before it had been, and the run ended there with the fault in place.
+describe("an exact repeat at temperature 0", () => {
+  it("is followed by one sampled reply, since the same request would only be answered the same", async () => {
+    const asked: boolean[] = [];
+    const base = scripted([]);
+    const model: LoopOptions["model"] = {
+      ...base,
+      async complete(messages, options) {
+        asked.push(options.sampled === true);
+        // Deterministic until sampled: the same read, then something else.
+        const content = options.sampled === true ? bash("ls src") : bash("cat src/app.ts");
+        return { ...(await base.complete(messages, options)), content };
+      },
+    };
+    const outcome = { decision: "allowed" as const, output: "the file\n", exitCode: 0, record: "" };
+    const chokepoint: Chokepoint = {
+      run: async () => outcome,
+      edit: noEdits.edit,
+      check: noEdits.check,
+    };
+    const options = await replayOptions(model, chokepoint, "Restrict the route to its owner.");
+    const ran = await runLoop({ ...options, maxSteps: 4 });
+    expect(asked.slice(0, 3)).toEqual([false, false, true]);
+    expect(ran.stop).not.toBe("no-progress");
   });
 });

@@ -110,7 +110,8 @@ describe("swarm run against the stub endpoint", () => {
       const ran = await run.done;
       await stub.close();
       expect(ran.stdout).toContain(`\nstop         cancelled: stopped by ${signal}\n`);
-      expect(ran.code).toBe(4);
+      // Cancelled is its own exit code, the one the verifier's commands use for it.
+      expect(ran.code).toBe(3);
       expect((await readdir(root)).filter((name) => name.includes(".swarm-"))).toEqual([]);
     }
   });

@@ -1,9 +1,10 @@
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
+import { securityClasses } from "swarm-verify";
+import { gitText } from "swarm-verify/execution";
 import type { Escalate } from "./agent/attempts.ts";
 import type { ChecksMode } from "./agent/check-gate.ts";
-import { gitText } from "./agent/git.ts";
 import { summaryLines } from "./agent/report.ts";
 import { obligationsOf } from "./agent/requirement-record.ts";
 import { type RunReport, runAgent } from "./agent/run.ts";
@@ -55,7 +56,7 @@ function terminalPrompt(): ConfirmationPrompt {
  * `run <task>`: discover or take the model, make the change in the workspace, check each
  * requirement with the verifier, and report what is complete and what is not.
  */
-export async function run(args: readonly string[]): Promise<number> {
+export async function run(args: readonly string[], signal?: AbortSignal): Promise<number> {
   const { values, positionals } = parseArgs({
     args: [...args],
     allowPositionals: true,
@@ -82,6 +83,9 @@ export async function run(args: readonly string[]): Promise<number> {
       "accept-authored": { type: "boolean" },
       "review-checks": { type: "boolean" },
       "write-checks": { type: "string" },
+      security: { type: "string", multiple: true },
+      "no-security": { type: "string", multiple: true },
+      "security-check": { type: "string" },
     },
   });
   const task = positionals.join(" ").trim();
@@ -96,17 +100,11 @@ export async function run(args: readonly string[]): Promise<number> {
   const workspace = resolve(values.workspace ?? process.cwd());
   // swarm.toml is optional: without one, the model is discovered and the defaults below apply.
   const agent = await readAgentConfig(workspace);
-  const approval = values.approve ?? agent?.approval ?? "ask";
+  const approval = values.approve ?? "ask";
   if (approval !== "ask" && approval !== "auto") throw new UsageError("--approve is ask or auto");
-  const keyName = agent?.apiKeyEnv ?? "SWARM_API_KEY";
-  const controller = new AbortController();
-  // The first of these cancels and finalizes the run; a second one ends the process as usual.
-  for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-    process.once(name, () => controller.abort(new Error(`stopped by ${name}`)));
-  }
   const modelName = values.model ?? agent?.model ?? "auto";
   // The one OpenAI-compatible endpoint: named, in swarm.toml, or this machine's SWARM_ENDPOINT.
-  const endpoint = values.endpoint ?? agent?.endpoint ?? process.env.SWARM_ENDPOINT ?? null;
+  const endpoint = values.endpoint ?? process.env.SWARM_ENDPOINT ?? null;
   const named = count(values.context, "--context");
   // A discovered Ollama model gets the largest context it fits; a named model or server, whose
   // capacity is not estimated here, the smaller one.
@@ -136,7 +134,7 @@ export async function run(args: readonly string[]): Promise<number> {
       resolveModel({
         model: modelName,
         endpoint,
-        apiKey: process.env[keyName] ?? null,
+        apiKey: process.env.SWARM_API_KEY ?? null,
         contextTokens: context,
         home: swarmHome(),
         record,
@@ -166,6 +164,11 @@ export async function run(args: readonly string[]): Promise<number> {
     obligations: set.obligations,
     supplied,
     checksMode,
+    security: {
+      apply: settled(values.security),
+      exclude: settled(values["no-security"]),
+      file: values["security-check"] === undefined ? null : resolve(values["security-check"]),
+    },
     cost: model.cost,
     maxSteps,
     // Unset, the token budget is what the steps could use at this context, so steps and time end
@@ -180,7 +183,8 @@ export async function run(args: readonly string[]): Promise<number> {
     approval,
     confirm: terminalPrompt(),
     version: buildVersion,
-    signal: controller.signal,
+    // The dispatcher cancels on the first signal, and the run finalizes; a second ends the process.
+    signal,
     log: (line) => process.stderr.write(`${line}\n`),
   });
   // A finished run joins its model's record here. Selection reads what the model completed or
@@ -192,6 +196,16 @@ export async function run(args: readonly string[]): Promise<number> {
   if (ran.report.attestation !== null) write(`attestation  ${ran.report.attestation}`);
   if (ran.report.attestationKey !== null) write(`key          ${ran.report.attestationKey}`);
   return exitCodeOf(ran.report.state, ran.report.requirements);
+}
+
+/** The security obligations named with --security or --no-security, each one this version checks. */
+function settled(given: readonly string[] | undefined): string[] {
+  const unknown = (given ?? []).find((one) => !securityClasses.some((known) => known === one));
+  if (unknown !== undefined)
+    throw new UsageError(
+      `${unknown} is not a security obligation; they are ${securityClasses.join(", ")}`,
+    );
+  return [...(given ?? [])];
 }
 
 /** The user's checks, read before the run seeds its workspace; a refused one is a usage error. */

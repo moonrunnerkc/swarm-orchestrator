@@ -46,6 +46,15 @@ export interface RunOptions {
   readonly supplied?: readonly Supplied[];
   /** What happens to the author's checks; used as written where not said. */
   readonly checksMode?: ChecksMode;
+  /**
+   * The security obligations the user settled by hand (`--security`, `--no-security`), and the
+   * binding file they stand behind (`--security-check`).
+   */
+  readonly security?: {
+    readonly apply: readonly string[];
+    readonly exclude: readonly string[];
+    readonly file: string | null;
+  };
   readonly confirm: ConfirmationPrompt;
   readonly version: string;
   readonly signal?: AbortSignal | undefined;

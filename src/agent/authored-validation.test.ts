@@ -83,9 +83,10 @@ describe("an authored control case", () => {
 });
 
 describe("an authored case that passes when run alone", () => {
+  // Such a case was once left out by name and the rest kept; a check is now taken whole or sent back.
   // pubprep (2026-11-05, rc.13 and rc.17): it read orchestrate's first mocked call, made by an
   // earlier case, and failed on every tree.
-  it("is left out by name, since what fails it is another case's leftovers", async () => {
+  it("is sent back by name, since what fails it is another case's leftovers", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "alone-"));
     const base = [
       failing("parses the list", "Error: Unknown flag: --reviewers."),
@@ -105,7 +106,10 @@ describe("an authored case that passes when run alone", () => {
       edit: async () => outcome("", 0),
       check: async (command) => {
         if (command.includes("'passes --reviewers to orchestrate$'"))
-          return outcome(" ✓ passes\n", 0);
+          return outcome(
+            " ✓ test/cli.swarm-r1.test.ts (2 tests | 1 skipped)\n      Tests  1 passed | 1 skipped (2)\n",
+            0,
+          );
         if (command.includes("(?!"))
           return outcome(failing("parses the list", "Error: Unknown flag"), 1);
         return outcome(
@@ -115,8 +119,10 @@ describe("an authored case that passes when run alone", () => {
       },
     };
     const ran = await runAtBase(chokepoint, workspace, test, task, "feature");
-    expect(ran.reasons).toEqual([]);
-    expect(ran.excluded).toEqual(["passes --reviewers to orchestrate"]);
+    expect(ran.reasons).toHaveLength(1);
+    expect(ran.reasons[0]).toMatch(
+      /^its case "passes --reviewers to orchestrate" fails at the base with AssertionError.*mend the case and keep what it asserts$/,
+    );
   });
 });
 

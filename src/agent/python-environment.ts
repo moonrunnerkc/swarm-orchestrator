@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { access, appendFile, constants, lstat, readFile, realpath, rm } from "node:fs/promises";
-import { delimiter, join, sep } from "node:path";
-import { runProcessGroup } from "swarm-verify/execution";
+import { appendFile, readFile, realpath, rm } from "node:fs/promises";
+import { join, sep } from "node:path";
+import { MalformedSwarmTomlError, readSwarmToml } from "swarm-verify";
+import { runProcessGroup, trustedExecutable } from "swarm-verify/execution";
 import { z } from "zod";
-import { declaredSetup, UnreadableSetupError } from "../config/declared-setup.ts";
+import { exists } from "./test-conventions.ts";
 
 /** The worktree's own Python environment, as the run built it or why it could not. */
 export interface PythonEnvironment {
@@ -60,10 +61,7 @@ export async function preparePythonEnvironment(
     lock === null
       ? null
       : { path: "uv.lock" as const, sha256: createHash("sha256").update(lock).digest("hex") };
-  const userVenv = await lstat(join(input.repository, ".venv")).then(
-    () => true,
-    () => false,
-  );
+  const userVenv = await exists(join(input.repository, ".venv"));
   if (lockfile === null && !userVenv) return null;
   const unprepared = (command: string | null, limitation: string): PythonEnvironment => ({
     state: "not-prepared",
@@ -76,16 +74,13 @@ export async function preparePythonEnvironment(
 
   let setup: string | null;
   try {
-    setup = await declaredSetup(input.worktree);
+    setup = (await readSwarmToml(input.worktree))?.setup ?? null;
   } catch (error) {
-    if (!(error instanceof UnreadableSetupError)) throw error;
+    if (!(error instanceof MalformedSwarmTomlError)) throw error;
     return unprepared(null, `${error.message}; the agent's commands ran without a .venv`);
   }
   // Without a uv.lock, the verifier resolves one first; the run's environment is made the same way.
-  const pyproject = await access(join(input.worktree, "pyproject.toml")).then(
-    () => true,
-    () => false,
-  );
+  const pyproject = await exists(join(input.worktree, "pyproject.toml"));
   const command = setup ?? (lockfile !== null ? uvSync : pyproject ? lockThenSync : null);
   if (command === null) {
     return unprepared(
@@ -95,7 +90,7 @@ export async function preparePythonEnvironment(
   }
   let program: { readonly file: string; readonly args: readonly string[] };
   if (setup === null) {
-    const uv = await onPath("uv", input.env.PATH ?? "");
+    const uv = await trustedExecutable("uv", input.env.PATH ?? "");
     if (uv === null) {
       return unprepared(
         command,
@@ -184,21 +179,6 @@ export function describePythonEnvironment(environment: PythonEnvironment): strin
   const from =
     environment.lockfile === null ? "" : ` from uv.lock (sha256 ${environment.lockfile.sha256})`;
   return `built in the worktree by \`${environment.command}\`${from}; interpreter ${environment.interpreter}, Python ${environment.version}`;
-}
-
-async function onPath(name: string, path: string): Promise<string | null> {
-  for (const directory of path.split(delimiter)) {
-    if (directory.length === 0) continue;
-    const candidate = join(directory, name);
-    if (
-      await access(candidate, constants.X_OK).then(
-        () => true,
-        () => false,
-      )
-    )
-      return candidate;
-  }
-  return null;
 }
 
 function parseJson(text: string): unknown {

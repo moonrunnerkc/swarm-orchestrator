@@ -3,12 +3,75 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
-## 17.1.0 - unreleased
+## 17.1.0 - 2026-11-26
 
-Requires swarm-verify 3.1.0 and Node 22.13. 17.0.0 was never published; this section covers
+Requires swarm-verify 3.2.0 and Node 22.13. 17.0.0 was never published; this section covers
 everything since 16.0.4 that the 17.0.0 section below does not.
 
+On the version: against 16.0.4, the last release on npm, this is a breaking release, and 17 is
+the major that says so. It is 17.1.0 and not 17.0.0 because the 17.0.0 section below describes
+a candidate dated 2026-11-05 whose number was not reused for different contents. What breaks:
+a run needs a docker daemon unless `--host` is passed; a run is complete only on a check the
+coding model did not write; `swarm.toml` may no longer set `approval`, `endpoint` or
+`api_key_env`; a cancelled run exits 3. Release candidates were local packs, never published.
+
+### Added
+
+- **Your coding conventions, learned from examples and approved by you.** `swarm init --learn`
+  counts what sample files do and writes a proposal; `--approve` puts it in effect for the
+  repository or, with `--global`, as a default; `--set` and `--forget` correct it, and
+  `swarm doctor --conventions` shows what applies. An approved rule is a requirement of every
+  run, checked on the files the run changes. Nothing is learned without your approval, unsafe
+  patterns in a sample are reported and never learned, and a rule your lint configuration
+  decides is left to it.
+- **Security requirements for web APIs.** For a JavaScript or TypeScript HTTP API, a task that
+  touches a per-user resource, a single-use token or an operation that must not repeat gets a
+  required requirement for it, checked by real requests to your running server from a separate
+  container. The report says which obligations applied and why. `--security`, `--no-security`
+  and `--security-check <file>` settle and bind them.
+
+- **Drafted checks are written against the repository as it is.** The call that drafts a
+  check is shown the files the example test imports and the application's entry, with what they
+  import (small files whole, larger ones as declarations with their fields and data), the
+  module system, and the start command. It was shown only how the repository writes tests: on
+  the invoice example it read a `userId` the data does not have, tested a function it defined
+  itself, and used `require` in an ES module, and no drafted check was ever usable there. A
+  rejected draft now comes back with what its run printed and the files it imports.
+- **A drafted security binding is validated with real requests, and used unread only where you
+  said so.** A draft must use credentials the repository holds and name a request any signed-in
+  user can already make; it is tried at the base, and a server that does not start or a user
+  the server does not know sends it back to be mended. At a terminal you approve, edit or
+  reject it, `--write-checks` writes it out and stops, and `--accept-authored` uses it as
+  drafted, which the report says. Your own binding is tried the same way before the first edit.
+  The report gives the binding's sha256 and what each case did at the base.
+- A second example, `examples/notes-api`, with another layout, an API key header and a route
+  table; and a labeled seeded fault for the invoice example, `examples/invoice-api-checks/seeded`.
+
 ### Changed
+
+- **A drafted check is taken whole or sent back.** A case that fails at the base for a reason
+  of the check's own was left out by name and the rest kept. It is now named to the author to
+  mend, and no assertion is dropped to make a check usable. A test of a placeholder it defines
+  itself is refused by name.
+- **`swarm.toml` no longer sets `approval`, `endpoint` or `api_key_env`.** The file is
+  committed with the repository, so a cloned project could approve its own commands or name the
+  server your key is sent to. Use `--approve`, `--endpoint` or `SWARM_ENDPOINT`; the key is read
+  from `SWARM_API_KEY`. A file that sets one is refused with where it goes now.
+- **A run stopped by a signal exits 3**, as the verifier's commands do; it was 4 or 1. The run
+  still finalizes and reports.
+- `swarm`, `swarm verify`, `swarm init` and `swarm ci` are dispatched by the verifier's own
+  dispatcher, and the git helper, setup reader and Node floor check are the verifier's: one
+  implementation in place of two.
+- **The model's commands run in containers.** Every command of a run, the model's and the
+  checks between turns, runs in a fresh container with no network, bounded resources and only
+  the workspace writable. Dependencies are installed there, fetched with install scripts off. A
+  run that cannot get a container stops before executing anything. `--host` now means the
+  model's commands too, and the report says `host, not isolated`. **This changes the default:**
+  a machine without a docker daemon needs `--host`.
+- **A failing check tells the model what it observed.** Verifier findings carry each failing
+  piece of evidence (the request and the status it got, the file and line that breaks a
+  convention). A change that leaves the findings exactly as they were is answered with a call
+  for a different diagnosis, and three in a row end the run.
 
 - **You supply the check that says the task is done.** `--accept <file or directory>` and
   `--accept-cmd "<command>"` take your own failing test or command; `keep=` marks behavior that
@@ -21,7 +84,8 @@ everything since 16.0.4 that the 17.0.0 section below does not.
   required, each with its own check, each reported separately. The model cannot change, drop or
   downgrade one, and what it adds itself is recorded as an optional suggestion. A run is
   complete only when every required requirement is satisfied.
-- **swarm-verify 3.1.0.** Containers are bounded, isolation that cannot be had runs nothing, and
+- **swarm-verify 3.2.0.** Adds the worker sandbox, behavior checks and convention evidence
+  the entries above rest on. Containers are bounded, isolation that cannot be had runs nothing, and
   replay authenticates first: `swarm-verify replay <dir> --key <key>`, with the key the run
   prints. A verification whose evidence was not published leaves the run incomplete.
 - **Model selection counts only what measures the model.** A run that ended for missing
@@ -38,6 +102,23 @@ everything since 16.0.4 that the 17.0.0 section below does not.
 
 ### Fixed
 
+- **`node --test` checks were never narrowed to one case.** The name filter was written after
+  the file, where node does not read it, so every run meant for one case was the whole file;
+  and a filter that matches nothing exits 0, which read as that case passing alone. The filter
+  goes before the file, and a selected case counts as passing only where the run shows it.
+- **An edit could write under `.git`.** Only `.git/config` was denied, and an edit is written
+  on the host: `.git/commondir` pointed at a directory the commands made hands the next host
+  git their configuration, and with it a program to run. Every path under `.git` is refused,
+  and host git runs with no filesystem monitor program and does not walk into nested
+  repositories.
+- **An install that turned scripts back on kept the network.** `npm install
+  --ignore-scripts=false` matched the one kind of command the network opens for. A command
+  that sets script, hook-file or config options is no longer one, pnpm's hook file is off
+  during the fetch, and yarn ignores a `yarnPath` the workspace names.
+- A check laid into the tree for a run is refused where its directory is a link out of the
+  workspace, and a withheld path the model replaced with a link is not copied.
+- `--accept-cmd` with a test runner's command is judged test by test; its exit code alone
+  passed a run that collected nothing.
 - A check supplied for a requirement the task does not have (`--accept R2=...`) was validated,
   sealed and never run. It is refused before the run, with the requirements the task has.
 - Every verification inside the loop lost its attestation under swarm-verify 3.x, because the

@@ -19,6 +19,7 @@ export async function callModel(input: {
   readonly model: ModelClient;
   readonly messages: readonly Message[];
   readonly maxTokens: number;
+  readonly sampled: boolean;
   readonly prompt: number;
   readonly step: number;
   readonly usage: Usage;
@@ -30,6 +31,7 @@ export async function callModel(input: {
     reply = await input.model.complete(input.messages, {
       signal: input.signal,
       maxTokens: input.maxTokens,
+      sampled: input.sampled,
     });
   } catch (error) {
     if (!(error instanceof ModelError)) throw error;

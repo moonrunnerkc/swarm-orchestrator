@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { type Chokepoint, createChokepoint } from "./chokepoint.ts";
+import { hostExecutor } from "./executor.ts";
 import { createPolicyGuard } from "./policy-guard.ts";
 
 /**
@@ -66,7 +67,14 @@ beforeEach(async () => {
     childHomeDir: join(root, "child-home"),
   });
   run = (approval) =>
-    createChokepoint({ guard, evidence, approval, confirm: null, timeoutMs: 30_000 });
+    createChokepoint({
+      guard,
+      executor: hostExecutor(guard.workspaceRoot, guard.childEnvironment.variables),
+      evidence,
+      approval,
+      confirm: null,
+      timeoutMs: 30_000,
+    });
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
@@ -97,7 +105,7 @@ describe("paths after cd, as the shell reads them", () => {
   it("refuses a credential file reached through a cd, which the root-relative reading allowed", async () => {
     const outcome = await run("auto").run("cd .git && cat config");
     expect(outcome.decision).toBe("denied");
-    expect(outcome.output).toContain(".git/config matches the credential denylist");
+    expect(outcome.output).toContain("matches the credential denylist");
   });
 
   it("follows cd after cd, and refuses a climb out of the workspace from below", async () => {

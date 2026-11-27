@@ -1,4 +1,5 @@
 import type { Requirement } from "swarm-verify";
+import type { ShownFile } from "./base-facts.ts";
 import type { TestConventions } from "./test-conventions.ts";
 
 const authorKinds = ["fix", "feature", "refactor", "upgrade", "other"] as const;
@@ -21,7 +22,15 @@ export const authorPrompt = [
   "test for each item on the list. A behavior the list leaves out is one nobody checks.",
   "One fenced block opened with ```test holds the whole",
   "test file. It is laid at the path given below, beside the example test, so import the code the",
-  "way the example does. One test per behavior the task states, using the task's own names,",
+  "way the example does. Call the repository's real code: import what the files shown below",
+  "export, with the fields and values their declarations and data have. Where the behavior is",
+  "reached over HTTP, start the application inside the test the way its entry file does, on port 0",
+  "so the system picks a free one, send it real requests with fetch, and close it before the",
+  "first assertion, so a failed one does not leave it listening. Never define in the test file the function, handler, route or data the task asks for: a",
+  "test of its own placeholder checks nothing and is refused. What the task asks for and the base",
+  "lacks is reached through the real entry (a request that is answered 404 now, an export that",
+  "is undefined now), so the test fails now and passes once the work is done.",
+  "One test per behavior the task states, using the task's own names,",
   "values, orders and messages. Test only what the task states, and nothing about form it does not",
   "state: where it says a message names some things, check that it contains each of them, one",
   "by one, never their joining words, punctuation or order; where it says an error happens,",
@@ -35,7 +44,8 @@ export const authorPrompt = [
   "own (mocks, a repository, a home, arguments, keys), add a case titled `control: ...` (in Python",
   "`test_control_...`) that drives behavior that succeeds now through the same setup, such as the",
   "same call without the new option, and asserts the work was reached (the mocked call made, the",
-  "result returned); the harness runs it before the change, and a control that fails, or makes the",
+  "result returned), and never that the new behavior is absent, which a correct change would fail;",
+  "the harness runs it before the change, and a control that fails, or makes the",
   "code print an error, shows the setup does not reach the code.",
   "",
   "For a refactor: one fenced block opened with ```claims holding a JSON array of structure",
@@ -103,19 +113,25 @@ export function authorRequest(
         )),
     "A module or name the task asks for that is not listed does not exist yet.",
     "",
-    ...conventions.named.flatMap((file) => [
-      `${file.path}, as the base has it (imports and declarations, no bodies):`,
-      "```",
-      ...file.outline,
-      "```",
-    ]),
-    ...(conventions.named.length === 0 ? [] : [""]),
+    ...conventions.runtime,
+    ...(conventions.runtime.length === 0 ? [] : [""]),
+    ...shownFiles(conventions.facts),
+    ...(conventions.facts.length === 0 ? [] : [""]),
     `Example test from this repository (${conventions.example.path}):`,
     "```",
     conventions.example.content,
     "```",
   ].join("\n");
 }
+
+/** Files of the base as the author reads them, each under its path. */
+export const shownFiles = (files: readonly ShownFile[]): string[] =>
+  files.flatMap((file) => [
+    `${file.path}, as the base has it${file.whole ? "" : " (imports and declarations, no bodies)"}:`,
+    "```",
+    ...file.lines,
+    "```",
+  ]);
 
 export type ParsedAuthor =
   | {

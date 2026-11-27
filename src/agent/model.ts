@@ -43,10 +43,15 @@ export const overrun = (ms: number, retries: number): Reply => ({
   overranMs: ms,
 });
 
+/** The temperature of a reply asked for after an exact repeat. */
+export const sampledTemperature = 0.7;
+
 interface TurnOptions {
   readonly signal?: AbortSignal | undefined;
   /** The completion cap for this turn, sent as max_tokens. */
   readonly maxTokens: number;
+  /** Sample this reply: at temperature 0 a model that just repeated itself does so again. */
+  readonly sampled?: boolean;
 }
 
 export interface ModelClient {
@@ -138,7 +143,7 @@ export function openAiCompatible(options: {
   const url = `${options.endpoint.replace(/\/+$/, "")}/chat/completions`;
   return {
     model: options.model,
-    async complete(messages, { signal, maxTokens }) {
+    async complete(messages, { signal, maxTokens, sampled }) {
       let lastProblem = "";
       let failures = 0;
       let waits = 0;
@@ -156,7 +161,7 @@ export function openAiCompatible(options: {
             JSON.stringify({
               model: options.model,
               messages,
-              temperature: 0,
+              temperature: sampled === true ? sampledTemperature : 0,
               stream: false,
               max_tokens: maxTokens,
             }),
@@ -218,5 +223,21 @@ export function openAiCompatible(options: {
         failures - 1 + waits,
       );
     },
+  };
+}
+
+/** One reply of a drafting call: its text, or its reasoning where it wrote nothing else, and its tokens. */
+export async function drafted(
+  model: ModelClient,
+  messages: readonly Message[],
+  options: { readonly signal?: AbortSignal | undefined; readonly maxTokens: number },
+): Promise<{ readonly content: string } & Record<"inputTokens" | "outputTokens", number>> {
+  const reply = await model.complete(messages, options);
+  const content = reply.content.trim().length > 0 ? reply.content : (reply.reasoning ?? "");
+  const estimate = (text: string) => Math.ceil(text.length / 4);
+  return {
+    content,
+    inputTokens: reply.inputTokens ?? estimate(messages.map((one) => one.content).join("")),
+    outputTokens: reply.outputTokens ?? estimate(content),
   };
 }

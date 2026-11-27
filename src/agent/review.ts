@@ -1,10 +1,10 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { snapshotWorkingTree } from "swarm-verify";
+import { gitText } from "swarm-verify/execution";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import { estimateTokens } from "./context.ts";
-import { gitText } from "./git.ts";
 import { type ModelClient, ModelError } from "./model.ts";
 import { machineFacts } from "./platform-facts.ts";
 import { truncate } from "./prompt.ts";

@@ -25,8 +25,8 @@ export type { LoopOptions, LoopResult, StopReason, Verification } from "./loop-t
 
 /** The smallest reply worth asking for: one command and its fence. */
 const minimumReplyTokens = 256;
-/** Turns in a row with the same command and output before the loop calls it no progress. */
-const repeatLimit = 3;
+/** Turns in a row with the same command and output before it is no progress; the last two replies are sampled. */
+const repeatLimit = 4;
 /** Replies in a row that follow no reply form before the model is called unusable here. */
 const unusableAfter = 4;
 /**
@@ -67,7 +67,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
   let turnStarted: number | null = null;
   let longestTurnMs = 0;
   let previous = { command: "", comparable: "", repeats: 0 };
-  const cycles = treeCycles(repeatLimit);
+  const cycles = treeCycles(3);
   const reread = rereads();
   let malformed = 0;
   let undone = false;
@@ -190,6 +190,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       model: options.model,
       messages,
       maxTokens: Math.min(options.turnTokens, room),
+      sampled: previous.repeats >= 2,
       prompt,
       step: steps + 1,
       usage,
