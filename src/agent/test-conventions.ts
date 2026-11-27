@@ -1,7 +1,7 @@
-import { access, readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
-import { gitText } from "./git.ts";
-import { type NamedFile, namedFiles } from "./named-files.ts";
+import { gitText } from "swarm-verify/execution";
+import { baseFacts, importsOf, namedPaths, runtimeFacts, type ShownFile } from "./base-facts.ts";
 
 export type Runner = "vitest" | "jest" | "mocha" | "node" | "pytest";
 
@@ -14,24 +14,31 @@ export interface TestConventions {
   readonly example: { readonly path: string; readonly content: string };
   /** Where the code names the task uses are defined at the base: a path and the defining line. */
   readonly definitions: readonly Definition[];
-  /** The source files the task names by path, with their imports and declarations. */
-  readonly named: readonly NamedFile[];
+  /**
+   * The base's source the author is shown: the files the task names, what the example test
+   * imports, where the task's names are defined and the application's entry, with their imports.
+   */
+  readonly facts: readonly ShownFile[];
+  /** How the base's code is loaded and started: module system, runtime, start command. */
+  readonly runtime: readonly string[];
+  /** The repository files a draft imports that it was not yet shown, as the base has them. */
+  unseen(draft: string): Promise<readonly ShownFile[]>;
   /** Where an authored check for a requirement is laid while it runs, beside the example. */
   pathFor(requirement: string): string;
   /** The command that runs one test file from the repository root. */
   commandFor(path: string): string;
 }
 
-const nodeTest = /\.(test|spec)\.[cm]?[jt]sx?$/;
-const pythonTest = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/;
+export const nodeTest = /\.(test|spec)\.[cm]?[jt]sx?$/;
+export const pythonTest = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/;
 const exampleBytes = 12_000;
 
-async function exists(path: string): Promise<boolean> {
-  return access(path).then(
+/** Whether anything is at a path, a link included. */
+export const exists = (path: string): Promise<boolean> =>
+  lstat(path).then(
     () => true,
     () => false,
   );
-}
 
 /** The runner a command names: `npx vitest run`, `node --test`, `python -m pytest`. */
 export function runnerOf(command: string): Runner | null {
@@ -227,12 +234,25 @@ export async function testConventions(
   const coverage = coverageAddopts(pyproject);
   const example = { path: best.path, content: best.content.slice(0, exampleBytes) };
   const roots = [...new Set(tests.map((path) => path.split("/")[0] ?? path))].sort();
+  const runtime = await runtimeFacts(workspace, tracked, example);
+  const seeds = [
+    ...namedPaths(sources, task),
+    ...importsOf(example.path, example.content, sources),
+    ...definitions.map((one) => one.path),
+    ...runtime.entries,
+  ];
+  const facts = await baseFacts(workspace, sources, seeds);
   return {
     runner,
     roots,
     example,
     definitions,
-    named: await namedFiles(workspace, sources, task),
+    facts,
+    runtime: runtime.notes,
+    unseen: async (draft) =>
+      (await baseFacts(workspace, sources, importsOf(example.path, draft, sources))).filter(
+        (one) => !facts.some((shown) => shown.path === one.path),
+      ),
     pathFor: (requirement) => sibling(example.path, requirement, runner),
     commandFor: commandOf(runner, python, coverage),
   };
