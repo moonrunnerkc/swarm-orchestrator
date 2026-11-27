@@ -91,8 +91,10 @@ function pytestSections(output: string): Map<string, string> {
   return found;
 }
 
+// The name opens right after its quote: text between an assertion's own quotes (`expected 'Unknown
+// flag…' to contain 'x'`) begins with a space and is no name the code refused.
 const refusal =
-  /\b(?:unknown|unsupported|unrecognized|unexpected|invalid|no such|not found|not a valid)\b[^'"`\n]{0,40}['"`]([^'"`\n]{1,60})['"`]/gi;
+  /\b(?:unknown|unsupported|unrecognized|unexpected|invalid|no such|not found|not a valid)\b[^'"`\n]{0,40}['"`]([^'"`\s][^'"`\n]{0,59})['"`]/gi;
 
 /**
  * A name the code refused, quoted in a case's error at the base, that the task never names: the

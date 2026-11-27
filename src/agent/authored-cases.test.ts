@@ -107,6 +107,16 @@ describe("a name the code refused at the base", () => {
     );
   });
 
+  // pubprep's recorded check (the release smoke): three sound cases failed at the base on the
+  // message the feature replaces, and were read as refused names and left out for six releases.
+  it("is not read from an assertion's own quoting of the message it expected", () => {
+    const error =
+      "AssertionError: expected 'Unknown flag: --reviewers. Run pubprep --help' to contain 'tech-debt'";
+    expect(
+      refusedName(error, "Add a --reviewers option; names are tech-debt, docs and security."),
+    ).toBeNull();
+  });
+
   it("is not where the task quotes it, in an example or as a flag", () => {
     expect(refusedName("Unknown config key 'max-lines' in /tmp/s.toml", task)).toBeNull();
     expect(refusedName("error: unknown option '--strict'", task)).toBeNull();
