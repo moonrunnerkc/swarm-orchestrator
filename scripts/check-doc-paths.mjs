@@ -28,7 +28,11 @@ const releasedHeading = /^## (\d+\.\d+\.\d+) - \d{4}-\d{2}-\d{2}/;
 const rootedPrefixes = ["src/", "docs/", "scripts/", ".github/", "dist/", "eval/"];
 const pathSuffixes = [".ts", ".mjs", ".js", ".json", ".md", ".yml", ".yaml", ".toml", ".sh"];
 /** Tags whose trees hold documents the active tree no longer does. */
-export const archiveTags = ["archive/docs-2026-11-25", "archive/acceptance-2026-11-26"];
+export const archiveTags = [
+  "archive/docs-2026-11-25",
+  "archive/acceptance-2026-11-26",
+  "archive/acceptance-2026-11-26-closeout",
+];
 /** Changelogs and the tag prefix their releases carry. */
 const changelogTags = new Map([["CHANGELOG.md", "v"]]);
 

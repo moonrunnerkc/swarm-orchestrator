@@ -34,6 +34,12 @@ At tag `archive/acceptance-2026-11-26`, read the same way:
 | --- | --- | --- | --- |
 | `docs/acceptance/2026-11-26` | 110 | `18c821d5138d75e9b113682251cf8eae361b4e18` | The invoice example with a local model on 17.1.0-rc.15 and on the starting version: reports, patches, replays and an independent evaluation of each patch, with the controls and the seeded fault. |
 
+At tag `archive/acceptance-2026-11-26-closeout`, read the same way:
+
+| Path at the tag | Files | Tree or blob id | What it is |
+| --- | --- | --- | --- |
+| `docs/acceptance/2026-11-26-closeout` | 560 | `4bf02d27d4bffbae12e44f35faf05fb25bcc6d00` | The closeout of 17.1.0: 22 live runs on the automatic path (drafted acceptance tests and drafted security bindings) on the invoice and notes examples and the seeded-fault task, every attempt kept, each with its signed verifications, replay and an independent judgment; the failures found, their causes and the runs after each fix. |
+
 ## Still in the active tree
 
 - [DECISIONS.md](DECISIONS.md): dated decisions, append-only. Older entries name archived paths.
