@@ -74,13 +74,16 @@ export function securityApplicability(input: {
   });
 }
 
-/** A binding file the user wrote or reviewed, validated; the message says what to correct. */
-export async function readSecurityFile(path: string): Promise<SecurityFile> {
-  const text = await readFile(path, "utf8");
-  const parsed = securityFileSchema.safeParse(JSON.parse(text));
+/** A value as a binding, or an error that names what in `source` to correct. */
+export function bindingOf(value: unknown, source: string): SecurityFile {
+  const parsed = securityFileSchema.safeParse(value);
   if (parsed.success) return parsed.data;
   const issue = parsed.error.issues[0];
   throw new Error(
-    `${path}: ${issue?.path.join(".") || "file"} ${issue?.message ?? "is not valid"}`,
+    `${source}: ${issue?.path.join(".") || "it"} ${issue?.message ?? "is not valid"}`,
   );
 }
+
+/** A binding file the user wrote or reviewed, validated; the message says what to correct. */
+export const readSecurityFile = async (path: string): Promise<SecurityFile> =>
+  bindingOf(JSON.parse(await readFile(path, "utf8")), path);

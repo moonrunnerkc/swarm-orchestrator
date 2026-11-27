@@ -29,21 +29,22 @@ export function scripted(
     /** Replies to the call that drafts the security checks' binding. */
     readonly security?: readonly string[];
   } = {},
-): ModelClient & { seen: Message[][]; authorSeen: Message[][] } {
+): ModelClient & { seen: Message[][]; authorSeen: Message[][]; securitySeen: Message[][] } {
   const seen: Message[][] = [];
   const authorSeen: Message[][] = [];
+  const securitySeen: Message[][] = [];
   const reported = (options.counts ?? "reported") === "reported";
   const authorReplies = options.author ?? [authoredHalf];
-  let drafts = 0;
   return {
     model: "scripted",
     seen,
     authorSeen,
+    securitySeen,
     async complete(messages) {
       const authoring = messages[0]?.content === authorPrompt;
       if (messages[0]?.content === securityPrompt) {
-        drafts += 1;
-        const content = options.security?.[drafts - 1] ?? options.security?.at(-1) ?? "UNKNOWN";
+        const at = securitySeen.push([...messages]) - 1;
+        const content = options.security?.[at] ?? options.security?.at(-1) ?? "UNKNOWN";
         return {
           content,
           inputTokens: 90,

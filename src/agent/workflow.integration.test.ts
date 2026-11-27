@@ -140,6 +140,7 @@ describe("the invoice download task", () => {
     expect(
       ran.result?.behavior[0]?.cases.map((one) => [one.name, one.base, one.candidate]),
     ).toEqual([
+      ["each named user is signed in, and a request without credentials is not", "pass", "pass"],
       ["the owner is served", "fail", "pass"],
       ["another user is refused", "pass", "pass"],
       ["an unauthenticated request is refused", "pass", "pass"],
@@ -171,19 +172,85 @@ describe("the invoice download task", () => {
     expect(ran.report.state).toBe("incomplete");
   });
 
-  it("uses a drafted binding where the user supplied none, and says nobody reviewed it", async () => {
+  const fenced = (binding: object) => `\`\`\`json\n${JSON.stringify(binding)}\n\`\`\``;
+
+  it("sends a draft back with what real requests showed, and uses the mended one only because the caller said so", async () => {
     const probe = await invoiceRepo();
-    const drafted = await readFile(probe.file, "utf8");
+    const good = JSON.parse(await readFile(probe.file, "utf8"));
+    const [check] = good.checks;
+    // Scripted drafts, labeled: a credential the repository does not hold; then a "user" that
+    // is a word of the repository's and no user of the server's; then the binding as it should be.
+    const invented = {
+      ...good,
+      checks: [{ ...check, other: { authorization: "Bearer token-mallory" } }],
+    };
+    const nobody = { ...good, checks: [{ ...check, other: { authorization: "Bearer customer" } }] };
     const model = scripted([write("src/app.ts", secure), done], {
       author: [ownerDownloads],
-      security: [`\`\`\`json\n${drafted}\n\`\`\``],
+      security: [fenced(invented), fenced(nobody), fenced(good)],
     });
     const ran = await probe.run(model, { security: { apply: [], exclude: [], file: null } });
+    expect(model.securitySeen[1]?.at(-1)?.content).toMatch(
+      /"token-mallory" is not in the repository files you were shown/,
+    );
+    expect(model.securitySeen[2]?.at(-1)?.content).toMatch(
+      /at the base, the users it names did not check out: step 2 \(GET \/invoices\): expected status 200, got 401/,
+    );
     expect(ran.report.state).toBe("complete");
     expect(ran.result?.behavior[0]?.check.authority).toBe("independently-generated");
-    expect(ran.report.notes.join("\n")).toMatch(
-      /drafted by a model call that read the base and never the change, and nobody reviewed it: .*security\.json/,
+    const notes = ran.report.notes.join("\n");
+    expect(notes).toMatch(
+      /used as drafted because --accept-authored was passed; nobody reviewed it/,
     );
+    expect(notes).toMatch(
+      /tried at the base with real requests before the first edit \(.*the owner is served: fail/,
+    );
+  });
+
+  it("stops with the draft written out where nobody said to use it unread", async () => {
+    const probe = await invoiceRepo();
+    const model = scripted([write("src/app.ts", secure), done], {
+      author: [ownerDownloads],
+      security: [fenced(JSON.parse(await readFile(probe.file, "utf8")))],
+    });
+    const directory = join(probe.root, "written");
+    const ran = await probe.run(model, {
+      security: { apply: [], exclude: [], file: null },
+      checksMode: { kind: "write", directory },
+    });
+    expect(ran.stop).toBe("blocked");
+    expect(ran.report.reason).toMatch(/run again with --security-check .*written\/security\.json/);
+    expect(
+      JSON.parse(await readFile(join(directory, "security.json"), "utf8")).checks[0].class,
+    ).toBe("ownership");
+    expect(model.seen).toEqual([]);
+  });
+
+  it("takes a reviewed draft under the reviewer's authority, and leaves a rejected one unverified", async () => {
+    const reviewing = async (answer: "approve" | "reject") => {
+      const probe = await invoiceRepo();
+      const model = scripted([write("src/app.ts", secure), done], {
+        author: [ownerDownloads],
+        security: [fenced(JSON.parse(await readFile(probe.file, "utf8")))],
+      });
+      return probe.run(model, {
+        maxSteps: 4,
+        security: { apply: [], exclude: [], file: null },
+        checksMode: {
+          kind: "review",
+          // The drafted test is approved either way; the answer is for the binding.
+          reviewer: async (shown) => (shown.path === "security.json" ? answer : "approve"),
+        },
+      });
+    };
+    const approved = await reviewing("approve");
+    expect(approved.result?.behavior[0]?.check.authority).toBe("user-acceptance");
+    expect(approved.report.state).toBe("complete");
+    const rejected = await reviewing("reject");
+    expect(rejected.report.requirements.find((one) => one.source === "security")?.status).toBe(
+      "unverified",
+    );
+    expect(rejected.report.state).toBe("incomplete");
   });
 
   it("leaves the obligation unverified, and the run incomplete, where no binding could be drafted", async () => {
@@ -201,7 +268,7 @@ describe("the invoice download task", () => {
     );
     expect(ran.report.state).toBe("incomplete");
     expect(ran.report.notes.join("\n")).toMatch(
-      /no check could be drafted .*Supply the binding with --security-check/,
+      /no usable check could be drafted .*Supply the binding with --security-check/,
     );
   });
 

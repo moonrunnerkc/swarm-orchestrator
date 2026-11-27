@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { type SecurityClass, type SecurityFile, securityFileSchema } from "swarm-verify";
+import { type SecurityClass, type SecurityFile, unreadValue } from "swarm-verify";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import { estimateTokens } from "./context.ts";
-import { type Message, type ModelClient, ModelError } from "./model.ts";
+import { shownFiles } from "./author-prompt.ts";
+import type { ShownFile } from "./base-facts.ts";
+import { drafted, type Message, type ModelClient, ModelError } from "./model.ts";
+import { bindingOf } from "./security.ts";
 
 /** What the drafting call is told. It sees the repository as it is, never a change to it. */
 export const securityPrompt = [
@@ -22,10 +22,15 @@ export const securityPrompt = [
   '- ownership: {"class": "ownership", "resource": {"method": "GET", "path": "<the path the task\'s',
   '  feature serves ONE existing record at>"}, "owner": {<request headers that authenticate the user',
   '  who owns that record>}, "other": {<headers that authenticate a different existing user>},',
+  '  "otherRole": {<headers of a user of another role, such as support staff, where there is one>},',
+  '  "signedIn": {"method": "GET", "path": "<a request the API ALREADY answers for any signed-in',
+  '  user and refuses without credentials>"},',
   '  "ownerSees": ["<a value from that record the response must hold>"]}',
   '- single-use-token: {"class": "single-use-token", "issue": {"method": "POST", "path": "...",',
   '  "headers": {...}, "body": {...}}, "tokenAt": "<where the token is in the JSON response, such as',
-  '  token>", "redeem": {"method": "POST", "path": "<with {{token}} where the token goes>"}}',
+  '  token>", "redeem": {"method": "POST", "path": "<with {{token}} where the token goes>"},',
+  '  "expiresAfterMs": <only where a variable in "env" gives tokens a short life: a little more',
+  "  than that life, in milliseconds, at most 30000>}",
   '- duplicate-operation: {"class": "duplicate-operation", "operation": {"method": "POST", "path":',
   '  "...", "headers": {<with {{run}} in an idempotency key or id, so each case differs>}, "body":',
   '  {...}}, "observe": {"method": "GET", "path": "<a request that reads a number the operation',
@@ -37,123 +42,113 @@ export const securityPrompt = [
   "record is whose, reply with the one word UNKNOWN and a line saying what is missing.",
 ].join("\n");
 
-const relevant =
-  /route|auth|user|session|middleware|server|app|index|seed|fixture|data|store|db|token|payment|invoice/i;
-const shownBytes = 16_000;
-
-/** The task, the manifest and the files that show routes, identity and seed data, within a budget. */
-async function request(
-  workspace: string,
-  task: string,
+/** The binding a reply holds, or what is wrong with it for the classes asked for. */
+function read(
+  reply: string,
   classes: readonly SecurityClass[],
-  files: readonly string[],
-): Promise<string> {
-  const ordered = [...files].sort((a, b) => Number(relevant.test(b)) - Number(relevant.test(a)));
-  const shown: string[] = [];
-  let used = 0;
-  for (const path of ["package.json", ...ordered]) {
-    const text = await readFile(join(workspace, path), "utf8").catch(() => null);
-    if (text === null || used + text.length > shownBytes) continue;
-    used += text.length;
-    shown.push(`--- ${path} ---\n${text.trimEnd()}`);
+  shown: string,
+): SecurityFile | string {
+  const block = /```(?:json)?\s*\n([\s\S]*?)\n```/.exec(reply)?.[1];
+  if (block === undefined)
+    return /\bUNKNOWN\b/.test(reply)
+      ? `${missing}${reply.replace(/\s+/g, " ").trim().slice(0, 300)}`
+      : "the reply holds no fenced json block";
+  let file: SecurityFile;
+  try {
+    file = bindingOf(JSON.parse(block), "the json block");
+  } catch (error) {
+    return (error as Error).message;
   }
-  return [
-    `Task:\n${task}`,
-    `Classes asked for: ${classes.join(", ")}`,
-    `Repository files: ${files.join(" ")}`,
-    ...shown,
-  ].join("\n\n");
+  const absent = classes.filter((name) => !file.checks.some((one) => one.class === name));
+  if (absent.length > 0) return `the block has no check of class ${absent.join(", ")}`;
+  if (file.checks.some((one) => one.class === "ownership" && one.signedIn === undefined))
+    return 'the ownership check has no "signedIn" request, so nothing shows the users it names are ones the server knows; name a request the API already answers for any signed-in user';
+  const made = unreadValue(file, shown);
+  return made === null
+    ? file
+    : `${JSON.stringify(made)} is not in the repository files you were shown; use only credentials and values that are there`;
 }
+
+const missing = "the repository does not show what the checks need: ";
 
 /**
  * The binding for the security checks a task needs, drafted by a call that reads the base and
- * never the change. A draft is a proposal: it is validated against the binding's schema and the
- * classes asked for, tried once more with what was wrong, and labeled as not reviewed wherever
- * it is used. Null with the reason where no usable draft came back.
+ * never the change. A draft is a proposal: it is held to the binding's schema, to the classes
+ * asked for and to values the repository holds, then tried at the base with real requests by
+ * `tryAtBase`, and sent back with what was observed where any of that fails. Null with the
+ * reason where no usable draft came back; what is truly missing is said, never guessed.
  */
 export async function draftSecurity(input: {
   readonly model: ModelClient;
   readonly evidence: EvidenceRecorder;
-  readonly workspace: string;
   readonly task: string;
   readonly classes: readonly SecurityClass[];
-  /** Tracked source files worth showing: the ones holding routes first. */
-  readonly files: readonly string[];
+  /** How the application starts and the base's files with its routes, identity and seed data. */
+  readonly runtime: readonly string[];
+  readonly shown: readonly ShownFile[];
+  /** What real requests at the base show is wrong with a draft, or null. */
+  readonly tryAtBase: (file: SecurityFile) => Promise<string | null>;
   readonly turnTokens: number;
   readonly signal?: AbortSignal | undefined;
 }): Promise<{
   readonly file: SecurityFile | null;
   readonly failure: string | null;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
+  /** Why each attempt before the last was sent back. */
+  readonly attempts: readonly string[];
+  readonly tokens: number;
 }> {
+  const asked = [
+    `Task:\n${input.task}`,
+    `Classes asked for: ${input.classes.join(", ")}`,
+    input.runtime.join("\n"),
+    shownFiles(input.shown).join("\n"),
+  ].join("\n\n");
   const messages: Message[] = [
     { role: "system", content: securityPrompt },
-    {
-      role: "user",
-      content: await request(input.workspace, input.task, input.classes, input.files),
-    },
+    { role: "user", content: asked },
   ];
-  let [inputTokens, outputTokens] = [0, 0];
-  let failure = "no draft was made";
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  const attempts: string[] = [];
+  let tokens = 0;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     let content: string;
     try {
-      const reply = await input.model.complete(messages, {
+      const reply = await drafted(input.model, messages, {
         signal: input.signal,
         maxTokens: input.turnTokens,
       });
-      content = reply.content.trim().length > 0 ? reply.content : (reply.reasoning ?? "");
-      inputTokens +=
-        reply.inputTokens ?? estimateTokens(messages.map((one) => one.content).join(""));
-      outputTokens += reply.outputTokens ?? estimateTokens(content);
+      content = reply.content;
+      tokens += reply.inputTokens + reply.outputTokens;
     } catch (error) {
       if (!(error instanceof ModelError)) throw error;
-      return {
-        file: null,
-        failure: `the drafting model failed: ${error.message}`,
-        inputTokens,
-        outputTokens,
-      };
+      const failure = `the drafting model failed: ${error.message}`;
+      return { file: null, failure, attempts, tokens };
     }
+    const found = read(content, input.classes, asked);
+    const problem = typeof found === "string" ? found : await input.tryAtBase(found);
     await input.evidence.record({
       type: "model-call",
       actor: input.model.model,
       provenance: ["model"],
-      payload: { author: "security", attempt, reply: content, inputTokens, outputTokens },
+      payload: {
+        author: "security",
+        attempt,
+        asked: messages.at(-1)?.content ?? "",
+        reply: content,
+        problem,
+        tokens,
+      },
     });
-    const block = /```(?:json)?\s*\n([\s\S]*?)\n```/.exec(content)?.[1];
-    if (block === undefined) {
-      failure = /\bUNKNOWN\b/.test(content)
-        ? `the repository does not show what the checks need: ${content.replace(/\s+/g, " ").trim().slice(0, 300)}`
-        : "the reply holds no fenced json block";
-    } else {
-      let parsed: ReturnType<typeof securityFileSchema.safeParse> | null = null;
-      try {
-        parsed = securityFileSchema.safeParse(JSON.parse(block));
-      } catch (error) {
-        failure = `the json block does not parse: ${(error as Error).message}`;
-      }
-      if (parsed?.success === true) {
-        const missing = input.classes.filter(
-          (name) => !parsed.data.checks.some((one) => one.class === name),
-        );
-        if (missing.length === 0)
-          return { file: parsed.data, failure: null, inputTokens, outputTokens };
-        failure = `the block has no check of class ${missing.join(", ")}`;
-      } else if (parsed !== null) {
-        const issue = parsed.error.issues[0];
-        failure = `${issue?.path.join(".") || "the block"}: ${issue?.message ?? "is not valid"}`;
-      }
-    }
-    if (failure.startsWith("the repository does not show")) break;
+    if (typeof found !== "string" && problem === null)
+      return { file: found, failure: null, attempts, tokens };
+    attempts.push(problem ?? "");
+    if (problem?.startsWith(missing)) break;
     messages.push(
       { role: "assistant", content },
       {
         role: "user",
-        content: `That reply cannot be used: ${failure}. Send the one json block again, corrected.`,
+        content: `That reply cannot be used: ${problem}. Send the one json block again, corrected.`,
       },
     );
   }
-  return { file: null, failure, inputTokens, outputTokens };
+  return { file: null, failure: attempts.at(-1) ?? "no draft was made", attempts, tokens };
 }
