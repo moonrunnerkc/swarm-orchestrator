@@ -1,0 +1,43 @@
+diff --git a/service/http.ts b/service/http.ts
+index e4e47fb..7db014f 100644
+--- a/service/http.ts
++++ b/service/http.ts
+@@ -1,5 +1,5 @@
+ import { createServer, type Server } from "node:http";
+-import { accounts, notes } from "./store.ts";
++import { accounts, notes, deleteNote } from "./store.ts";
+ 
+ interface Route {
+   readonly method: string;
+@@ -13,6 +13,15 @@ const routes: readonly Route[] = [
+     pattern: /^\/notes$/,
+     run: (handle) => ({ status: 200, body: notes.filter((note) => note.authorId === handle) }),
+   },
++  {
++    method: "DELETE",
++    pattern: /^\/notes\/([^\/]+)$/,
++    run: (handle, match) => {
++      const slug = match[1];
++      const deleted = deleteNote(slug, handle);
++      return { status: deleted ? 204 : 404, body: deleted ? undefined : { error: "not found" } };
++    },
++  },
+ ];
+ 
+ /** Starts the notes service on a port; 0 takes any free one. */
+diff --git a/service/store.ts b/service/store.ts
+index 8f0d6c5..845e975 100644
+--- a/service/store.ts
++++ b/service/store.ts
+@@ -22,3 +22,11 @@ export const notes: Note[] = [
+   { slug: "n-1", authorId: "lin", text: "first" },
+   { slug: "n-2", authorId: "omar", text: "second" },
+ ];
++
++/** Deletes a note by slug and authorId; returns true if deleted, false otherwise. */
++export function deleteNote(slug: string, authorId: string): boolean {
++  const index = notes.findIndex((note) => note.slug === slug && note.authorId === authorId);
++  if (index === -1) return false;
++  notes.splice(index, 1);
++  return true;
++}

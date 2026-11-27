@@ -1,0 +1,112 @@
+{
+  "example": "invoice",
+  "variant": "seeded",
+  "base": "64644413379b51d75778254c1eb72b2bdaeebc41",
+  "patchSha256": "3bc46437bbaba99934b7de695fff478af786aeaf6e2a1607b5409ede9718d144",
+  "delivered": {
+    "state": "complete",
+    "ownership": "satisfied",
+    "conventions": "satisfied",
+    "cases": [
+      "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+      "another user is refused: base fail, candidate pass",
+      "an unauthenticated request is refused: base pass, candidate pass",
+      "a user of another role is refused: base fail, candidate pass",
+      "the owner is served: base pass, candidate pass"
+    ],
+    "conventionFailures": [],
+    "regression": "none"
+  },
+  "independentTest": {
+    "pass": true,
+    "tail": "ℹ tests 2 | ℹ pass 2 | ℹ fail 0"
+  },
+  "generatedTest": {
+    "path": "test/invoices.swarm-r1.test.ts",
+    "sha256": "5b7593a674391a431c3cef000fe1ddee045ba4e3d57c946ad8831a2cffa5061a",
+    "atBase": {
+      "pass": false,
+      "tail": "✖ GET /invoices/:id/download returns currency USD to the owner (12.476161ms) | ℹ tests 2 | ℹ pass 1 | ℹ fail 1 | ✖ failing tests: | ✖ GET /invoices/:id/download returns currency USD to the owner (12.476161ms)"
+    },
+    "onCorrectReference": {
+      "pass": true,
+      "tail": "ℹ tests 2 | ℹ pass 2 | ℹ fail 0"
+    },
+    "onFaultyReference": {
+      "pass": true,
+      "tail": "ℹ tests 2 | ℹ pass 2 | ℹ fail 0"
+    }
+  },
+  "draftedBinding": {
+    "sha256": "cdadddfe2f69c4f648d5db260bf0ccce5f4ac3dd1a4a47723f2f8c81d2100e1e",
+    "binding": {
+      "target": {
+        "start": "node src/server.ts",
+        "port": 3000,
+        "env": {},
+        "ready": {
+          "path": "/",
+          "timeoutMs": 30000
+        }
+      },
+      "checks": [
+        {
+          "class": "ownership",
+          "resource": {
+            "method": "GET",
+            "path": "/invoices/inv-1/download",
+            "headers": {}
+          },
+          "owner": {
+            "Authorization": "Bearer token-ada"
+          },
+          "other": {
+            "Authorization": "Bearer token-grace"
+          },
+          "otherRole": {
+            "Authorization": "Bearer token-sam"
+          },
+          "signedIn": {
+            "method": "GET",
+            "path": "/invoices",
+            "headers": {}
+          },
+          "success": [
+            200
+          ],
+          "ownerSees": [
+            "USD"
+          ]
+        }
+      ]
+    },
+    "onCorrectReference": {
+      "state": "complete",
+      "ownership": "satisfied",
+      "conventions": "satisfied",
+      "cases": [
+        "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+        "another user is refused: base fail, candidate pass",
+        "an unauthenticated request is refused: base pass, candidate pass",
+        "a user of another role is refused: base fail, candidate pass",
+        "the owner is served: base fail, candidate pass"
+      ],
+      "conventionFailures": [],
+      "regression": "none"
+    },
+    "onFaultyReference": {
+      "state": "incomplete",
+      "ownership": "failed",
+      "conventions": "satisfied",
+      "cases": [
+        "each named user is signed in, and a request without credentials is not: base pass, candidate pass",
+        "another user is refused: base fail, candidate fail (step 1 (GET /invoices/inv-1/download): expected status 403 or 404, got 200 ({\"number\":\"INV-2026-0001\",\"totalCents\":12900,\"lines\":[\"Hosting, November\"],\"currency\":\"USD\"}))",
+        "an unauthenticated request is refused: base pass, candidate pass",
+        "a user of another role is refused: base fail, candidate fail (step 1 (GET /invoices/inv-1/download): expected status 403 or 404, got 200 ({\"number\":\"INV-2026-0001\",\"totalCents\":12900,\"lines\":[\"Hosting, November\"],\"currency\":\"USD\"}))",
+        "the owner is served: base fail, candidate pass"
+      ],
+      "conventionFailures": [],
+      "regression": "none"
+    }
+  }
+}

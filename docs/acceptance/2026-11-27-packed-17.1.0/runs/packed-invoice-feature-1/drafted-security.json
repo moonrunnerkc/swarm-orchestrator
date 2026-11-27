@@ -1,0 +1,41 @@
+{
+  "target": {
+    "start": "node src/server.ts",
+    "port": 3000,
+    "env": {},
+    "ready": {
+      "path": "/",
+      "timeoutMs": 30000
+    }
+  },
+  "checks": [
+    {
+      "class": "ownership",
+      "resource": {
+        "method": "GET",
+        "path": "/invoices/inv-1/download",
+        "headers": {}
+      },
+      "owner": {
+        "Authorization": "Bearer token-ada"
+      },
+      "other": {
+        "Authorization": "Bearer token-grace"
+      },
+      "otherRole": {
+        "Authorization": "Bearer token-sam"
+      },
+      "signedIn": {
+        "method": "GET",
+        "path": "/invoices",
+        "headers": {}
+      },
+      "success": [
+        200
+      ],
+      "ownerSees": [
+        "INV-2026-0001"
+      ]
+    }
+  ]
+}
