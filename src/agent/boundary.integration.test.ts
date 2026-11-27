@@ -83,6 +83,22 @@ describe("the model's commands", () => {
 });
 
 describe("the dependency stage", () => {
+  // Options on the command line outrank the environment that turns install scripts off, so a
+  // command carrying one is not given the network: its scripts would run with it open.
+  it("stays closed to an install that turns scripts or a hook file back on", () => {
+    const refused = [
+      "npm install --ignore-scripts=false left-pad",
+      "npm ci --no-ignore-scripts",
+      "pnpm install --pnpmfile=.pnpmfile.cjs",
+      "npm install --userconfig evil.npmrc",
+      "pip install --no-binary :all: requests",
+      "yarn install --config.enable-scripts=true",
+    ];
+    expect(refused.map((command) => isDependencyInstall(command))).toEqual(
+      refused.map(() => false),
+    );
+  });
+
   it("opens for one package manager's install and nothing joined to it", () => {
     const opened = (command: string) => isDependencyInstall(command);
     expect(

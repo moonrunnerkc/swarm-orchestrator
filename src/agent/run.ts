@@ -1,13 +1,14 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { snapshotWorkingTree } from "swarm-verify";
+import { gitText } from "swarm-verify/execution";
+import { LedgerWriteFailedError } from "../evidence/ledger.ts";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import { createChokepoint } from "../tools/chokepoint.ts";
 import { type Progress, runAttempts } from "./attempts.ts";
 import { type CheckGate, checkGate } from "./check-gate.ts";
 import { prepareContained } from "./dependencies.ts";
 import { finalize } from "./finalize.ts";
-import { gitText } from "./git.ts";
 import { assembleReport, recordStopped, writeReport } from "./report.ts";
 import { initialRecord } from "./requirement-record.ts";
 import { deriveForRun } from "./run-derived.ts";
@@ -165,8 +166,9 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           signal: options.signal,
         });
         // Derived requirements join the user's here, once, and are fixed with them.
-        progress.record = await derived.fix(gate.record);
-        if (gate.blocked !== null) [stop, reason] = ["blocked", gate.blocked];
+        progress.record = await derived.fix(gate.record, { base, execution });
+        const blocks = [gate.blocked, derived.held()].filter((one) => one !== null);
+        if (blocks.length > 0) [stop, reason] = ["blocked", blocks.join("; also, ")];
         else
           ({ stop, reason } = await runAttempts({
             shared: {
@@ -217,8 +219,9 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
           }));
       }
     } catch (error) {
+      // A run whose record could not be written has no evidence to finish on: it ends here.
+      if (error instanceof LedgerWriteFailedError) throw error;
       stop = options.signal?.aborted ? "cancelled" : "interrupted";
-      // A cancelled run says why it was cancelled, not which operation the abort interrupted.
       const cause = options.signal?.aborted ? options.signal.reason : error;
       reason = cause instanceof Error ? cause.message : String(cause);
     }
@@ -230,7 +233,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       directory: final,
       record: progress.record,
       held: verifier.held(),
-      blocked: gate?.blocked ?? early,
+      blocked: gate?.blocked ?? derived.held() ?? early,
       cannotVerify:
         stop === "cancelled"
           ? "the run was cancelled"
@@ -273,7 +276,7 @@ export async function runAgent(options: RunOptions): Promise<RunReport> {
       startedAt: started,
       authored: gate?.authored ?? [],
       user: gate?.user ?? [],
-      blocked: gate?.blocked ?? early,
+      blocked: gate?.blocked ?? derived.held() ?? early,
     });
     const paths = await writeReport(final, report);
     await recordStopped(evidence, {

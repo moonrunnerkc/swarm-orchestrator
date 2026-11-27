@@ -7,6 +7,7 @@ import {
   type ProcessRunResult,
   type ResourceRecord,
   runProcessGroup,
+  fetchOnly as verifierFetchOnly,
 } from "swarm-verify/execution";
 import { readShellCommand } from "./shell-command.ts";
 
@@ -69,12 +70,19 @@ export function refusingExecutor(why: string): Executor {
   };
 }
 
-/** Package managers told to fetch without running what they fetch, while the network is open. */
+/**
+ * Package managers told to fetch without running what they fetch, while the network is open:
+ * no install script, no hook file of the workspace's (pnpm), no yarn the workspace names itself.
+ */
 const fetchOnly = {
-  npm_config_ignore_scripts: "true",
-  YARN_ENABLE_SCRIPTS: "false",
+  ...verifierFetchOnly,
+  npm_config_ignore_pnpmfile: "true",
+  YARN_IGNORE_PATH: "1",
   PIP_ONLY_BINARY: ":all:",
 };
+// Options that would undo that from the command line, where they outrank the environment.
+const undoing =
+  /ignore-scripts|enable-scripts|pnpmfile|only-binary|no-binary|userconfig|--config\b/;
 
 const installers =
   /^(?:corepack\s+)?(?:npm\s+(?:ci|install|i|add|update)|pnpm\s+(?:install|i|add|update)|yarn(?:\s+(?:install|add))?|pip3?\s+install|python3?\s+-m\s+pip\s+install|uv\s+(?:sync|lock|add|pip\s+install))(?:\s|$)/;
@@ -87,7 +95,9 @@ const installers =
 export function isDependencyInstall(command: string): boolean {
   const text = command.trim();
   const read = readShellCommand(text);
-  return read !== null && read.executables.length === 1 && installers.test(text);
+  return (
+    read !== null && read.executables.length === 1 && installers.test(text) && !undoing.test(text)
+  );
 }
 
 /** The object directories a clone borrows from, which its git needs to read. */

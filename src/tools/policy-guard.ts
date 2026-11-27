@@ -11,7 +11,9 @@ const credentialPatterns: readonly RegExp[] = [
   /(^|\/)\.env[^/]*$/,
   /\.pem$/,
   /\.key$/,
-  /(^|\/)\.git\/config$/,
+  // Everything under .git: one file there (commondir, config, a hook) redirects or scripts the
+  // git this harness runs on the host, and an edit is written on the host, not in a container.
+  /(^|\/)\.git(\/|$)/,
   // The one optional config file may carry provider keys, so tools never read it.
   /(^|\/)swarm\.toml$/,
 ];
@@ -180,7 +182,7 @@ export function createPolicyGuard(policy: PolicyGuardRules): PolicyGuard {
       if (credentialPatterns.some((pattern) => pattern.test(`/${workspacePath.toLowerCase()}`))) {
         return {
           allowed: false,
-          reason: `${workspacePath} matches the credential denylist (.env*, *.pem, *.key, .git/config, swarm.toml)`,
+          reason: `${workspacePath} matches the credential denylist (.env*, *.pem, *.key, .git/, swarm.toml)`,
         };
       }
 

@@ -120,6 +120,21 @@ describe("guard path containment", () => {
 });
 
 describe("guard credential denylist", () => {
+  // An edit is written on the host: `.git/commondir` pointed at a directory the commands made
+  // would hand the next host git their config, and with it a program to run.
+  it("refuses every path under .git, not its config alone", () => {
+    for (const path of [
+      ".git/commondir",
+      ".git/hooks/pre-commit",
+      ".git/info/attributes",
+      "sub/.git/config",
+      ".git",
+    ])
+      expect(guard.checkPath(path).allowed, path).toBe(false);
+    expect(guard.checkPath(".github/workflows/ci.yml").allowed).toBe(true);
+    expect(guard.checkPath("src/.gitkeep").allowed).toBe(true);
+  });
+
   const denied = [
     ".env",
     ".env.local",
