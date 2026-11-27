@@ -1,11 +1,16 @@
 import { type Requirement, type SealedFile, sealFiles } from "swarm-verify";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { Chokepoint } from "../tools/chokepoint.ts";
-import { type AuthorKind, authorPrompt, authorRequest, parseAuthor } from "./author-prompt.ts";
+import {
+  type AuthorKind,
+  authorPrompt,
+  authorRequest,
+  parseAuthor,
+  shownFiles,
+} from "./author-prompt.ts";
 import { claimsAtBase } from "./authored-claims.ts";
 import { runAtBase } from "./authored-validation.ts";
-import { estimateTokens } from "./context.ts";
-import { type Message, type ModelClient, ModelError } from "./model.ts";
+import { drafted, type Message, type ModelClient, ModelError } from "./model.ts";
 import type { TestConventions } from "./test-conventions.ts";
 
 type StructureClaim = Requirement["evidence"]["structure"][number];
@@ -18,8 +23,6 @@ export interface AuthoredTest {
   readonly content: string;
   /** The end of what it printed at the base, where it failed as it should. */
   readonly atBase: string;
-  /** Its cases left out by name, since they failed at the base on errors of their own. */
-  readonly excluded?: readonly string[];
 }
 
 /** What the check-authoring stage produced for one requirement, and why where it produced nothing. */
@@ -97,22 +100,27 @@ export async function authorChecks(input: {
     if (attempt === 3 && attempts[0]?.join("; ") === attempts[1]?.join("; ")) break;
     let content: string;
     try {
-      const reply = await input.model.complete(messages, {
+      const reply = await drafted(input.model, messages, {
         signal: input.signal,
         maxTokens: input.turnTokens,
       });
-      content = reply.content.trim().length > 0 ? reply.content : (reply.reasoning ?? "");
+      content = reply.content;
       tokens = {
-        inputTokens:
-          tokens.inputTokens +
-          (reply.inputTokens ?? estimateTokens(messages.map((one) => one.content).join(""))),
-        outputTokens: tokens.outputTokens + (reply.outputTokens ?? estimateTokens(content)),
+        inputTokens: tokens.inputTokens + reply.inputTokens,
+        outputTokens: tokens.outputTokens + reply.outputTokens,
       };
       await input.evidence.record({
         type: "model-call",
         actor: input.model.model,
         provenance: ["model"],
-        payload: { author: requirement.id, attempt, reply: content, ...tokens },
+        payload: {
+          author: requirement.id,
+          attempt,
+          // What the author was asked, so a draft can be read against what it was shown.
+          asked: messages.at(-1)?.content ?? "",
+          reply: content,
+          ...tokens,
+        },
       });
     } catch (error) {
       if (!(error instanceof ModelError)) throw error;
@@ -122,6 +130,7 @@ export async function authorChecks(input: {
     kind = parsed.kind ?? kind;
     const reasons: string[] = parsed.problem === null ? [] : [parsed.problem];
     let accepted: Partial<Authored> | null = null;
+    let observed = "";
     if (parsed.kind === "upgrade" && parsed.test !== null) behaviorAsked = true;
     if (parsed.kind === "upgrade" && parsed.test === null) {
       accepted =
@@ -141,15 +150,9 @@ export async function authorChecks(input: {
         const test = { requirement: requirement.id, path, command, content: parsed.test };
         const ran = await runAtBase(input.chokepoint, input.workspace, test, task, parsed.kind);
         reasons.push(...ran.reasons);
-        if (ran.reasons.length === 0)
-          accepted = {
-            test: {
-              ...test,
-              command: ran.command ?? test.command,
-              atBase: ran.output,
-              ...(ran.excluded === undefined ? {} : { excluded: ran.excluded }),
-            },
-          };
+        if (ran.reasons.length > 0)
+          observed = await observation(conventions, ran.output, parsed.test);
+        if (ran.reasons.length === 0) accepted = { test: { ...test, atBase: ran.output } };
       }
     }
     attempts.push(reasons);
@@ -162,7 +165,7 @@ export async function authorChecks(input: {
       { role: "assistant", content },
       {
         role: "user",
-        content: `The harness rejected that: ${reasons.join("; ")}. Reply again in the same form.`,
+        content: `The harness rejected that: ${reasons.join("; ")}.${observed}\nReply again in the same form, with every behavior the task states still checked.`,
       },
     );
   }
@@ -171,6 +174,22 @@ export async function authorChecks(input: {
   });
   await recordAuthored(input.evidence, authored);
   return authored;
+}
+
+/** What the rejected draft's run printed, and the files it imports that its author had not seen. */
+async function observation(
+  conventions: TestConventions | null,
+  output: string,
+  draft: string,
+): Promise<string> {
+  const unseen = (await conventions?.unseen(draft)) ?? [];
+  return [
+    "",
+    ...(output.trim().length === 0
+      ? []
+      : ["What its run at the base printed (the end):", "```", output.trim(), "```"]),
+    ...shownFiles(unseen),
+  ].join("\n");
 }
 
 async function recordAuthored(evidence: EvidenceRecorder, authored: Authored): Promise<void> {

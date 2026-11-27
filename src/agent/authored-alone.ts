@@ -1,10 +1,10 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import {
   controlTitles,
   type FailingCase,
+  layFile,
   onlyCase,
+  passedAlone,
   plainOutput,
   removeLaid,
 } from "./authored-cases.ts";
@@ -28,11 +28,12 @@ export async function passingAlone(
   for (const one of cases) {
     const alone = onlyCase(test.command, one.title);
     if (alone === null) return [];
-    await writeFile(join(workspace, test.path), test.content);
+    await layFile(workspace, test.path, test.content);
     const ran = await chokepoint
       .check(alone, `authored case "${one.title}", alone at the base`)
       .finally(() => removeLaid(workspace, test.path));
-    if (ran.decision === "allowed" && ran.exitCode === 0) leaning.push(one);
+    if (ran.decision === "allowed" && ran.exitCode === 0 && passedAlone(ran.output, one.title))
+      leaning.push(one);
   }
   return leaning;
 }
@@ -53,10 +54,13 @@ export async function controlsRefused(
   for (const title of controlTitles(test.content)) {
     const alone = onlyCase(test.command, title);
     if (alone === null) return null;
-    await writeFile(join(workspace, test.path), test.content);
+    await layFile(workspace, test.path, test.content);
     const ran = await chokepoint
       .check(alone, `authored control "${title}", alone at the base`)
       .finally(() => removeLaid(workspace, test.path));
+    // A control the filter did not reach showed nothing: a title the runner cannot select.
+    if (ran.decision === "allowed" && ran.exitCode === 0 && !passedAlone(ran.output, title))
+      return `its control case "${title}" did not run when selected by name, so nothing shows the setup reaches the code; give each case a plain title of its own`;
     // A runner's own report (a coverage threshold) is not the code refusing.
     const printed = [...plainOutput(ran.output).matchAll(printedError)].find(
       (match) => !/coverage/i.test(match[0]),

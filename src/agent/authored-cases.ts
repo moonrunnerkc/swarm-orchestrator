@@ -1,5 +1,5 @@
-import { readdir, rm } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join, sep } from "node:path";
 import { runnerOf } from "./test-conventions.ts";
 
 const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -7,9 +7,38 @@ const ansi = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 /** A runner's output without its colour escapes, which split the words the rules look for. */
 export const plainOutput = (text: string) => text.replace(ansi, "");
 
+/**
+ * Where a check's file goes in the tree, refused where that resolves outside it: the harness
+ * writes and removes these on the host, and a directory the model's commands replaced with a
+ * link would have it write or delete wherever the link points.
+ */
+async function laidPath(workspace: string, path: string): Promise<string> {
+  const absolute = join(workspace, path);
+  let existing = dirname(absolute);
+  let resolved: string | null = null;
+  while (resolved === null) {
+    resolved = await realpath(existing).catch(() => null);
+    if (resolved === null) existing = dirname(existing);
+  }
+  const root = await realpath(workspace);
+  if (resolved !== root && !resolved.startsWith(`${root}${sep}`))
+    throw new Error(
+      `the check ${path} cannot be laid: its directory resolves outside the workspace, to ${resolved}`,
+    );
+  return absolute;
+}
+
+/** Lays a check's file into the tree for one run, in place of anything, a link included, there. */
+export async function layFile(workspace: string, path: string, content: string | Buffer) {
+  const absolute = await laidPath(workspace, path);
+  await mkdir(dirname(absolute), { recursive: true });
+  await rm(absolute, { force: true });
+  await writeFile(absolute, content);
+}
+
 /** Takes a laid check out of the tree, with any bytecode its run left beside it. */
 export async function removeLaid(workspace: string, path: string): Promise<void> {
-  await rm(join(workspace, path), { force: true });
+  await rm(await laidPath(workspace, path), { force: true });
   const stem = basename(path).replace(/\.py$/, "");
   const cache = join(workspace, dirname(path), "__pycache__");
   const left = await readdir(cache).catch(() => [] as string[]);
@@ -93,27 +122,31 @@ const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 const literal = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * The command with the named cases left out, by the runner's own name filter, or null where the
- * runner has none this knows: a check whose cases fail on every tree keeps its other cases.
+ * A runner's name filter on a command. node reads its options only before the first file: one
+ * written after the path is handed to nobody, and the whole file runs unfiltered.
  */
-export function excludingCases(command: string, titles: readonly string[]): string | null {
-  if (titles.length === 0) return command;
+function filtered(command: string, pattern: string, pytest: string): string | null {
   const runner = runnerOf(command);
-  const pattern = `^(?!.*(?:${titles.map(literal).join("|")})).*$`;
   if (runner === "vitest" || runner === "jest") return `${command} -t ${quote(pattern)}`;
-  if (runner === "pytest") return `${command} -k ${quote(`not (${titles.join(" or ")})`)}`;
-  if (runner === "node") return `${command} --test-name-pattern=${quote(pattern)}`;
+  if (runner === "pytest") return `${command} -k ${quote(pytest)}`;
+  if (runner === "node")
+    // A function, since `$'` in a replacement string stands for the text after the match.
+    return command.replace(/--test(?=\s|$)/, () => `--test --test-name-pattern=${quote(pattern)}`);
   return null;
 }
 
 /** The command narrowed to the one named case, or null where the runner has no filter this knows. */
 export function onlyCase(command: string, title: string): string | null {
-  const runner = runnerOf(command);
-  const pattern = `${literal(title)}$`;
-  if (runner === "vitest" || runner === "jest") return `${command} -t ${quote(pattern)}`;
-  if (runner === "pytest") return `${command} -k ${quote(title)}`;
-  if (runner === "node") return `${command} --test-name-pattern=${quote(pattern)}`;
-  return null;
+  return filtered(command, `${literal(title)}$`, title);
+}
+
+/**
+ * Whether a run narrowed to one case shows that case passing. Exit 0 alone does not: a filter
+ * that matches nothing runs nothing, and node, vitest and jest all exit 0 on that.
+ */
+export function passedAlone(output: string, title: string): boolean {
+  const plain = plainOutput(output);
+  return plain.includes(`\u2714 ${title} (`) || /\b[1-9]\d* passed\b/.test(plain);
 }
 
 /** The titles of the control cases a check's source declares: `control: ...`, `test_control_...`. */

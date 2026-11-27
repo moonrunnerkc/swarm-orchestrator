@@ -1,5 +1,15 @@
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { excludingCases, failingCases, refusedName } from "./authored-cases.ts";
+import {
+  failingCases,
+  layFile,
+  onlyCase,
+  passedAlone,
+  refusedName,
+  removeLaid,
+} from "./authored-cases.ts";
 
 // pubprep (2026-11-05, rc.7 sealed-set run): seven of nine cases failed at the base as a feature's
 // should ("Unknown flag: --reviewers"); two passed a predicate to toThrow and failed on every tree.
@@ -29,15 +39,60 @@ describe("the failing cases a run names", () => {
   });
 });
 
-describe("a check with some cases left out", () => {
-  it("is narrowed by the runner's own name filter", () => {
-    expect(excludingCases("npx vitest run test/a.test.ts", ["throws (on) x"])).toBe(
-      "npx vitest run test/a.test.ts -t '^(?!.*(?:throws \\(on\\) x)).*$'",
+describe("a check run one case at a time", () => {
+  it("selects the case by the runner's own name filter, where it has one this knows", () => {
+    expect(onlyCase("npx vitest run test/a.test.ts", "throws (on) x")).toBe(
+      "npx vitest run test/a.test.ts -t 'throws \\(on\\) x$'",
     );
-    expect(excludingCases("python3 -m pytest -q tests/test_a.py", ["test_x", "test_y"])).toBe(
-      "python3 -m pytest -q tests/test_a.py -k 'not (test_x or test_y)'",
+    expect(onlyCase("python3 -m pytest -q tests/test_a.py", "test_x")).toBe(
+      "python3 -m pytest -q tests/test_a.py -k 'test_x'",
     );
-    expect(excludingCases("npx mocha test/a.js", ["x"])).toBeNull();
+    expect(onlyCase("npx mocha test/a.js", "x")).toBeNull();
+  });
+
+  // node reads options only before the first file: written after it, the filter reached nobody
+  // and every run meant for one case was the whole file (found on node 24.15, 2026-11-26).
+  it("puts node's name filter before the file, where node reads it", () => {
+    expect(onlyCase("node --test test/a.test.ts", "control: sums")).toBe(
+      "node --test --test-name-pattern='control: sums$' test/a.test.ts",
+    );
+  });
+
+  it("counts a selected case as passing only where the run shows it, since a filter matching nothing exits 0", () => {
+    const none = "\u2714 test/a.test.ts (40.04ms)\n\u2139 tests 1\n\u2139 pass 1\n";
+    expect(passedAlone(none, "control: sums")).toBe(false);
+    expect(passedAlone("\u2714 control: sums (0.26ms)\n\u2139 tests 1\n", "control: sums")).toBe(
+      true,
+    );
+    expect(passedAlone(" Test Files  1 skipped (1)\n      Tests  2 skipped (2)\n", "x")).toBe(
+      false,
+    );
+    expect(passedAlone("      Tests  1 passed | 1 skipped (2)\n", "x")).toBe(true);
+    expect(passedAlone("1 passed, 2 deselected in 0.01s\n", "test_x")).toBe(true);
+  });
+});
+
+describe("a check laid into the tree", () => {
+  // The harness writes and removes these on the host; the tree is the model's to rearrange.
+  it("is refused where its directory is a link out of the workspace, and replaces a link at its own path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "laid-"));
+    const [workspace, outside] = [join(root, "work"), join(root, "outside")];
+    await mkdir(workspace);
+    await mkdir(outside);
+    await writeFile(join(outside, "victim.txt"), "kept");
+    await symlink(outside, join(workspace, "test"));
+    await expect(layFile(workspace, "test/a.test.ts", "x")).rejects.toThrow(
+      /resolves outside the workspace/,
+    );
+    await expect(removeLaid(workspace, "test/victim.txt")).rejects.toThrow(
+      /resolves outside the workspace/,
+    );
+    await symlink(join(outside, "victim.txt"), join(workspace, "b.test.ts"));
+    await layFile(workspace, "b.test.ts", "laid");
+    expect(await readFile(join(outside, "victim.txt"), "utf8")).toBe("kept");
+    expect(await readFile(join(workspace, "b.test.ts"), "utf8")).toBe("laid");
+    await layFile(workspace, "new/dir/c.test.ts", "made");
+    expect(await readFile(join(workspace, "new/dir/c.test.ts"), "utf8")).toBe("made");
   });
 });
 

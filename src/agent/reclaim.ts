@@ -1,6 +1,6 @@
-import { copyFile, mkdir, rm, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, rm } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
-import { gitText } from "./git.ts";
+import { gitText } from "swarm-verify/execution";
 
 export interface Reclaimed {
   readonly path: string;
@@ -32,7 +32,7 @@ export async function reclaimWithheld(
     const absolute = join(root, path);
     let kept: string | null = null;
     if (
-      await stat(absolute).then(
+      await lstat(absolute).then(
         (found) => found.isFile(),
         () => false,
       )

@@ -220,3 +220,26 @@ export function openAiCompatible(options: {
     },
   };
 }
+
+/**
+ * One reply of a drafting call: its text, or its reasoning where it wrote nothing else, with the
+ * tokens it used, estimated at four characters each where the server reports none.
+ */
+export async function drafted(
+  model: ModelClient,
+  messages: readonly Message[],
+  options: { readonly signal?: AbortSignal | undefined; readonly maxTokens: number },
+): Promise<{
+  readonly content: string;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}> {
+  const reply = await model.complete(messages, options);
+  const content = reply.content.trim().length > 0 ? reply.content : (reply.reasoning ?? "");
+  const estimate = (text: string) => Math.ceil(text.length / 4);
+  return {
+    content,
+    inputTokens: reply.inputTokens ?? estimate(messages.map((one) => one.content).join("")),
+    outputTokens: reply.outputTokens ?? estimate(content),
+  };
+}

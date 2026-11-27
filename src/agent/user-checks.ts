@@ -1,11 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { type Requirement, sealFiles, structureEvidence, type TrustedCheck } from "swarm-verify";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import { testPattern } from "./affected-tests.ts";
-import { plainOutput, removeLaid } from "./authored-cases.ts";
+import { layFile, plainOutput, removeLaid } from "./authored-cases.ts";
+import { notCollected, unparsable } from "./authored-validation.ts";
 import type { Supplied } from "./supplied.ts";
-import type { TestConventions } from "./test-conventions.ts";
+import { runnerOf, type TestConventions } from "./test-conventions.ts";
 
 type Claim = Requirement["evidence"]["structure"][number];
 
@@ -50,8 +51,7 @@ async function laid<T>(
   for (const file of files) {
     const absolute = join(workspace, file.path);
     before.push(await readFile(absolute).catch(() => null));
-    await mkdir(dirname(absolute), { recursive: true });
-    await writeFile(absolute, file.content);
+    await layFile(workspace, file.path, file.content);
   }
   try {
     return await run();
@@ -59,14 +59,10 @@ async function laid<T>(
     for (const [at, file] of files.entries()) {
       const was = before[at] ?? null;
       if (was === null) await removeLaid(workspace, file.path);
-      else await writeFile(join(workspace, file.path), was);
+      else await layFile(workspace, file.path, was);
     }
   }
 }
-
-const notCollected =
-  /No test files found|no tests ran|collected 0 items|file or directory not found|No tests found/i;
-const unparsable = /(?:SyntaxError|IndentationError)(?!: The requested module)|Transform failed/;
 
 /** Runs one user check on the tree as it stands: the file laid while it runs, or the command alone. */
 export async function runUserCheck(
@@ -211,7 +207,9 @@ export async function sealUserChecks(
     .map((one) => ({
       name: one.name,
       command: one.command,
-      kind: "other" as const,
+      // A test runner's command is judged test by test: its exit code alone passes a run that
+      // collected nothing.
+      kind: runnerOf(one.command) === null ? ("other" as const) : ("test" as const),
       authority: "user-acceptance" as const,
     }));
 }

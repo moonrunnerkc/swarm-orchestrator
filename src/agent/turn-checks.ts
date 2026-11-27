@@ -1,9 +1,10 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   constraintEvidence,
   type DeclaredCheck,
   declaredChecks,
+  livesIn,
   parseReport,
   type Requirement,
   reportPlans,
@@ -17,11 +18,11 @@ import {
   excerpt,
   failuresDetail,
   importGraph,
-  livesIn,
   shellWord,
   testPathOf,
   testPattern,
 } from "./affected-tests.ts";
+import { layFile } from "./authored-cases.ts";
 import { type AuthoredTest, removeLaid } from "./check-author.ts";
 import { evidenceRef } from "./exchange.ts";
 import type { RequirementRecord } from "./requirement-record.ts";
@@ -122,9 +123,7 @@ export function createTurnChecks(input: {
       for (const requirement of record.requirements.filter((one) => one.required)) {
         const parts: { ok: boolean; line: string; evidence: string | null }[] = [];
         for (const test of input.authored.filter((one) => one.requirement === requirement.id)) {
-          const absolute = join(workspace, test.path);
-          await mkdir(dirname(absolute), { recursive: true });
-          await writeFile(absolute, test.content);
+          await layFile(workspace, test.path, test.content);
           const ran = await chokepoint
             .check(test.command, `authored check for ${requirement.id}`)
             .finally(() => removeLaid(workspace, test.path));

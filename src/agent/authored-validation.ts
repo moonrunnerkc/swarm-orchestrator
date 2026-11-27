@@ -1,26 +1,20 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename } from "node:path";
 import type { Chokepoint } from "../tools/chokepoint.ts";
 import type { AuthorKind } from "./author-prompt.ts";
 import { controlsRefused, passingAlone } from "./authored-alone.ts";
-import {
-  excludingCases,
-  failingCases,
-  plainOutput,
-  refusedName,
-  removeLaid,
-} from "./authored-cases.ts";
+import { failingCases, layFile, plainOutput, refusedName, removeLaid } from "./authored-cases.ts";
 import type { AuthoredTest } from "./check-author.ts";
 
 export { plainOutput, removeLaid } from "./authored-cases.ts";
 
 const excerpt = (text: string) => text.slice(-1500);
 
-const notCollected =
+export const notCollected =
   /No test files found|no tests ran|collected 0 items|file or directory not found|No tests found/i;
 // Node reports an export the base lacks as a SyntaxError too; that is the failure a feature's
 // check should have, not a check that does not parse.
-const unparsable = /(?:SyntaxError|IndentationError)(?!: The requested module)|Transform failed/;
+export const unparsable =
+  /(?:SyntaxError|IndentationError)(?!: The requested module)|Transform failed/;
 const missingModule =
   /Failed to load url (\S+)|Cannot find module '([^']+)'|No module named '([^']+)'/g;
 
@@ -126,6 +120,24 @@ export function misusedMatcher(content: string): string | null {
 }
 
 /**
+ * A function the check defines itself whose own throw is what fails at the base: the invoice example's drafts (2026-11-26) called a `handleDownloadInvoice` they declared
+ * at the foot of the file to throw "Not implemented", which no change to the repository reaches.
+ */
+function ownPlaceholder(output: string, path: string, content: string): string | null {
+  const file = basename(path).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const name = new RegExp(
+    `^\\s*(?!Assertion)\\w*Error\\b[^\\n]*\\n\\s+(?:at|\u276f) (?:async )?([A-Za-z_$][\\w$]*) [^\\n]*${file}:\\d+`,
+    "m",
+  ).exec(output)?.[1];
+  if (
+    name === undefined ||
+    !new RegExp(`(?:function|const|let)\\s+${name.replace(/\$/g, "\\$")}\\b`).test(content)
+  )
+    return null;
+  return `it calls ${name}, which the test file defines itself, and that is what fails at the base: a check of its own placeholder says nothing about the repository's code; reach the behavior through the files shown (start the application as its entry file does and send it requests, or import what they export) and define nothing the task asks for`;
+}
+
+/**
  * A case the author names as a control: existing behavior driven through the same setup as the
  * task's cases, which must pass at the base. One that fails there shows the setup never reaches
  * the code, which no base failure of the task's own cases can show: pubprep (2026-11-05, rc.10 and
@@ -141,19 +153,10 @@ export async function runAtBase(
   test: Omit<AuthoredTest, "atBase">,
   task: string,
   kind: AuthorKind,
-  narrowed = false,
-): Promise<{
-  readonly reasons: string[];
-  readonly output: string;
-  /** The command with the cases that fail on every tree left out, where any were. */
-  readonly command?: string;
-  readonly excluded?: readonly string[];
-}> {
+): Promise<{ readonly reasons: string[]; readonly output: string }> {
   const misuse = misusedMatcher(test.content);
   if (misuse !== null) return { reasons: [misuse], output: "" };
-  const absolute = join(workspace, test.path);
-  await mkdir(dirname(absolute), { recursive: true });
-  await writeFile(absolute, test.content);
+  await layFile(workspace, test.path, test.content);
   const ran = await chokepoint
     .check(test.command, `authored check for ${test.requirement}, at the base`)
     .finally(() => removeLaid(workspace, test.path));
@@ -171,10 +174,14 @@ export async function runAtBase(
   if (undefinedHere !== null)
     return {
       reasons: [
-        `it uses ${undefinedHere}, which it neither defines nor imports, so it fails on every tree; import it as the example test does`,
+        undefinedHere === "require"
+          ? "it calls require, which an ES module does not have, so it fails on every tree; this package loads code as ES modules: use import, as the example test does"
+          : `it uses ${undefinedHere}, which it neither defines nor imports, so it fails on every tree; import it as the example test does`,
       ],
       output,
     };
+  const placeholder = ownPlaceholder(plain, test.path, test.content);
+  if (placeholder !== null) return { reasons: [placeholder], output };
   const control = failingCases(plain).find((one) => controlCase.test(one.title));
   if (control !== undefined)
     return {
@@ -185,33 +192,24 @@ export async function runAtBase(
     };
   const refused = await controlsRefused(chokepoint, workspace, test);
   if (refused !== null) return { reasons: [refused], output };
-  // Cases that fail on every tree are left out where other cases fail at the base as they should;
-  // the check runs as narrowed, and is run again at the base so.
   // An upgrade's behavior check is judged as a feature's: what the new versions make the code do.
   const own = kind === "feature" || kind === "other" || kind === "upgrade";
-  const cases = own && !narrowed ? failingCases(plain) : [];
-  const foreignCases = cases.filter(
+  // A case that fails on every tree is never left out to make the rest usable: it is sent back
+  // with what it did, and the check is taken whole or not at all.
+  const cases = own ? failingCases(plain) : [];
+  const broken = cases.filter(
     (one) => foreignError(one.error, task) !== null || refusedName(one.error, task) !== null,
   );
-  const leaning = await passingAlone(
-    chokepoint,
-    workspace,
-    test,
-    cases.filter((one) => !foreignCases.includes(one)),
-  );
-  const broken = [...foreignCases, ...leaning];
-  const command =
-    broken.length > 0 && broken.length < cases.length
-      ? excludingCases(
-          test.command,
-          broken.map((one) => one.title),
-        )
-      : null;
-  if (command !== null) {
-    const again = await runAtBase(chokepoint, workspace, { ...test, command }, task, kind, true);
-    if (again.reasons.length > 0) return again;
-    return { ...again, command, excluded: broken.map((one) => one.title) };
-  }
+  const sound = cases.filter((one) => !broken.includes(one));
+  broken.push(...(await passingAlone(chokepoint, workspace, test, sound)));
+  if (broken.length > 0 && broken.length < cases.length)
+    return {
+      reasons: broken.map(
+        (one) =>
+          `its case "${one.title}" fails at the base with ${one.error.slice(0, 200)}, which is the check's own doing (an input or a leftover of its own) and not the missing behavior; mend the case and keep what it asserts`,
+      ),
+      output,
+    };
   const foreign = own ? foreignError(plain, task) : null;
   if (foreign !== null)
     return {
