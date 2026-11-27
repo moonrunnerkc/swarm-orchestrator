@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { requirementSchema } from "swarm-verify";
 import { describe, expect, it } from "vitest";
@@ -17,15 +17,10 @@ import { authorTest, scripted } from "./test-doubles.ts";
 const invoiceExample = join(fileURLToPath(import.meta.url), "../../../examples/invoice-api");
 
 /** A committed repository of the given files, with the chokepoint a run's base checks go through. */
-async function base(files: Readonly<Record<string, string>> | string) {
+async function base(files: string) {
   const root = await mkdtemp(join(tmpdir(), "drafts-"));
   const repo = join(root, "repo");
-  if (typeof files === "string") await cp(files, repo, { recursive: true });
-  else
-    for (const [path, text] of Object.entries(files)) {
-      await mkdir(dirname(join(repo, path)), { recursive: true });
-      await writeFile(join(repo, path), text);
-    }
+  await cp(files, repo, { recursive: true });
   const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
   git("init", "-q", "-b", "main");
   git("add", "-A");
@@ -58,11 +53,7 @@ async function base(files: Readonly<Record<string, string>> | string) {
 const requirementFor = (task: string) =>
   requirementSchema.parse({ id: "R1", text: task, source: "user", kind: "other" });
 
-async function drafted(
-  files: Readonly<Record<string, string>> | string,
-  task: string,
-  replies: readonly string[],
-) {
+async function drafted(files: string, task: string, replies: readonly string[]) {
   const { repo, evidence, chokepoint } = await base(files);
   const conventions = await testConventions(repo, task);
   const model = scripted([], { author: replies });
@@ -182,17 +173,7 @@ describe("a drafted check for the invoice example", () => {
 
 // A second API, unlike the first where it matters: other directories, a route table, an API key
 // header, an `authorId`, a start function, and tests that drive the service over HTTP.
-const notes: Readonly<Record<string, string>> = {
-  "package.json": JSON.stringify({
-    name: "notes",
-    type: "module",
-    scripts: { start: "node service/main.ts", test: "node --test" },
-  }),
-  "service/store.ts": `export interface Account {\n  readonly key: string;\n  readonly handle: string;\n}\nexport interface Note {\n  readonly slug: string;\n  readonly authorId: string;\n  readonly text: string;\n}\nexport const accounts: readonly Account[] = [\n  { key: "key-lin", handle: "lin" },\n  { key: "key-omar", handle: "omar" },\n];\nexport const notes: Note[] = [\n  { slug: "n-1", authorId: "lin", text: "first" },\n  { slug: "n-2", authorId: "omar", text: "second" },\n];\n`,
-  "service/http.ts": `import { createServer, type Server } from "node:http";\nimport { accounts, notes } from "./store.ts";\n\ninterface Route {\n  readonly method: string;\n  readonly pattern: RegExp;\n  run(handle: string, match: RegExpExecArray): { status: number; body: unknown };\n}\n\nconst routes: readonly Route[] = [\n  {\n    method: "GET",\n    pattern: /^\\/notes$/,\n    run: (handle) => ({ status: 200, body: notes.filter((note) => note.authorId === handle) }),\n  },\n];\n\n/** Starts the notes service on a port; 0 takes any free one. */\nexport function startService(port: number): Server {\n  return createServer((request, response) => {\n    const account = accounts.find((one) => one.key === request.headers["x-api-key"]);\n    const send = (status: number, body: unknown) => {\n      response.writeHead(status, { "content-type": "application/json" });\n      response.end(status === 204 ? undefined : JSON.stringify(body));\n    };\n    if (account === undefined) return send(401, { error: "no key" });\n    for (const route of routes) {\n      const match = route.pattern.exec(request.url ?? "");\n      if (request.method !== route.method || match === null) continue;\n      const answer = route.run(account.handle, match);\n      return send(answer.status, answer.body);\n    }\n    send(404, { error: "no such route" });\n  }).listen(port);\n}\n`,
-  "service/main.ts": `import { startService } from "./http.ts";\n\nstartService(Number(process.env.PORT ?? 8080));\n`,
-  "spec/notes.test.ts": `import assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { startService } from "../service/http.ts";\n\ntest("an account lists its own notes", async () => {\n  const service = startService(0);\n  const { port } = service.address() as { port: number };\n  const response = await fetch(\`http://127.0.0.1:\${port}/notes\`, { headers: { "x-api-key": "key-lin" } });\n  service.close();\n  assert.deepEqual(((await response.json()) as { slug: string }[]).map((one) => one.slug), ["n-1"]);\n});\n`,
-};
+const notes = join(fileURLToPath(import.meta.url), "../../../examples/notes-api");
 const notesTask =
   "Add DELETE /notes/:slug, which removes the note for the account that wrote it and answers 204.";
 const notesDraft = (helper: string) => `import assert from "node:assert/strict";

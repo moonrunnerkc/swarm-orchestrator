@@ -141,10 +141,10 @@ describe("the invoice download task", () => {
       ran.result?.behavior[0]?.cases.map((one) => [one.name, one.base, one.candidate]),
     ).toEqual([
       ["each named user is signed in, and a request without credentials is not", "pass", "pass"],
-      ["the owner is served", "fail", "pass"],
       ["another user is refused", "pass", "pass"],
       ["an unauthenticated request is refused", "pass", "pass"],
       ["a user of another role is refused", "pass", "pass"],
+      ["the owner is served", "fail", "pass"],
     ]);
     expect(ran.report.notes.join("\n")).toMatch(/Security: ownership applies: the task names/);
     expect(ran.report.notes.join("\n")).toMatch(/Security: single-use-token does not apply/);
