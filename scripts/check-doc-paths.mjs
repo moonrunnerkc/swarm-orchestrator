@@ -32,6 +32,7 @@ export const archiveTags = [
   "archive/docs-2026-11-25",
   "archive/acceptance-2026-11-26",
   "archive/acceptance-2026-11-26-closeout",
+  "archive/acceptance-2026-11-27-packed-17.1.0",
 ];
 /** Changelogs and the tag prefix their releases carry. */
 const changelogTags = new Map([["CHANGELOG.md", "v"]]);
