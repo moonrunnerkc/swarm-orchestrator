@@ -1,0 +1,21 @@
+{
+  "target": {
+    "start": "node src/server.ts",
+    "port": 3000,
+    "env": { "INVITE_TTL_MS": "1000" },
+    "ready": { "path": "/health" }
+  },
+  "checks": [
+    {
+      "class": "single-use-token",
+      "issue": {
+        "method": "POST",
+        "path": "/teams/team-1/invites",
+        "headers": { "authorization": "Bearer token-ada" }
+      },
+      "tokenAt": "token",
+      "redeem": { "method": "POST", "path": "/invites/{{token}}/accept", "body": { "name": "Lin" } },
+      "expiresAfterMs": 1500
+    }
+  ]
+}
