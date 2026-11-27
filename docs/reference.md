@@ -23,7 +23,7 @@ Model:
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--model <name>` | `auto` | A model by name, or `auto` to discover one. |
-| `--endpoint <url>` | Ollama on localhost | An OpenAI-compatible server. Also `SWARM_ENDPOINT` or `[agent] endpoint`. |
+| `--endpoint <url>` | Ollama on localhost | An OpenAI-compatible server. Also `SWARM_ENDPOINT`. |
 | `--context <tokens>` | 65536, then 32768, for a discovered model; 32768 for a named one | The context window to use. |
 | `--profile <name>` | the machine's default record | Read and write a named model record instead. Also `SWARM_PROFILE`. |
 | `--no-record` | off | Read the record, write nothing. |
@@ -35,9 +35,9 @@ Requirements and checks:
 | `--require "<words of the task>"` | Set a phrase of the task apart as a required requirement of its own. Repeatable. Must quote the task. |
 | `--accept [R<n>=\|keep=]<path>` | Your test file, directory, or JSON array of structure claims. Witnesses R1 unless named. Repeatable. |
 | `--accept-cmd [R<n>=\|keep=]<command>` | Your check as a command. Repeatable. |
-| `--write-checks <dir>` | Draft checks into a directory outside the repository and stop. |
-| `--review-checks` | Show each drafted check for approval at a terminal. |
-| `--accept-authored` | Use the drafted checks as written. |
+| `--write-checks <dir>` | Draft the checks, a security binding included, into a directory outside the repository and stop. The default where no terminal is attached. |
+| `--review-checks` | Show each drafted check and binding for approval at a terminal. The default at a terminal. |
+| `--accept-authored` | Use the drafted checks and binding as written. Nobody has read them, and the report says so. |
 | `--authorize-behavior-change` | Allow the change to alter what existing tests expect. The report names each one. |
 | `--review` | After completion, ask for one counterexample in a fresh context. Only a failing command reopens the work. |
 
@@ -47,7 +47,7 @@ Security:
 | --- | --- |
 | `--security <obligation>` | Say an obligation applies: `ownership`, `single-use-token` or `duplicate-operation`. Repeatable. |
 | `--no-security <obligation>` | Say it does not. The report records that you excluded it. |
-| `--security-check <file>` | Your binding for the checks. Without it one is drafted and reported as not reviewed. |
+| `--security-check <file>` | Your binding for the checks. Without it one is drafted from the repository, tried at the base with real requests, and then handled as any drafted check is: reviewed, written out, or used unread only under `--accept-authored`. |
 
 Limits and execution:
 
@@ -70,22 +70,23 @@ The agent reads `[agent]`:
 ```toml
 [agent]
 model = "gemma4:31b"          # or "auto"
-endpoint = "http://127.0.0.1:8000/v1"
-api_key_env = "SWARM_API_KEY" # the variable's name, never the key
 max_steps = 50
 max_tokens = 2000000
 turn_tokens = 16384
-approval = "ask"              # or "auto"
 ```
 
-A command-line option wins over the file. Environment variables:
+A command-line option wins over the file. The file is committed with the repository, so it
+cannot choose what only you may: approval of commands (`--approve`), the server a key is sent to
+(`--endpoint`, `SWARM_ENDPOINT`) or the variable the key is read from (always `SWARM_API_KEY`).
+A file that sets `approval`, `endpoint` or `api_key_env` is refused with where each goes now.
+Environment variables:
 
 | Variable | Meaning |
 | --- | --- |
 | `SWARM_HOME` | Where sessions, sealed checks and model records live. Default `~/.swarm`. |
 | `SWARM_ENDPOINT` | The OpenAI-compatible endpoint. |
 | `SWARM_PROFILE` | The model record to use, as `--profile`. |
-| `SWARM_API_KEY` | The endpoint's key, unless `api_key_env` names another variable. |
+| `SWARM_API_KEY` | The endpoint's key. |
 | `SWARM_SIGNING_KEY` | A PEM private key to sign verifications with, instead of the OS keychain's. |
 
 ## Conventions
@@ -126,6 +127,7 @@ statement's `producer.profile`.
       "owner": { "authorization": "Bearer token-ada" },
       "other": { "authorization": "Bearer token-grace" },
       "otherRole": { "authorization": "Bearer token-sam" },
+      "signedIn": { "method": "GET", "path": "/invoices" },
       "ownerSees": ["INV-2026-0001"] },
     { "class": "single-use-token",
       "issue": { "method": "POST", "path": "/reset", "body": { "email": "ada@example.test" } },
@@ -143,10 +145,21 @@ statement's `producer.profile`.
 
 `start` must keep running and listen on `port`, which it is also given as `PORT`. Use synthetic
 users and tokens. For `expiresAfterMs`, start the server with a short token life in `env`.
+`signedIn` is a request the API already answers for any signed-in user and refuses without
+credentials: it shows that each user the binding names is one the server knows. Without it, a
+credential that names nobody is refused like a stranger's, which reads as the restriction
+working; a drafted binding must have it. A binding is refused outright where it could not show
+what it claims: the other user is the owner, `redeem` never uses `{{token}}`, `by` is 0.
+
+Before the first edit the binding, yours or a draft, is tried at the base: the server is started
+and the requests are sent. A server that does not come up, or a named user the server does not
+know, stops the run (yours) or sends the draft back to be mended with what was observed. A draft
+must also use only credentials and values found in the repository files it was shown. The report
+gives the binding's sha256 and what each case did at the base.
 
 | Obligation | Cases, each a real request |
 | --- | --- |
-| `ownership` | The owner is served; another user, another role and an unauthenticated request are refused, and none of them sees `ownerSees`. |
+| `ownership` | Each named user is signed in (with `signedIn`); another user, another role and an unauthenticated request are refused, and none of them sees `ownerSees`; then the owner is served. |
 | `single-use-token` | A valid token is redeemed; a redeemed, unknown or expired one is refused; of several redemptions at once exactly one succeeds. |
 | `duplicate-operation` | The operation is applied; replayed, or sent several times at once, it changes the observed value once. A repeat may be answered with the first result. |
 
@@ -161,6 +174,7 @@ API, gets none, and the report says so.
 | 0 | Complete. |
 | 1 | Incomplete with a failed requirement, or an unexpected error. |
 | 2 | The command line could not be read. |
+| 3 | Cancelled by a signal. The run still finalizes and reports what it had. |
 | 4 | Incomplete with nothing failed: something is unverified. |
 | 5 | Blocked: no model was ready, or the run stopped before its first edit. |
 

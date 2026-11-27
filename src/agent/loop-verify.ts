@@ -12,6 +12,9 @@ const repair =
 const retry =
   "Your last change left these findings exactly as they were, so their cause is not where you changed. Do not repeat it: read the code the failing request or test actually runs through, name a different cause, and fix that.";
 
+const hung =
+  " A check timed out: a test that leaves a server listening, a timer or a connection open keeps its runner from exiting, most often after a failed assertion. Close what each test opens before its first assertion.";
+
 /** What one verification left the loop to do. */
 export type VerifyOutcome =
   | { readonly kind: "stop"; readonly stop: StopReason; readonly reason: string | null }
@@ -92,7 +95,7 @@ export function createVerifyStep(input: {
         };
       return {
         kind: "continue",
-        answer: `(${said}) The verifier did not find the task complete. Act on its findings; the harness runs the checks again after your next change. ${unmoved > 0 ? retry : repair}`,
+        answer: `(${said}) The verifier did not find the task complete. Act on its findings; the harness runs the checks again after your next change. ${unmoved > 0 ? retry : repair}${/timed out/.test(judged.feedback) ? hung : ""}`,
         findings: judged.feedback,
         checked: evidence,
       };

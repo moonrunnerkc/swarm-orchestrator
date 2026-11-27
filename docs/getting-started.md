@@ -36,9 +36,17 @@ write. You choose where that check comes from:
 | A test that fails today | `--accept <file or directory>` | It runs before any edit and must fail there. The model sees its output, never its source. |
 | A command that fails today | `--accept-cmd "<command>"` | Same, for a command. |
 | A test that must keep passing | `--accept keep=<file>` | It must pass before and after. |
-| Nothing yet | `--write-checks <dir outside the repo>` | A separate model call drafts a check from the task's wording. The run stops so you can read and edit it, then pass it with `--accept <dir>`. |
+| Nothing yet | `--write-checks <dir outside the repo>` | A separate model call drafts a check from the task's wording and the repository as it is. The run stops so you can read and edit it, then pass it with `--accept <dir>`. |
 | Nothing, at a terminal | (no flag) | The drafted check is shown for you to approve, edit or reject. |
 | Nothing, and no wish to read it | `--accept-authored` | The drafted check is used as written. The report labels it `independently-generated`, not yours. |
+
+The drafting call never sees a change. It is shown the task, one of your tests, the source files
+that test imports and the application's entry with what they import (small files whole, larger
+ones as declarations), the module system and the start command. Its draft is run at the base
+and must fail there for want of the behavior the task asks for: a draft that does not parse,
+imports what does not exist, tests a function it defines itself, or whose control case fails,
+is sent back with what its run printed, up to three times. A draft is taken whole or not at
+all; no failing case is left out to make the rest usable.
 
 ## 3. Run it
 
@@ -109,8 +117,12 @@ The check for a security requirement is made of real requests. The verifier star
 in a container with no network and sends the requests from a second container, at the base and
 on the change. It needs a binding: how the server starts, and which request as which user. Write
 one and pass `--security-check <file>` ([format](reference.md#security-binding)), or let a
-separate model call draft it from the repository; a drafted binding is written out, used, and
-reported as not reviewed. [examples/invoice-api](../examples/invoice-api/README.md) is a
+separate model call draft it from the repository. A draft is held to credentials the repository
+itself holds and is tried at the base with real requests before anything is built; what those
+show is wrong with it is sent back to be mended. That is validation, not review: at a terminal
+you approve, edit or reject the draft, `--write-checks` writes it out and stops, and only
+`--accept-authored` uses it unread, which the report says. The three checks are what this
+version makes for these three obligations; they are not a security review of the change. [examples/invoice-api](../examples/invoice-api/README.md) is a
 complete example.
 
 ## Tasks with several parts

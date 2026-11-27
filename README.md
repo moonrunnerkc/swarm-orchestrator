@@ -30,22 +30,23 @@ follows the reply protocol. If none is ready it says why.
 
 ## Run a task
 
-Swarm finishes a task when a check you stand behind passes. The quickest route is to let it
-draft that check, read it, then run against it:
+Swarm finishes a task when a check the coding model did not write passes. Where you have none,
+a separate model call drafts one from the task and your repository as it is, and you decide what
+becomes of the draft:
 
 ```sh
 cd your-repo
-
-# 1. Draft a failing test for the task. Nothing in the repository is edited.
-swarm run "Add a --json option to the status command" --write-checks ../status-checks
-
-# 2. Read and edit ../status-checks, then run the task against it.
-swarm run "Add a --json option to the status command" --accept ../status-checks
+swarm run "Add a --json option to the status command"
 ```
 
-Already have a test that fails today and should pass when the work is done? Skip step 1 and pass
-it with `--accept <file>` or `--accept-cmd "<command>"`. To use the drafted check without reading
-it, pass `--accept-authored`.
+At a terminal each drafted check is shown for you to approve, edit or reject before anything is
+edited. Without a terminal the drafts are written out and the run stops (`--write-checks <dir>`
+chooses where); read them, then pass them back with `--accept <dir>`. To let a run use its
+drafts unread, pass `--accept-authored`: the report then labels them `independently-generated`
+and says nobody reviewed them.
+
+Already have a test that fails today and should pass when the work is done? Pass it with
+`--accept <file>` or `--accept-cmd "<command>"`, and nothing is drafted for it.
 
 A task that lists several things, one per bullet or number, gets one requirement per item, and
 each needs a check of its own. Set a phrase of the task apart the same way with
@@ -59,10 +60,15 @@ swarm init --approve <proposal> # put the file you read and edited in effect for
 ```
 
 An approved rule (named exports, camelCase functions, no `any`) becomes a requirement of every
-run, checked on the files the run changes. For a JavaScript or TypeScript web API, a task that
-touches a per-user resource, a single-use token or an operation that must not repeat also gets a
-security requirement, checked by real requests to your running server. The report says which
-applied and why. [The example](examples/invoice-api/README.md) runs both.
+later run, checked on the files the run changes. For a JavaScript or TypeScript web API, a task
+that touches a per-user resource, a single-use token or an operation that must not repeat also
+gets a security requirement, checked by real requests to your running server from a separate
+container. The check needs a binding: how the server starts, and which request as which user.
+Pass yours with `--security-check <file>`, or let it be drafted like any other check; a draft is
+tried at the base with real requests before it is offered to you. The report says which
+obligations applied and why. These three checks are what this version makes: they are not a
+security review, and a passing one shows only that the requests it sent were answered as they
+should be. [The example](examples/invoice-api/README.md) runs all of it.
 
 ## What you get back
 

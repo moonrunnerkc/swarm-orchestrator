@@ -42,11 +42,39 @@ export const securityPrompt = [
   "record is whose, reply with the one word UNKNOWN and a line saying what is missing.",
 ].join("\n");
 
+/**
+ * Why a draft's main request is not one the task asks for, where the task names its requests.
+ * A draft for a task adding `DELETE /notes/:slug` bound ownership to the list every account can
+ * already read, which no change could satisfy (notes example, 2026-11-26).
+ */
+function strayRequest(file: SecurityFile, task: string): string | null {
+  const named = [...task.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[\w\-./:{}]*)/g)];
+  if (named.length === 0) return null;
+  for (const check of file.checks) {
+    const main =
+      check.class === "ownership"
+        ? check.resource
+        : check.class === "single-use-token"
+          ? check.redeem
+          : check.operation;
+    const path = main.path.split("?")[0] ?? "";
+    const asked = named.some(([, method, route = ""]) => {
+      const trimmed = route.replace(/[.:,;]+$/, "");
+      const pattern = trimmed.replace(/[.]/g, "\\.").replace(/:\w+|\{\w+\}/g, "[^/]+");
+      return method === main.method && new RegExp(`^${pattern}/?$`).test(path);
+    });
+    if (!asked)
+      return `the ${check.class} check sends ${main.method} ${main.path}, which is not a request the task names (${named.map((one) => one[0]).join(", ")}); bind it to the request the task adds or changes, for one existing record`;
+  }
+  return null;
+}
+
 /** The binding a reply holds, or what is wrong with it for the classes asked for. */
 function read(
   reply: string,
   classes: readonly SecurityClass[],
   shown: string,
+  task: string,
 ): SecurityFile | string {
   const block = /```(?:json)?\s*\n([\s\S]*?)\n```/.exec(reply)?.[1];
   if (block === undefined)
@@ -63,6 +91,8 @@ function read(
   if (absent.length > 0) return `the block has no check of class ${absent.join(", ")}`;
   if (file.checks.some((one) => one.class === "ownership" && one.signedIn === undefined))
     return 'the ownership check has no "signedIn" request, so nothing shows the users it names are ones the server knows; name a request the API already answers for any signed-in user';
+  const stray = strayRequest(file, task);
+  if (stray !== null) return stray;
   const made = unreadValue(file, shown);
   return made === null
     ? file
@@ -123,7 +153,7 @@ export async function draftSecurity(input: {
       const failure = `the drafting model failed: ${error.message}`;
       return { file: null, failure, attempts, tokens };
     }
-    const found = read(content, input.classes, asked);
+    const found = read(content, input.classes, asked, input.task);
     const problem = typeof found === "string" ? found : await input.tryAtBase(found);
     await input.evidence.record({
       type: "model-call",

@@ -221,10 +221,7 @@ export function openAiCompatible(options: {
   };
 }
 
-/**
- * One reply of a drafting call: its text, or its reasoning where it wrote nothing else, with the
- * tokens it used, estimated at four characters each where the server reports none.
- */
+/** One reply of a drafting call: its text, or its reasoning where it wrote nothing else, and its tokens. */
 export async function drafted(
   model: ModelClient,
   messages: readonly Message[],

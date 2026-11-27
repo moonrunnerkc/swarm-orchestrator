@@ -73,6 +73,29 @@ output names the package that failed, often one built for another platform. Fix 
 The task changes a request handler and does not say whether what it serves belongs to one user.
 Pass `--security ownership` if it does, `--no-security ownership` if it does not.
 
+## `blocked: the security checks' binding was drafted ... run again with --security-check`
+
+A security obligation applied, you supplied no binding, and nothing said a draft may be used
+unread. The draft passed its trial at the base and was written to the path in the message. Read
+it: the start command and port, the route, which user owns the record and which does not. Then
+run again with `--security-check <that file>`. To let a run use drafts unread, pass
+`--accept-authored`; the report then says nobody reviewed them.
+
+## `blocked: the security binding <file> cannot be used: ...`
+
+Your binding was tried at the base before the first edit and real requests showed a fault in
+it. `its target did not answer on port ...` means the start command or the port is wrong, and
+the server's last output follows. `the users it names did not check out` means a credential in
+`owner`, `other` or `otherRole` is not one the server knows, or the `signedIn` request is open
+to everyone; the message gives the request and the status it got.
+
+## `swarm.toml cannot be used: agent.approval is no longer read from this file`
+
+`approval`, `endpoint` and `api_key_env` are refused in `swarm.toml`, which is committed with
+the repository: a cloned project could otherwise approve its own commands or name the server
+your key is sent to. Remove the line and pass `--approve auto` or `--endpoint <url>`, or set
+`SWARM_ENDPOINT`; the key is always read from `SWARM_API_KEY`.
+
 ## A `security` requirement is `unverified`
 
 Either no binding could be drafted (the report's note says what the repository did not show), or

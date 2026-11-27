@@ -64,6 +64,8 @@ export async function deriveForRun(input: {
   let behavior: BehaviorCheckInput[] = [];
   let tokens = 0;
   let held: string | null = null;
+  const draftDirectory = () =>
+    options.checksMode?.kind === "write" ? options.checksMode.directory : input.evidence.directory;
   /**
    * What becomes of a draft nobody has read: used as drafted only where the user said so
    * (`--accept-authored`), shown for approval at a terminal, else written out and the run stopped.
@@ -73,7 +75,7 @@ export async function deriveForRun(input: {
     tryAtBase: (file: SecurityFile) => Promise<string | null>,
   ): Promise<SecurityFile | null> => {
     const mode = options.checksMode ?? { kind: "accept-authored" as const };
-    const directory = mode.kind === "write" ? mode.directory : input.evidence.directory;
+    const directory = draftDirectory();
     const path = join(directory, "security.json");
     await mkdir(directory, { recursive: true });
     await writeFile(path, `${JSON.stringify(draft, null, 2)}\n`);
@@ -183,10 +185,13 @@ export async function deriveForRun(input: {
         else file = await settleDraft(file, tryAtBase);
         authority = options.checksMode?.kind === "review" ? authority : "independently-generated";
       }
-      if (file !== null)
+      if (file !== null) {
+        // The digest of the file as it is on disk: the one the user passed, or the draft as written.
+        const bytes = await readFile(supplied ?? join(draftDirectory(), "security.json"));
         notes.push(
-          `Security: the binding, sha256 ${createHash("sha256").update(JSON.stringify(file)).digest("hex")}, was tried at the base with real requests before the first edit (${atBase.join(" | ")}).`,
+          `Security: the binding, sha256 ${createHash("sha256").update(bytes).digest("hex")}, was tried at the base with real requests before the first edit (${atBase.join(" | ")}).`,
         );
+      }
       const ids = new Map<(typeof applies)[number], string>();
       const fixed = withDerived(record, [
         ...(checked ? [(id: string) => conventionRequirement(id, rules)] : []),
