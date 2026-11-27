@@ -37,6 +37,18 @@ terminal) where the model is not one whose drafts you have seen. Evidence:
 docs/acceptance/2026-11-26-closeout/README.md, runs `dev-invoice-seeded-2-qwen` and
 `dev-invoice-seeded-3-mistral`.
 
+## Token expiry is checked only where the application has a lifetime setting
+
+The single-use token check redeems a token after its lifetime only where the binding gives
+`expiresAfterMs`, which needs a server started with a lifetime of about a second through a
+variable it reads (`target.env`). An application whose lifetime is a constant in its code has no
+such setting: the expiry case is recorded as not exercised, the token requirement stays
+unverified and the run ends incomplete, however correct the change. Nothing waits out a real
+lifetime and no variable is invented. Reproduce: remove `expiresAfterMs` and `env` from
+`examples/invites-api/security.json` and run the example's task with `--security-check`.
+The token and duplicate-operation checks have one live run between them (the invites task,
+gemma4:31b); see docs/history.md for the record.
+
 ## A test that leaves a server listening holds its check until the timeout
 
 `node --test` does not exit while a test's server, timer or connection is open. A test that

@@ -144,7 +144,12 @@ statement's `producer.profile`.
 ```
 
 `start` must keep running and listen on `port`, which it is also given as `PORT`. Use synthetic
-users and tokens. For `expiresAfterMs`, start the server with a short token life in `env`.
+users and tokens. For `expiresAfterMs`, start the server with a short token life in `env`, by a
+variable the application reads, and give a little more than that life. Without it no token is
+redeemed after its lifetime: the case "an expired token is refused" is recorded as not exercised
+and the token requirement stays unverified, so the run is not complete, whoever wrote the
+binding. An application with no lifetime setting cannot have expiry checked this way; nothing
+waits out a long-lived token, and no variable is invented.
 `signedIn` is a request the API already answers for any signed-in user and refuses without
 credentials: it shows that each user the binding names is one the server knows. Without it, a
 credential that names nobody is refused like a stranger's, which reads as the restriction
@@ -154,13 +159,14 @@ what it claims: the other user is the owner, `redeem` never uses `{{token}}`, `b
 Before the first edit the binding, yours or a draft, is tried at the base: the server is started
 and the requests are sent. A server that does not come up, or a named user the server does not
 know, stops the run (yours) or sends the draft back to be mended with what was observed. A draft
-must also use only credentials and values found in the repository files it was shown. The report
+must also use only credentials, values and `env` variable names found in the repository files it
+was shown. The report
 gives the binding's sha256 and what each case did at the base.
 
 | Obligation | Cases, each a real request |
 | --- | --- |
-| `ownership` | Each named user is signed in (with `signedIn`); another user, another role and an unauthenticated request are refused, and none of them sees `ownerSees`; then the owner is served. |
-| `single-use-token` | A valid token is redeemed; a redeemed, unknown or expired one is refused; of several redemptions at once exactly one succeeds. |
+| `ownership` | Each named user is signed in (with `signedIn`); another user, another role (with `otherRole`) and an unauthenticated request are refused, and none of them sees `ownerSees`; then the owner is served. |
+| `single-use-token` | A valid token is redeemed; a redeemed or unknown one is refused; one redeemed after `expiresAfterMs` is refused (not exercised, and the requirement unverified, without it); of several redemptions at once exactly one succeeds. |
 | `duplicate-operation` | The operation is applied; replayed, or sent several times at once, it changes the observed value once. A repeat may be answered with the first result. |
 
 Every set holds a legitimate use that must succeed, so refusing everything fails it. These are

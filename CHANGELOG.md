@@ -3,6 +3,31 @@
 The agent. The verifier it consumes, `swarm-verify`, has its own changelog in
 [moonrunnerkc/swarm-verify](https://github.com/moonrunnerkc/swarm-verify/blob/main/CHANGELOG.md).
 
+## 17.1.1 - 2026-11-27
+
+Requires swarm-verify 3.3.0. A fix release.
+
+### Fixed
+
+- **A token requirement is no longer satisfied by a check that never exercised expiry.** A
+  binding for `single-use-token` with no `expiresAfterMs` made no expiry case, while the
+  requirement it witnesses says an expired token is refused. swarm-verify 3.3.0 keeps the case
+  and records it as not exercised, so the requirement is unverified and the run incomplete,
+  with what to supply. This holds for a binding you pass with `--security-check` and for a
+  drafted one alike. In a run on 17.1.0 the drafted acceptance test stood in front of this: a
+  task that names expiry got a test of it, and a change that left expiry out was stopped there.
+  The verifier on its own called such a change complete.
+- The binding author is told to set the lifetime variable the server reads and to leave
+  `expiresAfterMs` out where there is none, and a draft that starts the server with a variable
+  the repository never reads is sent back.
+- An ownership requirement says another role is refused only where the binding names a user of
+  one (`otherRole`).
+
+### Added
+
+- `examples/invites-api`: a small API whose base accepts an invite once and never expires one,
+  a fault placed there on purpose, with the task that repairs it.
+
 ## 17.1.0 - 2026-11-26
 
 Requires swarm-verify 3.2.0 and Node 22.13. 17.0.0 was never published; this section covers
