@@ -33,6 +33,7 @@ export const archiveTags = [
   "archive/acceptance-2026-11-26",
   "archive/acceptance-2026-11-26-closeout",
   "archive/acceptance-2026-11-27-packed-17.1.0",
+  "archive/acceptance-2026-11-27-token-expiry",
 ];
 /** Changelogs and the tag prefix their releases carry. */
 const changelogTags = new Map([["CHANGELOG.md", "v"]]);

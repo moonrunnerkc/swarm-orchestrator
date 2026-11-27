@@ -47,7 +47,7 @@ unverified and the run ends incomplete, however correct the change. Nothing wait
 lifetime and no variable is invented. Reproduce: remove `expiresAfterMs` and `env` from
 `examples/invites-api/security.json` and run the example's task with `--security-check`.
 The token and duplicate-operation checks have one live run between them (the invites task,
-gemma4:31b); see docs/history.md for the record.
+gemma4:31b). Evidence: docs/acceptance/2026-11-27-token-expiry/README.md.
 
 ## A test that leaves a server listening holds its check until the timeout
 
