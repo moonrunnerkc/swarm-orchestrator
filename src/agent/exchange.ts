@@ -9,7 +9,7 @@ const briefBytes = 300;
 /** A ledger payload digest by its first 16 hex digits: enough to find it, short to repeat. */
 export const evidenceRef = (digest: string) => digest.replace(/^sha256:/, "").slice(0, 16);
 
-const firstLine = (text: string) => text.split("\n")[0] ?? "";
+export const firstLine = (text: string) => text.split("\n")[0] ?? "";
 const bash = (command: string) => `\`\`\`bash\n${command}\n\`\`\``;
 
 /**

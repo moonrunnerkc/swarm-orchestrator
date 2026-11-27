@@ -153,8 +153,9 @@ export async function containedExecutor(input: {
         timeoutMs: options.timeoutMs,
         maxOutputBytes: options.maxOutputBytes,
         signal: options.signal,
+        // With the network closed a native build reads node's headers from the image.
         ...(options.network === undefined
-          ? {}
+          ? { env: { npm_config_nodedir: "/usr/local" } }
           : { network: "dependencies" as const, env: fetchOnly }),
       }),
   };

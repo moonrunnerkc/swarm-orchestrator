@@ -190,6 +190,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
       model: options.model,
       messages,
       maxTokens: Math.min(options.turnTokens, room),
+      sampled: previous.repeats >= 2,
       prompt,
       step: steps + 1,
       usage,

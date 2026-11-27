@@ -1,21 +1,9 @@
 import { basename, join } from "node:path";
-import { type Requirement, structureEvidence } from "swarm-verify";
+import { type Requirement, structureClaimSchema, structureEvidence } from "swarm-verify";
 import { gitText } from "swarm-verify/execution";
-import { z } from "zod";
 import { exists as existsAt } from "./test-conventions.ts";
 
 type StructureClaim = Requirement["evidence"]["structure"][number];
-
-const claimSchema = z.strictObject({
-  path: z.string().min(1),
-  symbol: z
-    .string()
-    .regex(/^[A-Za-z_$][\w$]*$/)
-    .optional(),
-  provides: z.boolean().optional(),
-  contains: z.string().min(1).optional(),
-  absent: z.boolean().optional(),
-});
 
 /** Claims that do not hold at the base tell the refactor apart; one that holds already does not. */
 export async function claimsAtBase(
@@ -28,7 +16,7 @@ export async function claimsAtBase(
   const misplaced: string[] = [];
   const tracked = (await gitText(workspace, ["ls-files"])).split("\n");
   for (const entry of raw) {
-    const parsed = claimSchema.safeParse(entry);
+    const parsed = structureClaimSchema.safeParse(entry);
     if (!parsed.success) {
       reasons.push(
         `a claim is not {"path", "symbol", "absent"?, "provides"?}: ${JSON.stringify(entry)}`,
@@ -72,7 +60,7 @@ const exists = (workspace: string, rel: string) => existsAt(join(workspace, rel)
  */
 async function placement(
   workspace: string,
-  claim: z.infer<typeof claimSchema>,
+  claim: StructureClaim,
   tracked: readonly string[],
 ): Promise<string | null> {
   const path = claim.path;
@@ -98,7 +86,7 @@ async function placement(
  */
 async function notInSource(
   workspace: string,
-  claim: z.infer<typeof claimSchema>,
+  claim: StructureClaim,
   tracked: readonly string[],
 ): Promise<string | null> {
   if (claim.symbol === undefined || claim.absent === true || claim.provides === true) return null;
@@ -140,7 +128,7 @@ const testPath =
  * absent; the model left the shims, as asked, and the claims failed it. A test file may still move.
  */
 function keptByWording(
-  claim: z.infer<typeof claimSchema>,
+  claim: StructureClaim,
   task: string,
   tracked: readonly string[],
 ): string | null {
